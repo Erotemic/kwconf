@@ -1,0 +1,2461 @@
+"""
+Write simple configs and update from CLI, kwargs, and/or json.
+
+The ``kwconf`` provides a simple way to make configurable scripts using a
+combination of config files, command line arguments, and simple Python keyword
+arguments. A script config object is defined by creating a subclass of
+``Config`` with a ``default`` dict class attribute. An instance of a custom
+``Config`` object will behave similar a dictionary, but with a few
+conveniences.
+
+Note:
+    * This class implements the old-style legacy Config class, new applications
+      should favor using DataConfig instead, which has simpler boilerplate.
+
+To get started lets consider some example usage:
+
+Example:
+    >>> import kwconf as scfg
+    >>> # In its simplest incarnation, the config class specifies default values.
+    >>> # For each configuration parameter.
+    >>> class ExampleConfig(scfg.Config):
+    >>>     __default__ = {
+    >>>         'num': 1,
+    >>>         'mode': 'bar',
+    >>>         'ignore': ['baz', 'biz'],
+    >>>     }
+    >>> # Creating an instance, starts using the defaults
+    >>> config = ExampleConfig()
+    >>> # Typically you will want to update default from a dict or file.  By
+    >>> # specifying cmdline=True you denote that it is ok for the contents of
+    >>> # `sys.argv` to override config values. Here we pass a dict to `load`.
+    >>> kwargs = {'num': 2}
+    >>> config.load(kwargs, cmdline=False)
+    >>> assert config['num'] == 2
+    >>> # The `load` method can also be passed a json/yaml file/path.
+    >>> import tempfile
+    >>> config_fpath = tempfile.mktemp()
+    >>> open(config_fpath, 'w').write('{"num": 3}')
+    >>> config.load(config_fpath, cmdline=False)
+    >>> assert config['num'] == 3
+    >>> # It is possible to load only from CLI by setting cmdline=True
+    >>> # or by setting it to a custom sys.argv
+    >>> config.load(cmdline=['--num=4', '--mode' ,'fiz'])
+    >>> assert config['num'] == 4
+    >>> assert config['mode'] == 'fiz'
+    >>> # You can also just use the command line string itself
+    >>> config.load(cmdline='--num=4 --mode fiz')
+    >>> assert config['num'] == 4
+    >>> assert config['mode'] == 'fiz'
+    >>> # Note that using `config.load(cmdline=True)` will just use the
+    >>> # contents of sys.argv
+
+Ignore:
+    >>> class ExampleConfig(scfg.Config):
+    >>>     __default__ = {
+    >>>         'num': 1,
+    >>>         'mode': 'bar',
+    >>>         'mode2': scfg.Value('bar', str),
+    >>>         'ignore': ['baz', 'biz'],
+    >>>     }
+    >>> config = ExampleConfig()
+    >>> # smartcast can handle lists as long as there are no spaces
+    >>> config.load(cmdline=['--ignore=spam,eggs'])
+    >>> assert config['ignore'] == ['spam', 'eggs']
+    >>> # Note that the Value type can influence how data is parsed
+    >>> config.load(cmdline=['--mode=spam,eggs', '--mode2=spam,eggs'])
+
+    >>> # FIXME: We need make parsing lists a bit more intuitive
+    >>> class ExampleConfig(scfg.Config):
+    >>>     __default__ = {
+    >>>         'item1': [],
+    >>>         'item2': scfg.Value([], list),
+    >>>         'item3': scfg.Value([]),
+    >>>     }
+    >>> config = ExampleConfig()
+    >>> # IDEALLY BOTH CASES SHOULD WORK
+    >>> config.load(cmdline=['--item1', 'spam', 'eggs', '--item2', 'spam', 'eggs', '--item3', 'spam', 'eggs'])
+    >>> print(ub.urepr(config, nl=1))
+    >>> config.load(cmdline=['--item1=spam,eggs', '--item2=spam,eggs', '--item3=spam,eggs'])
+    >>> print(ub.urepr(config, nl=1))
+
+TODO:
+    - [x] Handle Nested Configs?
+    - [ ] Integrate with Hyrda
+    - [x] Dataclass support - See DataConfig
+"""
+from __future__ import annotations
+
+import copy
+import inspect
+import os
+import ubelt as ub
+import itertools as it
+import argparse as argparse_mod
+import types
+from typing import IO, Any, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple, Type, Union, cast
+from kwconf import _ubelt_repr_extension
+from kwconf import smartcast
+from kwconf.dict_like import DictLike
+from kwconf.file_like import FileLike
+from kwconf.value import Value
+from kwconf import diagnostics
+import typing
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+# from kwconf.util.util_class import class_or_instancemethod
+
+__all__ = ['Config', 'LegacyConfig', 'define']
+
+__docstubs__ = """
+from typing import Any
+
+KT = Any
+omegaconf: Any
+OmegaConf: object
+"""
+
+
+# def _is_autoreload_enabled():
+#     """
+#     Detect if IPython has autoreloaded this module
+#     https://stackoverflow.com/questions/63469147/programmatically-check-for-and-disable-ipython-autoreload-extension
+#     """
+#     try:
+#         __IPYTHON__
+#     except NameError:
+#         return False
+#     else:
+#         from IPython import get_ipython
+#         ipy = get_ipython()
+#         return ipy.magics_manager.magics['line']['autoreload'].__self__._reloader.enabled
+
+
+def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
+    """
+    Alternate method for defining a custom Config type
+
+    Example:
+        >>> from kwconf.config import define, Value
+        >>> cls = define({'k1': Value('v1'), 'k2': 'v2'}, 'MyConfig')
+        >>> instance = cls()
+        >>> assert instance.to_dict() == {'k1': 'v1', 'k2': 'v2'}
+        >>> print(instance)
+        <MyConfig({'k1': 'v1', 'k2': 'v2'})>
+    """
+    import uuid
+    from textwrap import dedent
+    if name is None:
+        hashid = str(uuid.uuid4()).replace('-', '_')
+        name = 'Config_{}'.format(hashid)
+    vals: Dict[str, Any] = {'default': default}
+    code = dedent(
+        '''
+        import kwconf as scfg
+        class {name}(scfg.Config):
+            __default__ = default
+        '''.strip('\n').format(name=name))
+    exec(code, vals)
+    cls = vals[name]
+    return cast(Type["Config"], cls)
+
+
+def _runtime_type_from_annotation(annotation: Any) -> type | None:
+    if annotation is None or annotation is Any or isinstance(annotation, str):
+        return None
+    origin = typing.get_origin(annotation)
+    if origin is typing.Annotated:
+        args = typing.get_args(annotation)
+        return _runtime_type_from_annotation(args[0] if args else None)
+    if origin in {Union, types.UnionType}:
+        args = [arg for arg in typing.get_args(annotation) if arg is not type(None)]
+        for arg in args:
+            runtime_type = _runtime_type_from_annotation(arg)
+            if runtime_type is not None:
+                return runtime_type
+        return None
+    if origin is not None:
+        return cast(type | None, origin)
+    if isinstance(annotation, type):
+        return annotation
+    return None
+
+
+def _maybe_apply_annotation_to_value(key, value, annotations):
+    annotation = annotations.get(key, None)
+    runtime_type = _runtime_type_from_annotation(annotation)
+    if runtime_type is None:
+        return value
+    if isinstance(value, Value):
+        if value.type is not None:
+            return value
+        value = value.copy()
+        value.type = runtime_type
+        value.parsekw['type'] = runtime_type
+        return value
+    return Value(value, type=runtime_type, isflag=isinstance(value, bool))
+
+
+def _collect_declared_config_attrs(namespace: Dict[str, Any]) -> Dict[str, Any]:
+    annotations = namespace.get('__annotations__', {})
+    attr_default = {}
+    for k, v in namespace.items():
+        if k.startswith('_') or k == 'default':
+            continue
+        if isinstance(v, classmethod) or isinstance(v, staticmethod):
+            continue
+        if callable(v) and not (inspect.isclass(v) and issubclass(v, Config)):
+            continue
+        attr_default[k] = _maybe_apply_annotation_to_value(k, v, annotations)
+    return attr_default
+
+
+def _materialize_default_items(defaults: Mapping[str, Any]) -> Dict[str, Any]:
+    realized = {}
+    for key, value in defaults.items():
+        if isinstance(value, Value):
+            realized[key] = value.clone_default()
+        else:
+            realized[key] = copy.deepcopy(value)
+    return realized
+
+
+def _normalize_class_defaults(defaults, annotations=None):
+    """
+    Normalize class-level defaults to ensure Value/SubConfig metadata is present.
+
+    Example:
+        >>> import kwconf as scfg
+        >>> class Inner(scfg.Config):
+        ...     __default__ = {'x': 1}
+        >>> class Outer(scfg.Config):
+        ...     __default__ = {'inner': Inner, 'flag': False, 'leaf': 3}
+        >>> norms = _normalize_class_defaults(Outer.__default__)
+        >>> assert isinstance(norms['inner'], scfg.SubConfig)
+        >>> assert isinstance(norms['flag'], scfg.Value) and norms['flag'].isflag is True
+        >>> assert isinstance(norms['leaf'], scfg.Value)
+    """
+    normalized = {}
+    if defaults is None:
+        defaults = {}
+    annotations = annotations or {}
+    from kwconf.subconfig import SubConfig
+    for key, value in defaults.items():
+        if isinstance(value, SubConfig):
+            normalized_value = value
+        elif isinstance(value, Value):
+            value = _maybe_apply_annotation_to_value(key, value, annotations)
+            inner = value.value
+            if isinstance(inner, SubConfig):
+                if value.help and not inner.help:
+                    inner.parsekw['help'] = value.help
+                normalized_value = inner
+            elif isinstance(inner, Config) or (
+                inspect.isclass(inner) and issubclass(inner, Config)
+            ):
+                normalized_value = SubConfig(inner, help=value.help)
+            else:
+                normalized_value = value
+        elif isinstance(value, Config) or (
+            inspect.isclass(value) and issubclass(value, Config)
+        ):
+            normalized_value = SubConfig(value)
+        else:
+            normalized_value = _maybe_apply_annotation_to_value(
+                key, value, annotations)
+            if normalized_value is value:
+                if isinstance(value, bool):
+                    normalized_value = Value(value, isflag=True)
+                else:
+                    normalized_value = Value(value)
+        normalized[key] = normalized_value
+    return normalized
+
+
+class MetaConfig(type):
+    """
+    A metaclass for Config to help make usage between Config and DataConfig
+    consistent.
+
+    Ensures that class attributes are mirrored:
+        * __default__ mirrors default
+        * __post_init__ mirrors normalize
+    """
+
+    @staticmethod
+    def __new__(mcls: type,
+                name: str,
+                bases: Tuple[type, ...],
+                namespace: Dict[str, Any],
+                *args: Any,
+                **kwargs: Any) -> type:
+        if diagnostics.DEBUG_META_CONFIG:
+            print(f'MetaConfig.__new__ called: {mcls=} {name=} {bases=} {namespace=} {args=} {kwargs=}')
+
+        if 'default' in namespace and '__default__' not in namespace:
+            # Ensure the user updates to the newer "__default__" paradigm
+            this_default = namespace['__default__'] = namespace['default']
+            ub.schedule_deprecation(
+                'kwconf', 'default', f'class attribute of {name}',
+                migration='Use __default__ instead',
+                deprecate='0.7.6', error='0.10.0', remove='1.0.0',
+            )
+
+        if not (name == 'Config' and namespace.get('__module__') == __name__):
+            attr_default = _collect_declared_config_attrs(namespace)
+            if attr_default:
+                for key in attr_default:
+                    namespace.pop(key, None)
+                cls_default = namespace.get('__default__', None) or {}
+                namespace['__default__'] = {**attr_default, **cls_default}
+
+        HANDLE_INHERITENCE = 1
+        if HANDLE_INHERITENCE:
+            # Handle inheritance, add in defaults from base classes
+            this_default = namespace.get('__default__', {})
+            if this_default is None:
+                this_default = {}
+            this_default = ub.udict(this_default)
+
+            inheritence_default = {}
+            for base in reversed(bases):
+                if hasattr(base, '__default__'):
+                    inheritence_default.update(base.__default__)  # type: ignore
+            inheritence_default.update(this_default)
+            this_default = inheritence_default
+            if not (name == 'Config' and namespace.get('__module__') == __name__):
+                this_default = _normalize_class_defaults(
+                    this_default, namespace.get('__annotations__', {}))
+            namespace['__default__'] = namespace['default'] = this_default
+
+        if '__default__' in namespace and 'default' not in namespace:
+            # Backport to the older non-dunder __default__
+            namespace['default'] = namespace['__default__']
+
+        if 'normalize' in namespace and '__post_init__' not in namespace:
+            # Ensure the newer __post_init__ is specified
+            namespace['__post_init__'] = namespace['normalize']
+            ub.schedule_deprecation(
+                'kwconf', 'normalize', f'class attribute of {name}',
+                migration='Use __post_init__ instead',
+                deprecate='0.7.6', error='0.10.0', remove='1.0.0',
+            )
+
+        if '__post_init__' in namespace and 'normalize' not in namespace:
+            # Backport to the older non-dunder normalize
+            namespace['normalize'] = namespace['__post_init__']
+
+        if diagnostics.DEBUG_META_CONFIG:
+            print('FINAL namespace = {}'.format(ub.urepr(namespace, nl=2)))
+        cls = super().__new__(mcls, name, bases, namespace, *args, **kwargs)  # type: ignore
+        return cls
+
+
+class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
+    """
+    Primary configuration base class for kwconf.
+
+    The preferred kwconf schema style uses typed class variables and optional
+    :class:`kwconf.Value` metadata wrappers. The older ``__default__``
+    dictionary style remains available for compatibility, but new kwconf code
+    should generally prefer declarative class attributes.
+
+    You may also implement ``__post_init__`` (function with that takes no args
+    and has no return) to postprocess your results after initialization.
+
+    When creating an instance of the class the defaults variable is used
+    to make a dictionary-like object. You can override defaults by
+    specifying the ``data`` keyword argument to either a file path or
+    another dictionary. You can also specify ``cmdline=True`` to allow
+    the contents of ``sys.argv`` to influence the values of the new
+    object.
+
+    An instance of the config class behaves like a dictionary, except that
+    you cannot set keys that do not already exist (as specified in the
+    defaults dict).
+
+    Key Methods:
+
+        * dump - dump a json representation to a file
+
+        * dumps - dump a json representation to a string
+
+        * argparse - create an :class:`argparse.ArgumentParser` object that is defined by the defaults of this config.
+
+        * load - rewrite the values based on a filepath, dictionary, or command line contents.
+
+    Attributes:
+        _data : this protected variable holds the instance level raw state of
+            the config object and is accessed by the dict-like
+
+        _default : this protected variable maintains the instance-level default
+            values for this config.
+
+        epilog (str): A class attribute that if specified will add an epilog
+            section to the help text.
+
+    SeeAlso:
+        :class:`kwconf.DataConfig`
+
+    Example:
+        >>> import kwconf as kw
+        >>> class MyConfig(kw.Config):
+        ...     option1: tuple = kw.Value((1, 2, 3))
+        ...     option2: str = 'bar'
+        ...     option3: list = kw.Value(default_factory=list)
+        >>> config1 = MyConfig()
+        >>> config2 = MyConfig(default=dict(option2='baz'))
+    """
+    # Note: class definitions are allowed to use raw literals; the metaclass
+    # normalizes them to Value/SubConfig instances at creation time.
+    __default__: Dict[str, Any] = {}
+    # __allow_newattr__ = False
+
+    def __init__(self,
+                 data: Optional[Union[Dict[str, Any], str]] = None,
+                 default: Optional[Dict[str, Any]] = None,
+                 cmdline: Union[bool, List[str], str, Dict[str, Any]] = False,
+                 _dont_call_post_init: bool = False) -> None:
+        """
+        Args:
+            data (object): filepath, dict, or None
+
+            default (dict | None): overrides the class defaults
+
+            cmdline (bool | List[str] | str | dict)
+                If False, then no command line information is used.
+                If True, then sys.argv is parsed and used.
+                If a list of strings that used instead of sys.argv.
+                If a string, then that is parsed using shlex and used instead
+                    of sys.argv.
+                If a dictionary grants fine grained controls over the args
+                passed to :func:`Config._read_argv`. Can contain:
+                    * strict (bool): defaults to False
+                    * argv (List[str]): defaults to None
+                    * special_options (bool): defaults to True
+                    * autocomplete (bool): defaults to False
+                Defaults to False.
+
+        Note:
+            Avoid setting ``cmdline`` parameter here.  Instead prefer
+            to use the ``cli`` classmethod to create a command line
+            aware config instance..
+        """
+        # The _data attribute holds
+        self._data: Dict[str, Any] = {}
+        self._default: Dict[str, Value] = {}
+        self._subconfig_meta: Dict[str, Any] = {}
+        self._has_subconfigs = False
+        self._scfg_post_init_done = False
+        cls_default = getattr(self, '__default__', getattr(self, 'default', None))
+        if cls_default:
+            self._default.update(_materialize_default_items(cls_default))
+        self._alias_map = None
+        # Normalize SubConfig-like defaults early
+        from kwconf.subconfig import wrap_subconfig_defaults
+        wrap_subconfig_defaults(self, _dont_call_post_init=_dont_call_post_init)
+        self.load(data, cmdline=cmdline, default=default,
+                  _dont_call_post_init=_dont_call_post_init)
+
+    @classmethod
+    def cli(
+        cls,
+        data: Mapping[str, Any] | str | None = None,
+        default: Mapping[str, Any] | None = None,
+        argv: Sequence[str] | str | bool | None = None,
+        strict: bool = True,
+        cmdline: bool = True,
+        autocomplete: bool | str = "auto",
+        special_options: bool | None = None,
+        transition_helpers: bool = True,
+        verbose: bool | str = False,
+        allow_import: bool = True,
+        allow_subconfig_overrides: bool = True,
+        localns: Mapping[str, Any] | None = None,
+        stacklevel: int | None = 0,
+    ) -> Config:       
+        """
+        Create a command-line aware config instance.
+
+        Calls the original "load" way of creating non-dataclass config objects.
+        This may be refactored in the future.
+
+        Args:
+            data (dict | str | None):
+                Values to update the configuration with. This can be a
+                regular dictionary or a path to a yaml / json file.
+
+            default (dict | None):
+                Values to update the defaults with (not the actual
+                configuration). Note: anything passed to default will be deep
+                copied and can be updated by argv or data if it is specified.
+                Generally prefer to pass directly to data instead.
+
+            cmdline (bool):
+                Defaults to True, which creates and uses an argparse object to
+                interact with the command line. If set to False, then the
+                argument parser is bypassed (useful for invoking a CLI
+                programmatically with kwargs and ignoring sys.argv).
+                NOTE: this will be deprecated in favor of "argv" in the future.
+
+            argv (List[str] | None | bool):
+                if specified as a list or string, ignore sys.argv and parse
+                this instead. Otherwise,
+                if True, then parse ``sys.argv``.
+                if False, then ignore ``sys.argv``.
+
+            strict (bool):
+                if True use ``parse_args`` otherwise use ``parse_known_args``.
+                Defaults to True.
+
+            autocomplete (bool | str):
+                if True try to enable argcomplete.
+
+            transition_helpers (bool):
+                if True, we perform special munging to help transition to new
+                versions (e.g. cmdline->argv transition). This will cause
+                issues if your config has a key named "cmdline", otherwise it
+                is safe to keep on.
+
+            special_options (bool | None, default=None):
+                adds special kwconf options, namely: --config, --dumps,
+                and --dump. If None, uses the class attribute __special_options__
+                if present, otherwise defaults to True.
+
+            verbose (bool | str):
+                If true, then perform a rich print of the config after it is
+                parsed. If "auto", it will default to true in most cases,
+                except when we can infer special behavior from the
+                user-defined config via standard keys: verbose, quiet, silent.
+
+            allow_import (bool):
+                If True, allow module path selectors like
+                ``pkg.mod.ClassName``
+                for SubConfig selection. Defaults to True.
+
+            allow_subconfig_overrides (bool):
+                If True, enable multipass CLI parsing to allow SubConfig
+                selection overrides. If False, only the default realized tree
+                is parsed and selector args error at parse time.
+
+            localns (dict | None):
+                Namespace used to resolve SubConfig class names. If None and
+                ``stacklevel`` is not None, a namespace is derived from the
+                caller's frame.
+
+            stacklevel (int | None):
+                Number of frames above the caller to use when deriving the
+                namespace for SubConfig class name resolution. Use None to
+                disable caller introspection.
+
+        Example:
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __default__ = {
+            >>>         'option1': scfg.Value((1, 2, 3), tuple),
+            >>>         'option2': 'bar',
+            >>>         'option3': None,
+            >>>         'verbose': False,
+            >>>     }
+            >>> # You can now make instances of this class
+            >>> config = MyConfig.cli(argv=False, verbose='auto')
+            >>> config = MyConfig.cli(argv=False, data=dict(verbose=1), verbose='auto')
+        """
+        if diagnostics.DEBUG_CONFIG:
+            print(f'[kwconf] Call {cls.__name__}.cli')
+            print(f'argv={argv}, cmdline={cmdline}')
+        if transition_helpers and isinstance(data, dict):
+            argv = data.pop('cmdline', argv)  # helper for cmdline->argv transition  # type: ignore
+        cmdline_value: Union[bool, List[str], str, Dict[str, Any]] = cmdline
+        if cmdline and argv is not None:
+            cmdline_value = argv  # type: ignore
+        if default is None:
+            default = {}
+        # Note: hack to avoid calling __post_init__ twice
+        self = cls(_dont_call_post_init=True)
+        next_stacklevel = None if stacklevel is None else stacklevel + 1
+        self.load(data, cmdline=cmdline_value, default=default, strict=strict,
+                  autocomplete=autocomplete, special_options=special_options,
+                  allow_import=allow_import,
+                  allow_subconfig_overrides=allow_subconfig_overrides,
+                  localns=localns, stacklevel=next_stacklevel)
+
+        if isinstance(verbose, str) and verbose == 'auto':
+            verbose = self.get('verbose', verbose)
+            verbose = not self.get('quiet', not verbose)
+            verbose = not self.get('silent', not verbose)
+
+        if verbose:
+            try:
+                import rich
+                from rich.markup import escape
+            except ImportError:
+                print('config = ' + ub.urepr(self, nl=1))  # type: ignore
+            else:
+                rich.print('config = ' + escape(ub.urepr(self, nl=1)))  # type: ignore
+        if diagnostics.DEBUG_CONFIG:
+            print(f'[kwconf] Return {cls.__name__}.cli')
+        return self
+
+    @classmethod
+    def demo(cls) -> "Config":
+        """
+        Create an example config class for test cases
+
+        CommandLine:
+            xdoctest -m kwconf.config Config.demo
+            xdoctest -m kwconf.config Config.demo --cli --option1 fo
+
+        Example:
+            >>> from kwconf.config import *
+            >>> self = Config.demo()
+            >>> print('self = {}'.format(self))
+            self = <DemoConfig({...'option1': ...}...)...>...
+            >>> self.argparse().print_help()
+            >>> # xdoc: +REQUIRES(--cli)
+            >>> self.load(cmdline=True)
+            >>> print(ub.urepr(self, nl=1))
+        """
+        import kwconf as scfg
+        class DemoConfig(scfg.Config):
+            """
+            This was generated by kwconf.Config.demo
+            """
+            __default__ = {
+                'option1': scfg.Value('bar', help='an option'),
+                'option2': scfg.Value((1, 2, 3), tuple, help='another option'),
+                'option3': None,
+                'option4': 'foo',
+                'discrete': scfg.Value(None, choices=['a', 'b', 'c']),
+                'apath': scfg.Path(help='a path'),
+            }
+        self = DemoConfig()
+        return self
+
+    def __json__(self) -> Dict[str, Any]:
+        """
+        Creates a JSON serializable representation of this config object.
+
+        Raises:
+            TypeError: if any non-builtin python objects without a __json__
+                method are encountered.
+
+        Returns:
+            dict
+
+        Example:
+            >>> self = Config.demo()
+            >>> self.__json__()
+            >>> self['option1'] = {1, 2, 3}
+            >>> self['option2'] = {(1, 2): 'fds'}
+            >>> self.__json__()
+        """
+        numpy: Any
+        try:
+            import numpy
+        except ImportError:
+            numpy = None  # type: ignore
+        data = self.asdict()
+
+        BUILTIN_SCALAR_TYPES = (str, int, float, complex)
+        BUILTIN_VECTOR_TYPES = (set, frozenset, list, tuple)
+
+        # The walker method should be more efficient.
+        walker = ub.IndexableWalker(data, list_cls=BUILTIN_VECTOR_TYPES)
+        for path, item in walker:
+            if item is None or isinstance(item, BUILTIN_SCALAR_TYPES):
+                ...
+            elif isinstance(item, list):
+                ...
+            elif isinstance(item, (set, tuple)):
+                walker[path] = list(item)
+            elif numpy is not None and isinstance(item, numpy.ndarray):
+                walker[path] = item.tolist()
+            elif isinstance(item, dict):
+                walker[path] = dict(sorted(item.items()))
+            else:
+                if hasattr(item, '__json__'):
+                    return item.__json__()
+                else:
+                    raise TypeError(
+                        'Unknown JSON serialization for type {!r}'.format(type(item)))
+        return data
+
+    def __nice__(self) -> str:
+        data = self.asdict()
+        if isinstance(data, dict):
+            data = dict(data)
+        return str(data)
+
+    def asdict(self) -> Dict[str, Any]:
+        if getattr(self, '_has_subconfigs', False):
+            from kwconf.subconfig import config_to_nested_dict
+            return config_to_nested_dict(self, include_class=False)
+        return super().asdict()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.asdict()
+
+    def getitem(self, key: str) -> Any:
+        """
+        Dictionary-like method to get the value of a key.
+
+        Args:
+            key (str): the key
+
+        Returns:
+            Any : the associated value
+        """
+        if isinstance(key, str) and '.' in key and getattr(self, '_has_subconfigs', False):
+            parts = key.split('.')
+            node: Any = self
+            for part in parts:
+                if not isinstance(node, Config):
+                    raise KeyError(key)
+                try:
+                    value = node._data[part]
+                except KeyError:
+                    part = node._normalize_alias_key(part)
+                    value = node._data[part]
+                node = value
+            if isinstance(node, Value):
+                node = node.value
+            return node
+        try:
+            value = self._data[key]
+        except KeyError:
+            # Attempt alias
+            key = self._normalize_alias_key(key)
+            value = self._data[key]
+
+        if isinstance(value, Value):
+            value = value.value
+        return value
+
+    def setitem(self, key: str, value: Any) -> None:
+        """
+        Dictionary-like method to set the value of a key.
+
+        Args:
+            key (str): the key
+            value (Any): the new value
+        """
+        if isinstance(key, str) and '.' in key and getattr(self, '_has_subconfigs', False):
+            parts = key.split('.')
+            parent_key, leaf = parts[:-1], parts[-1]
+            from kwconf.subconfig import _ensure_parent_node
+            parent = _ensure_parent_node(self, parent_key)
+            parent[leaf] = value
+            return
+        if key not in self._data:
+            key = self._normalize_alias_key(key)
+            if key not in self._data:
+                if not getattr(self, '__allow_newattr__', False):
+                    raise Exception(
+                        'Cannot add keys to kwconf.Config objects unless '
+                        'self.__allow_newattr__ is True'
+                    )
+        if isinstance(value, Value):
+            # If the new item is a Value object simply overwrite the old one
+            self._data[key] = value
+        else:
+            template = self.__default__.get(key, None)
+            if template is not None and isinstance(template, Value):
+                # If the new value is raw data, and we have a underlying Value
+                # object update it.
+                self._data[key] = template.cast(value)
+            else:
+                # If we don't have an underlying Value object simply set the
+                # raw data.
+                self._data[key] = value
+
+    def delitem(self, key: str) -> None:
+        raise Exception('cannot delete items from a config')
+
+    def keys(self) -> Iterable[str]:
+        """
+        Dictionary-like keys method
+
+        Yields:
+            str:
+        """
+        return self._data.keys()
+
+    def update_defaults(self, default: Mapping[str, Any]) -> None:
+        """
+        Update the instance-level default values
+
+        Args:
+            default (dict): new defaults
+        """
+        import copy
+        default = self._normalize_alias_dict(default)
+
+        # The user might pass raw values in which case we should keep the
+        # metadata from the existing wrapped Values and just update the .value
+        # attribute.
+        for k, v in default.items():
+            old_default = self._default[k]
+            if isinstance(old_default, Value) and not isinstance(v, Value):
+                new_default = copy.deepcopy(old_default)
+                new_default.value = v
+                default[k] = new_default
+
+        self._default.update(default)
+        self._alias_map = None
+        from kwconf.subconfig import wrap_subconfig_defaults
+        wrap_subconfig_defaults(self, _dont_call_post_init=True)
+
+    def load(
+        self,
+        data: Mapping[str, Any] | str | None = None,
+        cmdline: bool | Sequence[str] | str | Mapping[str, Any] = False,
+        mode: str | None = None,
+        default: Mapping[str, Any] | None = None,
+        strict: bool = False,
+        autocomplete: bool | str = False,
+        _dont_call_post_init: bool = False,
+        special_options: bool | None = None,
+        allow_import: bool = True,
+        allow_subconfig_overrides: bool = True,
+        localns: Mapping[str, Any] | None = None,
+        stacklevel: int | None = 0,
+    ) -> Config:        
+        """
+        Updates the configuration from a given data source.
+
+        Any option can be overwritten via the command line if ``cmdline`` is
+        truthy.
+
+        Args:
+            data (PathLike | dict):
+                Either a path to a yaml / json file or a config dict
+
+            cmdline (bool | List[str] | str | dict)
+                If False, then no command line information is used.
+                If True, then sys.argv is parsed and used.
+                If a list of strings that used instead of sys.argv.
+                If a string, then that is parsed using shlex and used instead
+                    of sys.argv.
+                DO NOT USE dictionary form. It is deprecated.
+                If a dictionary grants fine grained controls over the args
+                passed to :func:`Config._read_argv`. Can contain:
+                    * strict (bool): defaults to False
+                    * argv (List[str]): defaults to None
+                    * special_options (bool): defaults to True
+                    * autocomplete (bool): defaults to False
+                Defaults to False.
+                NOTE: will be deprecated renamed to "argv" in the future.
+
+            mode (str | None):
+                Either json or yaml.
+
+            default (dict | None):
+                updated defaults. Note: anything passed to default will be deep
+                copied and can be updated by argv or data if it is specified.
+                Generally prefer to pass directly to data instead.
+
+            strict (bool):
+                if True an error will be raised if the command line
+                contains unknown arguments.
+
+            autocomplete (bool):
+                if True, attempts to use the autocomplete package if it is
+                available if reading from sys.argv. Defaults to False.
+
+            special_options (bool | None, default=None):
+                adds special kwconf options, namely: --config, --dumps,
+                and --dump. If None, uses the class attribute __special_options__
+                if present, otherwise defaults to True.
+
+            allow_import (bool):
+                If True, allow module path selectors like
+                ``pkg.mod.ClassName``
+                for SubConfig selection. Defaults to True.
+
+            allow_subconfig_overrides (bool):
+                If True, enable multipass CLI parsing to allow SubConfig
+                selection overrides. If False, only the default realized tree
+                is parsed and selector args error at parse time.
+
+            localns (dict | None):
+                Namespace used to resolve SubConfig class names. If None and
+                ``stacklevel`` is not None, a namespace is derived from the
+                caller's frame.
+
+            stacklevel (int | None):
+                Number of frames above the caller to use when deriving the
+                namespace for SubConfig class name resolution. Use None to
+                disable caller introspection.
+
+        Note:
+            if cmdline=True, this will create an argument parser.
+
+        Example:
+            >>> # Test load works correctly in cmdline True and False mode
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __default__ = {
+            >>>         'src': scfg.Value(None, help=('some help msg')),
+            >>>     }
+            >>> data = {'src': 'hi'}
+            >>> self = MyConfig(data=data, cmdline=False)
+            >>> assert self['src'] == 'hi'
+            >>> self = MyConfig(default=data, cmdline=True)
+            >>> assert self['src'] == 'hi'
+            >>> # In 0.5.8 and previous src fails to populate!
+            >>> # This is because cmdline=True overwrites data with defaults
+            >>> self = MyConfig(data=data, cmdline=True)
+            >>> assert self['src'] == 'hi', f'Got: {self}'
+
+        Example:
+            >>> # Test load works correctly in strict mode
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __default__ = {
+            >>>         'src': scfg.Value(None, help=('some help msg')),
+            >>>     }
+            >>> data = {'src': 'hi'}
+            >>> cmdlinekw = {
+            >>>     'strict': True,
+            >>>     'argv': '--src=hello',
+            >>> }
+            >>> self = MyConfig(data=data, cmdline=cmdlinekw)
+            >>> cmdlinekw = {
+            >>>     'strict': True,
+            >>>     'special_options': False,
+            >>>     'argv': '--src=hello --extra=arg',
+            >>> }
+            >>> import pytest
+            >>> with pytest.raises(SystemExit):
+            >>>     self = MyConfig(data=data, cmdline=cmdlinekw)
+
+        Example:
+            >>> # Test load works correctly with required
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __default__ = {
+            >>>         'src': scfg.Value(None, help=('some help msg'), required=True),
+            >>>     }
+            >>> cmdlinekw = {
+            >>>     'strict': True,
+            >>>     'special_options': False,
+            >>>     'argv': '',
+            >>> }
+            >>> import pytest
+            >>> with pytest.raises(Exception):
+            ...   self = MyConfig(cmdline=cmdlinekw)
+
+        Example:
+            >>> # Test load works correctly with alias
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __default__ = {
+            >>>         'opt1': scfg.Value(None),
+            >>>         'opt2': scfg.Value(None, alias=['arg2']),
+            >>>     }
+            >>> config1 = MyConfig(data={'opt2': 'foo'})
+            >>> assert config1['opt2'] == 'foo'
+            >>> config2 = MyConfig(data={'arg2': 'bar'})
+            >>> assert config2['opt2'] == 'bar'
+            >>> assert 'arg2' not in config2
+        """
+        if diagnostics.DEBUG_CONFIG:
+            print(f'[kwconf.config.Config] Call {self.__class__.__name__}.load',
+                  f'cmdline={cmdline}, strict={strict}, special_options={special_options}')
+
+        if special_options is None:
+            special_options = getattr(self, '__special_options__', True)
+
+        if default:
+            self.update_defaults(default)
+
+        # Maybe this shouldn't be a deep copy?
+        import copy
+        _default = copy.deepcopy(self._default)
+
+        if data is None:
+            user_config = {}
+        elif isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
+            if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
+                # Interpret this data as a raw json/YAML string
+                import json
+                try:
+                    user_config = json.loads(data)
+                except Exception:
+                    import yaml  # type: ignore[import-untyped]
+                    import io
+                    raw_file = io.StringIO(data)
+                    user_config = yaml.load(raw_file, Loader=yaml.SafeLoader)
+            else:
+                if mode is None:
+                    if isinstance(data, str):
+                        if data.lower().endswith('.json'):
+                            mode = 'json'
+                    elif isinstance(data, os.PathLike):
+                        if os.fspath(data).lower().endswith('.json'):
+                            mode = 'json'
+                if mode is None:
+                    # Default to yaml
+                    mode = 'yaml'
+                with FileLike(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
+                    if mode == 'yaml':
+                        import yaml  # type: ignore[import-untyped]
+                        user_config = yaml.load(file, Loader=yaml.SafeLoader)
+                    elif mode == 'json':
+                        import json
+                        user_config = json.load(file)
+        elif isinstance(data, dict):
+            user_config = data
+        elif isinstance(data, Config):
+            user_config = data.asdict()
+        else:
+            raise TypeError(
+                'Expected path or dict, but got {}'.format(type(data)))
+
+        # check for unknown values
+        indirect_keys = set(user_config) - set(_default)
+        if indirect_keys:
+            # Check if unknown keys are aliases
+            unknown_keys = []
+            _alias_map = self._build_alias_map()
+            for a in indirect_keys:
+                if a in _alias_map:
+                    k = _alias_map[a]
+                    user_config[k] = user_config.pop(a)  # type: ignore
+                else:
+                    # Ignore any unknown dunder keys or allow dotted keys when
+                    # subconfigs are enabled (they may be nested updates).
+                    if a.startswith('.') or a.startswith('__') and a.endswith('__'):
+                        user_config.pop(a, None)
+                    elif getattr(self, '_has_subconfigs', False) and '.' in a:
+                        continue
+                    else:
+                        unknown_keys.append(a)
+            if unknown_keys:
+                if strict:
+                    if diagnostics.DEBUG_CONFIG:
+                        print(f'[kwconf.config.Config] Error: data={data}')
+
+                    raise KeyError(f'Unknown data options {unknown_keys}')
+                else:
+                    for k in unknown_keys:
+                        user_config.pop(k, None)
+
+        from kwconf import subconfig as _subcfg_mod
+        localns = _subcfg_mod.resolve_localns(localns, stacklevel)  # type: ignore
+        self._data = {key: value.value for key, value in _default.items()}
+        pending_updates = None
+        if getattr(self, '_has_subconfigs', False):
+            _subcfg_mod.ensure_subconfigs_instantiated(self, _dont_call_post_init=_dont_call_post_init)
+            if cmdline:
+                pending_updates = _subcfg_mod.coerce_data_updates(user_config)
+            else:
+                _subcfg_mod.apply_dot_updates(
+                    self,
+                    user_config,
+                    allow_import=allow_import,
+                    localns=localns,
+                    stacklevel=None,
+                )
+        else:
+            self.update(user_config)
+
+        if isinstance(cmdline, str):
+            # allow specification using the actual command line arg string
+            import shlex
+            cmdline = shlex.split(os.path.expandvars(cmdline))
+
+        if cmdline or ub.iterable(cmdline):
+            next_stacklevel = None if stacklevel is None else stacklevel + 1
+            read_argv_kwargs = {
+                'special_options': special_options,
+                'strict': strict,
+                'autocomplete': autocomplete,
+                'argv': None,
+                'allow_import': allow_import,
+                'allow_subconfig_overrides': allow_subconfig_overrides,
+                'pending_updates': pending_updates,
+                'localns': localns,
+                'stacklevel': next_stacklevel,
+            }
+            if isinstance(cmdline, dict):
+                ub.schedule_deprecation('kwconf', 'cmdline', 'parameter as a dictionary',
+                                        migration='The API should expose any special params explicitly',
+                                        deprecate='0.7.15', error='0.10.0', remove='1.0.0')
+                read_argv_kwargs.update(cmdline)  # type: ignore
+            elif ub.iterable(cmdline) or isinstance(cmdline, str):
+                read_argv_kwargs['argv'] = cmdline
+            self._read_argv(**read_argv_kwargs)
+
+        if not _dont_call_post_init:
+            if 1:
+                # Check that all required variables are not the same as defaults
+                # Probably a way to make this check nicer
+                for k, v in self._default.items():
+                    if isinstance(v, Value):
+                        if v.required:
+                            if self[k] == v.value:
+                                raise Exception('Required variable {!r} still has default value'.format(k))
+            if getattr(self, '_has_subconfigs', False):
+                _subcfg_mod.finalize_post_init(self)
+            else:
+                self.__post_init__()
+        return self
+
+    def _normalize_alias_key(self, key):
+        """
+        normalizes a single aliased key
+        """
+        if getattr(self, '_alias_map', None) is None:
+            self._alias_map = self._build_alias_map()
+        return self._alias_map.get(key, key)  # type: ignore
+
+    def _normalize_alias_dict(self, data):
+        """
+        Args:
+            data (dict): dictionary with keys that could be aliases
+
+        Returns:
+            dict: keys are normalized to be primary keys.
+        """
+        if getattr(self, '_alias_map', None) is None:
+            self._alias_map = self._build_alias_map()
+        norm = {self._alias_map.get(k, k): v for k, v in data.items()}  # type: ignore
+        return norm
+
+    def _build_alias_map(self):
+        _alias_map = {}
+        for k, v in self._default.items():
+            alias = getattr(v, 'alias', None)
+            if alias:
+                if not ub.iterable(alias):
+                    alias = [alias]
+                for a in alias:
+                    _alias_map[a] = k
+        return _alias_map
+
+    def _read_argv(self, argv=None, special_options=None, strict=False, autocomplete=False,
+                   allow_import=True, allow_subconfig_overrides=True, pending_updates=None,
+                   localns=None, stacklevel=0):
+        """
+        Example:
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     description = 'my CLI description'
+            >>>     __default__ = {
+            >>>         'src':  scfg.Value(['foo'], position=1, nargs='+'),
+            >>>         'dry':  scfg.Value(False),
+            >>>         'approx':  scfg.Value(False, isflag=True, alias=['a1', 'a2']),
+            >>>     }
+            >>> self = MyConfig()
+            >>> # xdoctest: +REQUIRES(PY3)
+            >>> # Python2 argparse does a hard sys.exit instead of raise
+            >>> import sys
+            >>> if sys.version_info[0:2] < (3, 6):
+            >>>     # also skip on 3.5 because of dict ordering
+            >>>     import pytest
+            >>>     pytest.skip()
+            >>> self._read_argv(argv='')
+            >>> print('self = {}'.format(self))
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='--src [,]')
+            >>> print('self = {}'.format(self))
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='--src [,] --a1')
+            >>> print('self = {}'.format(self))
+            self = <MyConfig({'src': ['foo'], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': [], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': [], 'dry': False, 'approx': True})>
+
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='p1 p2 p3')
+            >>> print('self = {}'.format(self))
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='--src=p4,p5,p6!')
+            >>> print('self = {}'.format(self))
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='p1 p2 p3 --src=p4,p5,p6!')
+            >>> print('self = {}'.format(self))
+            self = <MyConfig({'src': ['p1', 'p2', 'p3'], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': ['p4', 'p5', 'p6!'], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': ['p4', 'p5', 'p6!'], 'dry': False, 'approx': False})>
+
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='p1')
+            >>> print('self = {}'.format(self))
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='--src=p4')
+            >>> print('self = {}'.format(self))
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='p1 --src=p4')
+            >>> print('self = {}'.format(self))
+            self = <MyConfig({'src': ['p1'], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': ['p4'], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': ['p4'], 'dry': False, 'approx': False})>
+
+            >>> special_options = False
+            >>> parser = self.argparse(special_options=special_options)
+            >>> parser.print_help()
+            >>> x = parser.parse_known_args()
+
+        Example:
+            >>> import kwconf as scfg
+            >>> import pytest
+            >>> class EmptyConfig(scfg.Config):
+            >>>     ...
+            >>> self = EmptyConfig()
+            >>> with pytest.raises(Exception) as ex:
+            >>>     self._read_argv(argv=32132)
+
+        Ignore:
+            >>> # Weird cases
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='--src=[p4,p5,p6!] f of')
+            >>> print('self = {}'.format(self))
+
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='--src=p4,')
+            >>> print('self = {}'.format(self))
+
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='a b --src p4 p5 p6!')
+            >>> print('self = {}'.format(self))
+
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='--src=p4 p5 p6!')
+            >>> print('self = {}'.format(self))
+
+            >>> self = MyConfig()
+            >>> self._read_argv(argv='p1 p2 p3!')
+            >>> print('self = {}'.format(self))
+
+        Example:
+            >>> # SubConfig case: staged parsing + dotted overrides
+            >>> import kwconf as scfg
+            >>> import pytest
+            >>> class Adam(scfg.Config):
+            ...     __default__ = {'lr': 1e-3}
+            >>> class Sgd(scfg.Config):
+            ...     __default__ = {'momentum': 0.9}
+            >>> class TrainCfg(scfg.Config):
+            ...     __default__ = {
+            ...         'optim': scfg.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd}),
+            ...     }
+            >>> cfg = TrainCfg()
+            >>> cfg._read_argv(argv='--optim=sgd --optim.momentum=0.8')
+            >>> assert isinstance(cfg['optim'], Sgd) and cfg['optim']['momentum'] == 0.8
+            >>> print('Test error case:')
+            >>> with pytest.raises(SystemExit) as ex:
+            ...     cfg._read_argv(argv='--optim.unknown=1', strict=True)
+            >>> print(f'Got expected error: {ex}')
+            >>> print('Test success case:')
+            >>> cfg._read_argv(argv='--optim=sgd --optim.momentum=0.8')
+            >>> print(cfg.dumps())
+            >>> assert isinstance(cfg['optim'], Sgd) and cfg['optim']['momentum'] == 0.8
+        """
+        if special_options is None:
+            special_options = getattr(self, '__special_options__', True)
+
+        if isinstance(argv, str):
+            import shlex
+            argv = shlex.split(argv)
+
+        # TODO: warn about any unused flags
+        parser = self.argparse(special_options=special_options)
+        has_subconfigs = getattr(self, '_has_subconfigs', False)
+        if has_subconfigs:
+            # Subconfig argv parsing is staged: realize selector overrides first,
+            # then rebuild a parser for the realized tree before parsing values.
+            from kwconf import subconfig as _subcfg_mod
+            localns = _subcfg_mod.resolve_localns(localns, stacklevel)
+            parser, argv = _subcfg_mod.expand_multipass_parser(
+                self,
+                parser=parser,
+                argv=argv,
+                special_options=special_options,
+                allow_import=allow_import,
+                allow_subconfig_overrides=allow_subconfig_overrides,
+                pending_updates=pending_updates,
+                localns=localns,
+                stacklevel=None,
+            )
+
+        if autocomplete:
+            try:
+                import argcomplete as argcomplete_mod
+            except ImportError:
+                if autocomplete != 'auto':
+                    raise
+            else:
+                argcomplete_mod.autocomplete(parser)
+
+        try:
+            if strict:
+                ns = parser.parse_args(argv).__dict__
+            else:
+                ns = parser.parse_known_args(argv)[0].__dict__
+        except (ValueError, TypeError, KeyError) as ex:
+            # For errors (like ValueError) where its probably a programmer
+            # error and not a user error, give the debugger some information
+            # about the kwconf object.
+            from kwconf.util import util_exception
+            # TODO: figure out argv that triggers a value error so we can add a test
+            note = ub.codeblock(
+                f'''
+                Error while attempting to parse arguments in _read_argv
+
+                Context:
+                    argv = {argv!r}
+                    special_options = {special_options!r}
+                    strict = {strict!r}
+                    autocomplete = {autocomplete!r}
+                    self = {self!r}
+                ''')
+            print(note)
+            ex = util_exception.add_exception_note(ex, note)
+            raise ex
+
+        special_ns_keys = ['config', 'dump', 'dumps']
+        if special_options:
+            special_ns = {k: ns.pop(k, None) for k in special_ns_keys}
+        else:
+            special_ns = {}
+
+        # We might remove code under this if using action casting proves to be
+        # stable.
+        RELY_ON_ACTION_SMARTCAST = True
+        if has_subconfigs:
+            # Subconfig selectors need special handling, but regular values
+            # can use the standard Config setitem logic.
+            from kwconf import subconfig as _subcfg_mod
+            explicit = getattr(parser, '_explicitly_given', set())
+            subconfig_paths = set(_subcfg_mod.find_subconfig_paths(self))
+            if explicit:
+                selector_keys = {
+                    k for k in explicit
+                    if k.endswith('.__class__') or k in subconfig_paths
+                }
+                if selector_keys:
+                    selector_updates = {k: ns[k] for k in selector_keys if k in ns}
+                    _subcfg_mod.apply_dot_updates(
+                        self,
+                        selector_updates,
+                        allow_import=allow_import,
+                        localns=localns,
+                        stacklevel=None,
+                    )
+                    for key in selector_keys:
+                        ns.pop(key, None)
+                    parser._explicitly_given = explicit - selector_keys  # type: ignore
+            if subconfig_paths:
+                for key in subconfig_paths:
+                    ns.pop(key, None)
+                parser._explicitly_given = {  # type: ignore
+                    key for key in parser._explicitly_given  # type: ignore
+                    if key not in subconfig_paths
+                }
+        # First load argparse defaults in first
+        _not_given = set(ns.keys()) - parser._explicitly_given  # type: ignore
+        # print('_not_given = {!r}'.format(_not_given))
+        # print('parser._explicitly_given = {!r}'.format(parser._explicitly_given))
+        for key in _not_given:
+            value = ns[key]
+            if key not in self.__default__:
+                # Skip dotted selector keys or unknown argparse entries.
+                continue
+            # NOTE: this implementation is messy and needs refactor.
+            # Currently the .__default__ .default, ._default, and ._data
+            # attributes can all be Value objects, but this gets messy when the
+            # "default" constructor argument is used. We should refactor so
+            # _data and _default only store the raw current values,
+            # post-casting.
+            if not RELY_ON_ACTION_SMARTCAST:
+                # Old way that we did smartcast. Hopefully the action class
+                # takes care of this.
+                template = self.__default__[key]
+                # print('template = {!r}'.format(template))
+                value = template.cast(value)
+
+            default_value = self.__default__[key].value
+            # Preserve any data/default overrides that were already applied
+            # before argparse defaults are merged in.
+            if self._data.get(key, default_value) != default_value:
+                continue
+            self[key] = value
+
+        # Then load config file defaults
+        if special_options:
+            config_fpath = special_ns['config']
+            if config_fpath is not None:
+                self.load(config_fpath, cmdline=False,
+                          _dont_call_post_init=True)
+
+        # Finally load explicit CLI values
+        for key in parser._explicitly_given:  # type: ignore
+            if key not in special_ns:
+                value = ns[key]
+
+                if not RELY_ON_ACTION_SMARTCAST:
+                    # Old way that we did smartcast. Hopefully the action class
+                    # takes care of this.
+
+                    template = self.__default__[key]
+
+                    # print('value = {!r}'.format(value))
+                    # print('template = {!r}'.format(template))
+                    if not isinstance(template, Value):
+                        # smartcast non-valued params from commandline
+                        value = smartcast.smartcast(value)
+
+                # if value is not None:
+                self[key] = value
+
+        # We dont want this here right?
+        # self.__post_init__()
+
+        if special_options:
+            import sys
+            dump_fpath = special_ns['dump']
+            do_dumps = special_ns['dumps']
+            if dump_fpath or do_dumps:
+                if dump_fpath:
+                    # Infer config format from the extension
+                    if dump_fpath.lower().endswith('.json'):
+                        mode = 'json'
+                    elif dump_fpath.lower().endswith('.yaml'):
+                        mode = 'yaml'
+                    else:
+                        mode = 'yaml'
+                    text = self.dumps(mode=mode)
+                    with open(dump_fpath, 'w') as file:
+                        file.write(text)
+
+                if do_dumps:
+                    # Always use yaml to dump to stdout
+                    text = self.dumps(mode='yaml')
+                    print(text)
+
+                sys.exit(1)
+        return self
+
+    def __post_init__(self) -> None:
+        """ overloadable function called after each load """
+        ...
+
+    def dump(self, stream: Optional[Union[FileLike, IO[str]]] = None, mode: Optional[str] = None):
+        """
+        Write configuration file to a file or stream
+
+        Args:
+            stream (FileLike | None): the stream to write to
+            mode (str | None): can be 'yaml' or 'json' (defaults to 'yaml')
+        """
+        if mode is None:
+            mode = 'yaml'
+        if getattr(self, '_has_subconfigs', False):
+            from kwconf.subconfig import config_to_nested_dict
+            payload = config_to_nested_dict(self, include_class=True)
+        else:
+            payload = dict(self.items())
+        if mode == 'yaml':
+            import yaml  # type: ignore
+            def order_rep(dumper, data):
+                return dumper.represent_mapping('tag:yaml.org,2002:map', data.items(), flow_style=False)
+            yaml.add_representer(dict, order_rep, Dumper=yaml.SafeDumper)
+            yaml.safe_dump(payload, stream)  # type: ignore
+        elif mode == 'json':
+            import json
+            json.dump(payload, stream, indent=4)  # type: ignore
+        else:
+            raise KeyError(mode)
+
+    def dumps(self, mode: Optional[str] = None) -> str:
+        """
+        Write the configuration to a text object and return it
+
+        Args:
+            mode (str | None): can be 'yaml' or 'json' (defaults to 'yaml')
+
+        Returns:
+            str - the configuration as a string
+        """
+        import io
+        stream = io.StringIO()
+        self.dump(stream=stream, mode=mode)
+        return stream.getvalue()
+
+    def __getattr__(self, key: str) -> Any:
+        # Handle aliasing of old "default" and new "__default__"
+        if key == 'default' and hasattr(self, '__default__'):
+            return self.__default__
+        elif key == '__default__' and hasattr(self, 'default'):
+            return self.default
+        if key.startswith('_'):
+            raise AttributeError(key)
+        if key in self:
+            try:
+                return self[key]
+            except KeyError as ex:
+                raise AttributeError(key) from ex
+        raise AttributeError(key)
+
+    def __dir__(self) -> List[str]:
+        initial = cast(List[str], super().__dir__())
+        return initial + list(self.keys())
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        if key.startswith('_'):
+            self.__dict__[key] = value
+            return
+        if '_data' in self.__dict__ and key in self:
+            try:
+                self[key] = value
+                return
+            except KeyError as ex:
+                raise AttributeError(key) from ex
+        if getattr(self, '__allow_newattr__', False) and '_data' in self.__dict__:
+            self[key] = value
+            return
+        self.__dict__[key] = value
+
+    @property
+    def _description(self) -> Optional[str]:
+        if hasattr(self, 'description'):
+            ub.schedule_deprecation(
+                'kwconf', 'description', 'attribute of Config classes',
+                migration='Use __description__ or the docstring instead',
+                deprecate='0.7.11', error='0.10.0', remove='1.0.0')
+
+        description = getattr(self, '__description__',
+                              getattr(self, 'description', None))
+        if description is None:
+            description = self.__class__.__doc__
+        if description is None:
+            import kwconf
+            description = f'argparse CLI generated by kwconf {kwconf.__version__}'
+        if description is not None:
+            description = ub.codeblock(description)
+        return description
+
+    @property
+    def _epilog(self) -> Optional[str]:
+        if hasattr(self, 'epilog'):
+            ub.schedule_deprecation(
+                'kwconf', 'epilog', 'attribute of Config classes',
+                migration='Use __epilog__ instead',
+                deprecate='0.7.11', error='0.10.0', remove='1.0.0')
+
+        epilog = getattr(self, '__epilog__', getattr(self, 'epilog', None))
+        if epilog is not None:
+            epilog = ub.codeblock(epilog)
+        return epilog
+
+    @property
+    def _prog(self) -> Optional[str]:
+        if hasattr(self, 'prog'):
+            ub.schedule_deprecation(
+                'kwconf', 'prog', 'attribute of Config classes',
+                migration='Use __prog__ instead',
+                deprecate='0.7.11', error='0.10.0', remove='1.0.0')
+        # Should probably use __command__ instead? And will need to fixup?
+        prog = getattr(self, '__prog__', getattr(self, 'prog', None))
+        if prog is None:
+            prog = self.__class__.__name__
+        return prog
+
+    def _parserkw(self) -> dict:
+        """
+        Generate the kwargs for making a new argparse.ArgumentParser
+        """
+        from kwconf import argparse_ext
+        parserkw = dict(
+            prog=self._prog,
+            description=self._description,
+            epilog=self._epilog,
+            # formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            # formatter_class=argparse.RawDescriptionHelpFormatter,
+            formatter_class=argparse_ext.RawDescriptionDefaultsHelpFormatter,
+            # exit_on_error=False,
+        )
+        if hasattr(self, '__allow_abbrev__'):
+            parserkw['allow_abbrev'] = self.__allow_abbrev__
+        return parserkw
+
+    def port_to_dataconf(self, style: str = 'dataconf') -> str:
+        """
+        Helper that writes kwconf source code for this config.
+
+        TODO: In the future perhaps rename to something that indicates we can
+        write a code representation of this object in either config or data
+            config style?
+
+        CommandLine:
+            xdoctest -m kwconf.config Config.port_to_dataconf
+
+        Example:
+            >>> import kwconf as scfg
+            >>> self = scfg.Config.demo()
+            >>> print(self.port_to_dataconf())
+        """
+        entries = []
+        for key, value in self.__default__.items():
+            if not isinstance(value, Value):
+                value_kw = Value(value)._to_value_kw()
+            else:
+                value_kw = value._to_value_kw()
+            entries.append((key, value_kw))
+        description = self._description
+        name = self.__class__.__name__
+        text = self._write_code(entries, name, style, description)
+        return text
+
+    @classmethod
+    def _write_code(self,
+                    entries: Iterable[tuple[str, Dict[str, Any]]],
+                    name: str = 'MyConfig',
+                    style: str = 'dataconf',
+                    description: Optional[str] = None) -> str:
+
+        if style == 'dataconf':
+            indent = ' ' * 4
+        else:
+            indent = ' ' * 8
+
+        if style == 'orig':
+            recon_str = [
+                'import ubelt as ub',
+                'import kwconf as scfg',
+                '',
+                'class ' + name + '(scfg.Config):',
+                '    """',
+                ub.indent(description or ''),
+                '    """',
+                '    __default__ = {',
+            ]
+        elif style == 'dataconf':
+            recon_str = [
+                'import ubelt as ub',
+                'import kwconf as scfg',
+                '',
+                'class ' + name + '(scfg.Config):',
+                '    """',
+                ub.indent(description or ''),
+                '    """',
+            ]
+        else:
+            raise KeyError(style)
+
+        for (key, value_kw) in entries:
+            _value_kw = value_kw.copy()
+
+            default = _value_kw.pop('default')
+            value_args = [
+                repr(default),
+            ]
+            value_args.extend(['{}={}'.format(k, repr(v)) for k, v in _value_kw.items() if v is not None])
+            val_body = ', '.join(value_args)
+
+            if style == 'orig':
+                recon_str.append("{}'{}': scfg.Value({}),".format(indent, key, val_body))
+            elif style ==  'dataconf':
+                recon_str.append("{}{} = scfg.Value({})".format(indent, key, val_body))
+            else:
+                raise KeyError(style)
+
+        if style == 'orig':
+            recon_str.append('    }')
+        elif style ==  'dataconf':
+            ...
+        else:
+            raise KeyError(style)
+        text = '\n'.join(recon_str)
+        if 0:
+            try:
+                import black
+                text = black.format_str(
+                    text, mode=black.Mode(string_normalization=True)
+                )
+            except Exception:
+                pass
+        return text
+
+    @classmethod
+    def port_from_click(cls, click_main, name=None, style='dataconf') -> str:
+        """
+        Prints kwconf code that roughly implements some click CLI.
+
+        Args:
+            click_main (click.core.Command): command to port
+
+            name (str | None): the name of the new class, if None then
+               uses the name of the CLI command.
+
+            style (str): either dataconf or orig
+
+        Returns:
+            str : The code that roughly implements the config class.
+
+        CommandLine:
+            xdoctest -m kwconf.config Config.port_from_click
+
+        Example:
+            >>> # xdoctest: +REQUIRES(module:click)
+            >>> from kwconf.config import *  # NOQA
+            >>> import click
+            >>> import kwconf as scfg
+            >>> @click.command()
+            >>> @click.option('--dataset', required=True, type=click.Path(exists=True), help='input dataset')
+            >>> @click.option('--deployed', required=True, type=click.Path(exists=True), help='weights file')
+            >>> @click.option('--key1', default=123,  help='some key')
+            >>> @click.option('--key2', default='456', help='another key')
+            >>> def click_main(dataset, deployed, key1, key2):
+            >>>     ...
+            >>> text = scfg.Config.port_from_click(click_main)
+            >>> print(text)
+            import ubelt as ub
+            import kwconf as scfg
+            ...
+            class click_main(scfg.DataConfig):
+                ...
+                argparse CLI generated by kwconf ...
+                ...
+                dataset = scfg.Value(None, required=True, help='input dataset')
+                deployed = scfg.Value(None, required=True, help='weights file')
+                key1 = scfg.Value(123, help='some key')
+                key2 = scfg.Value(456, help='another key')
+        """
+        import click
+        ctx = click.Context(click.Command(''))
+        info_dict = click_main.to_info_dict(ctx)  # NOQA
+        default = {}
+        blocklist = {'help'}
+        for param in info_dict['params']:
+            if param['name'] in blocklist:
+                continue
+            default[param['name']] = Value(
+                param['default'],
+                required=param['required'],
+                isflag=param['is_flag'], help=param['help'])
+        if name is None:
+            name = info_dict['name'].replace('-', '_')
+        config_cls = define(default, name)
+        instance = config_cls(_dont_call_post_init=True)
+        return instance.port_to_dataconf(style=style)
+
+    @classmethod
+    def port_from_argparse(cls,
+                           parser: "argparse_mod.ArgumentParser",
+                           name: str = 'MyConfig',
+                           style: str = 'dataconf') -> str:
+        """
+        Generate the corresponding kwconf code from an existing argparse
+        instance.
+
+        Args:
+            parser (argparse.ArgumentParser):
+                existing argparse parser we want to port
+            name (str): the name of the config class
+            style (str): either 'orig' or 'dataconf'
+
+        Returns:
+            str :
+                code to create a kwconf object that should work similarly
+                to the existing argparse object.
+
+        Note:
+            The correctness of this function is not guaranteed.  This only
+            works perfectly in simple cases, but in complex cases it may not
+            produce 1-to-1 results, however it will provide a useful starting
+            point.
+
+        TODO:
+            - [X] Handle "store_true".
+            - [ ] Argument groups.
+            - [ ] Handle mutually exclusive groups
+
+        Example:
+            >>> import kwconf as scfg
+            >>> import argparse
+            >>> parser = argparse.ArgumentParser(description='my argparse')
+            >>> parser.add_argument('pos_arg1')
+            >>> parser.add_argument('pos_arg2', nargs='*')
+            >>> parser.add_argument('-t', '--true_dataset', '--test_dataset', help='path to the groundtruth dataset', required=True)
+            >>> parser.add_argument('-p', '--pred_dataset', help='path to the predicted dataset', required=True)
+            >>> parser.add_argument('--eval_dpath', help='path to dump results')
+            >>> parser.add_argument('--draw_curves', default='auto', help='flag to draw curves or not')
+            >>> parser.add_argument('--score_space', default='video', help='can score in image or video space')
+            >>> parser.add_argument('--workers', default='auto', help='number of parallel scoring workers')
+            >>> parser.add_argument('--draw_workers', default='auto', help='number of parallel drawing workers')
+            >>> group1 = parser.add_argument_group('mygroup1')
+            >>> group1.add_argument('--group1_opt1', action='store_true')
+            >>> group1.add_argument('--group1_opt2')
+            >>> group2 = parser.add_argument_group()
+            >>> group2.add_argument('--group2_opt1', action='store_true')
+            >>> group2.add_argument('--group2_opt2')
+            >>> mutex_group3 = parser.add_mutually_exclusive_group()
+            >>> mutex_group3.add_argument('--mgroup3_opt1')
+            >>> mutex_group3.add_argument('--mgroup3_opt2')
+            >>> text = scfg.Config.port_from_argparse(parser, name='PortedConfig', style='dataconf')
+            >>> print(text)
+            >>> # Make an instance of the ported class
+            >>> vals = {}
+            >>> exec(text, vals)
+            >>> cls = vals['PortedConfig']
+            >>> self = cls(**{'true_dataset': 1, 'pred_dataset': 1})
+            >>> recon = self.argparse()
+            >>> print('recon._actions = {}'.format(ub.urepr(recon._actions, nl=1)))
+        """
+        entries = cls._values_from_argparse(parser)
+        description = parser.description
+        text = cls._write_code(entries, name, style, description)
+        return text
+
+    @classmethod
+    def cls_from_argparse(cls, parser, name=None, description=None) -> type:
+        """
+        Create a full configuration class from an existing argparse parser.
+
+        Args:
+            parser (argparse.ArgumentParser):
+                The parser we will use to dynamically create a kwconf class
+
+            name (str): the name of the new class.
+                If unspecified, the name will be ``"Dynamic" + cls.__name__``
+
+            description (None | str):
+                if specified override the description from the parser.
+
+        Returns:
+            Config: a subclass of the Config or DataConfig class.
+
+        SeeAlso:
+            :func:`Config.port_from_argparse` - like this function, but returns
+                the text that could be executed to define the new class
+                statically.  In constrat this creates the clas dynamically.
+
+        CommandLine:
+            xdoctest -m kwconf.config Config.cls_from_argparse
+
+        Example:
+            >>> import kwconf as scfg
+            >>> import argparse
+            >>> parser = argparse.ArgumentParser(description='my argparse')
+            >>> parser.add_argument('pos_arg1')
+            >>> parser.add_argument('pos_arg2', nargs='*')
+            >>> parser.add_argument('-t', '--true_dataset', '--test_dataset', help='path to the groundtruth dataset', required=True)
+            >>> parser.add_argument('-p', '--pred_dataset', help='path to the predicted dataset', required=True)
+            >>> parser.add_argument('--eval_dpath', help='path to dump results')
+            >>> parser.add_argument('--draw_curves', default='auto', help='flag to draw curves or not')
+            >>> parser.add_argument('--score_space', default='video', help='can score in image or video space')
+            >>> parser.add_argument('--workers', default='auto', help='number of parallel scoring workers')
+            >>> parser.add_argument('--draw_workers', default='auto', help='number of parallel drawing workers')
+            >>> group1 = parser.add_argument_group('mygroup1')
+            >>> group1.add_argument('--group1_opt1', action='store_true')
+            >>> group1.add_argument('--group1_opt2')
+            >>> group2 = parser.add_argument_group()
+            >>> group2.add_argument('--group2_opt1', action='store_true')
+            >>> group2.add_argument('--group2_opt2')
+            >>> mutex_group3 = parser.add_mutually_exclusive_group()
+            >>> mutex_group3.add_argument('--mgroup3_opt1')
+            >>> mutex_group3.add_argument('--mgroup3_opt2')
+            >>> DynamicClass = scfg.DataConfig.cls_from_argparse(parser)
+            >>> print(f'DynamicClass.__default__ = {ub.urepr(DynamicClass.__default__, nl=1)}')
+            >>> self = DynamicClass()
+            >>> print(f'self = {ub.urepr(self, nl=1)}')
+            >>> # Check to see if ithis roundtrips nicelyprint(self.port_to_argparse())
+            >>> print(self.port_to_argparse())
+            >>> parser = self.argparse()
+        """
+
+        if name is None:
+            name = 'Dynamic' + cls.__name__
+
+        # Extract the appropriate values from the parser
+        values = cls._values_from_argparse(parser, for_text=False)
+
+        bases = (cls,)  # Base classes, object is the default base class
+        attributes = {
+            '__doc__': description or parser.description,
+            '__default__': dict(values),
+        }
+
+        # Dynamically create the class (
+        # note, cls.__class__ should be MetaConfig)
+        DynamicClass = cast(type, cls.__class__(name, bases, attributes))  # type: ignore[call-overload]
+        return DynamicClass
+
+    @classmethod
+    def _values_from_argparse(cls, parser, for_text=True) -> list:
+        """
+        Port argparse options to a list of key / values.
+        """
+        # This logic should be able to be used statically or dynamically
+        # to transition argparse to ScriptConfig code.
+        pos_counter = it.count(1)
+
+        # Determine if the parser has groups / mutex groups. Build mappings so
+        # we can lookup which action is associated with which group later.
+        group_counter = it.count(1)
+        mgroup_counter = it.count(1)
+        annon_groupid_to_key = {}
+        annon_mgroupid_to_key = {}
+        default_groups = {'positional arguments', 'options', 'required'}
+        actionid_to_groupkey = {}
+        actionid_to_mgroupkey = {}
+        # Build group lookups table
+        for group in parser._action_groups:
+            if group.title not in default_groups:
+                if group.title is not None:
+                    group_key = group.title
+                else:
+                    group_id = id(group)
+                    if group_id not in annon_groupid_to_key:
+                        annon_groupid_to_key[group_id] = next(group_counter)
+                    group_key = annon_groupid_to_key[group_id]
+                for action in group._group_actions:
+                    action_id = id(action)
+                    actionid_to_groupkey[action_id] = group_key
+        # Build mutex group lookups table
+        for mutex_group in parser._mutually_exclusive_groups:
+            mgroup_id = id(mutex_group)
+            if mgroup_id not in annon_mgroupid_to_key:
+                annon_mgroupid_to_key[mgroup_id] = next(mgroup_counter)
+            mgroup_key = annon_mgroupid_to_key[mgroup_id]
+            for action in mutex_group._group_actions:
+                action_id = id(action)
+                actionid_to_mgroupkey[action_id] = mgroup_key
+
+        # Iterate over all of the actions and build the appropriate value to be
+        # placed in the kwconf class.
+        entries = []
+        for action in parser._actions:
+            key = action.dest
+            if key == 'help':
+                # kwconf takes care of help for us
+                continue
+            value = Value._from_action(
+                action, actionid_to_groupkey, actionid_to_mgroupkey, pos_counter)
+            if for_text:
+                # Use for the text reconstruction of the argparser, this is
+                # very hacky.
+                value_kw = value._to_value_kw()
+                entries.append((key, value_kw))
+            else:
+                entries.append((key, value))
+        return entries
+
+    # Backwards compatibility, deprecate and remove
+    port_argparse = port_from_argparse
+
+    def port_to_argparse(self,
+                         fuzzy_hyphens: bool = False,
+                         flag_value_mode: bool = False) -> str:
+        """
+        Attempt to make code for a nearly-equivalent argparse object.
+
+        This code only handles basic cases. Some of the kwconf magic is
+        dropped by default so we dont need to rely on custom actions.
+
+        By default this emits plain argparse-compatible code. Opt in to closer
+        behavior with:
+
+        * ``fuzzy_hyphens=True`` to emit underscore / hyphen long-option
+          variants (e.g., ``--my_opt`` and ``--my-opt``).
+        * ``flag_value_mode=True`` to preserve kwconf boolean / counter
+          flag actions, which support both ``--flag`` and ``--flag=value``.
+
+        The idea is that sometimes we can't depend on kwconf, so it would
+        be nice to be able to translate an existing kwconf class to the
+        nearly equivalent argparse code.
+
+        Args:
+            fuzzy_hyphens (bool):
+                If True, emit both underscore and hyphen long-option variants
+                for keys / aliases that contain underscores.
+
+            flag_value_mode (bool):
+                If True, preserve kwconf-like flexible flag parsing in
+                generated code using local argparse actions (supports
+                ``--flag`` and ``--flag=value`` forms for boolean / counter
+                flags).
+
+        SeeAlso:
+            :meth:`Config.argparse` - creates a real argparse object
+
+        Returns:
+            str: code to construct a similar argparse object
+
+        CommandLine:
+            xdoctest -m kwconf.config Config.port_to_argparse
+
+        Example:
+            >>> import kwconf as scfg
+            >>> class DemoCLI(scfg.DataConfig):
+            >>>     my_opt = scfg.Value('v1', help='demo option')
+            >>>     flag = scfg.Value(False, isflag=True, help='demo flag')
+            >>> text = DemoCLI().port_to_argparse(
+            >>>     fuzzy_hyphens=True, flag_value_mode=True)
+            >>> print(text)
+            >>> assert 'parser = argparse.ArgumentParser(' in text
+            >>> assert '--my_opt' in text and '--my-opt' in text
+            >>> assert '_PortedBooleanFlagOrKeyValAction' in text
+            >>> assert 'from kwconf' not in text
+
+        Example:
+            >>> import kwconf as scfg
+            >>> class SimpleCLI(scfg.DataConfig):
+            >>>     data = scfg.Value(None, help='input data', position=1)
+            >>> self = SimpleCLI()
+            >>> text = self.port_to_argparse()
+            >>> print(text)
+            >>> assert "parser.add_argument('data'" in text
+            >>> assert "nargs='?'" in text
+            >>> assert "default=argparse.SUPPRESS" in text
+            >>> # Test that the generated code is executable
+            >>> ns = {}
+            >>> exec(text, ns, ns)
+            >>> parser = ns['parser']
+            >>> args1 = parser.parse_args(['foobar'])
+            >>> assert args1.data == 'foobar'
+            >>> args2 = parser.parse_args(['--data=blag'])
+            >>> assert args2.data == 'blag'
+            >>> args3 = parser.parse_args(['foo', '--data=bar'])
+            >>> assert args3.data == 'bar'
+            >>> # Demonstrate roundtrip behavior for representative argv cases
+            >>> orig = self.argparse(special_options=False)
+            >>> for argv in [['foobar'], ['--data=blag'], ['foo', '--data=bar']]:
+            >>>     got_orig = vars(orig.parse_args(argv))
+            >>>     got_port = vars(parser.parse_args(argv))
+            >>>     assert got_orig == got_port
+        """
+        parserkw = self._parserkw()
+        to_pop = {k for k, v in parserkw.items() if v is None}
+        parserkw = ub.udict(parserkw) - to_pop  # type: ignore
+        parserkw.pop('formatter_class', None)
+
+        constructor_body = ub.indent(ub.urepr(parserkw, explicit=True, nobr=1))  # type: ignore
+
+        lines = []
+        lines.append(ub.codeblock(
+            '''
+            import argparse
+            parser = argparse.ArgumentParser(
+            {constructor_body}
+                formatter_class=argparse.RawDescriptionHelpFormatter,
+            )
+            ''').format(
+                constructor_body=constructor_body,
+            ))
+
+        from kwconf import value as value_mod
+        need_ported_bool_action = False
+        need_ported_counter_action = False
+        for key, _value in self._data.items():
+            if isinstance(_value, value_mod.Value):
+                value = _value.value
+            else:
+                value = _value
+                _value = self._default[key]
+                if not isinstance(_value, value_mod.Value):
+                    # hack
+                    _value = value_mod.Value(_value)
+
+            invocations = value_mod._value_add_argument_kw(
+                value, _value, self, key, fuzzy_hyphens=fuzzy_hyphens)
+            has_key_value_variant = 'key_value' in invocations
+            for arg_type, t in invocations.items():
+                meth, args, kwargs = t
+                if arg_type == 'positional' and has_key_value_variant:
+                    # kwconf positional arguments can usually be supplied
+                    # either positionally or via --key=value. Make the
+                    # generated positional optional to allow key/value-only use.
+                    if kwargs.get('nargs', None) is None:
+                        kwargs['nargs'] = '?'
+                    # Avoid overriding values set by the --key form when the
+                    # positional argument is omitted.
+                    kwargs['default'] = value_mod.CodeRepr('argparse.SUPPRESS')
+                action = kwargs.get('action')
+                if not isinstance(action, str):
+                    action_name = getattr(action, '__name__', '')
+                    if flag_value_mode and action_name == 'BooleanFlagOrKeyValAction':
+                        kwargs['action'] = value_mod.CodeRepr(
+                            '_PortedBooleanFlagOrKeyValAction')
+                        need_ported_bool_action = True
+                    elif flag_value_mode and action_name == 'CounterOrKeyValAction':
+                        kwargs['action'] = value_mod.CodeRepr(
+                            '_PortedCounterOrKeyValAction')
+                        need_ported_counter_action = True
+                        need_ported_bool_action = True
+                    else:
+                        kwargs.pop('action', None)
+                if kwargs.get('type', None) is not None:
+                    kwargs['type'] = value_mod.CodeRepr(kwargs['type'].__name__)
+                to_pop = {k for k, v in kwargs.items() if v is None}
+                kwargs = ub.udict(kwargs) - to_pop  # type: ignore
+                args_body = ub.urepr(args, explicit=1, nobr=1, trailsep=0).strip().strip(',')  # type: ignore
+                kwargs_body = ub.urepr(kwargs, explicit=1, nobr=1, trailsep=0, nl=0).strip(',')  # type: ignore
+                if args_body and kwargs_body:
+                    args_body += ', '
+                lines.append(f'parser.{meth}({args_body}{kwargs_body})')
+
+        ported_action_blocks = []
+        if need_ported_bool_action:
+            ported_action_blocks.append(ub.codeblock(
+                '''
+                def _ported_smartcast(value):
+                    if not isinstance(value, str):
+                        return value
+                    lower = value.lower()
+                    if lower == 'true':
+                        return True
+                    if lower == 'false':
+                        return False
+                    try:
+                        return int(value)
+                    except Exception:
+                        pass
+                    try:
+                        return float(value)
+                    except Exception:
+                        pass
+                    return value
+
+
+                class _PortedBooleanFlagOrKeyValAction(argparse.Action):
+                    def __init__(self, option_strings, dest, default=None, required=False, help=None, type=None):
+                        _option_strings = []
+                        for option_string in option_strings:
+                            _option_strings.append(option_string)
+                            if option_string.startswith('--'):
+                                _option_strings.append('--no-' + option_string[2:])
+                        kwargs = dict(
+                            option_strings=_option_strings,
+                            dest=dest,
+                            default=default,
+                            type=type,
+                            choices=None,
+                            required=required,
+                            help=help,
+                            metavar=None,
+                            nargs='?'
+                        )
+                        super().__init__(**kwargs)
+
+                    def __call__(self, parser, namespace, values, option_string=None):
+                        if option_string is None:
+                            raise ValueError('Boolean flag action requires an option string')
+                        key_is_negative = option_string.startswith('--no-')
+                        if values is None:
+                            value = not key_is_negative
+                        else:
+                            value = values if self.type is not None else _ported_smartcast(values)
+                            if key_is_negative:
+                                value = not value
+                        setattr(namespace, self.dest, value)
+                '''))
+
+        if need_ported_counter_action:
+            ported_action_blocks.append(ub.codeblock(
+                '''
+                class _PortedCounterOrKeyValAction(_PortedBooleanFlagOrKeyValAction):
+                    def __call__(self, parser, namespace, values, option_string=None):
+                        if option_string is None:
+                            raise ValueError('Counter flag action requires an option string')
+                        key_is_negative = option_string.startswith('--no-')
+                        key_default = not key_is_negative
+                        current = getattr(namespace, self.dest, self.default)
+                        if current is None:
+                            current = 0
+
+                        if values is None:
+                            value = current + key_default
+                        else:
+                            value = values if self.type is not None else _ported_smartcast(values)
+                            if key_is_negative:
+                                value = not value
+                        setattr(namespace, self.dest, value)
+                '''))
+        if ported_action_blocks:
+            lines[1:1] = ported_action_blocks
+
+        text = '\n'.join(lines)
+        return text
+
+    # @classmethod
+    # def _construct_config_text(cls):
+    #     ...
+
+    @property
+    def namespace(self) -> argparse_mod.Namespace:
+        """
+        Access a namespace like object for compatibility with argparse
+
+        Returns:
+            argparse.Namespace
+        """
+        return argparse_mod.Namespace(**dict(self))
+
+    def to_omegaconf(self) -> Any:
+        """
+        Creates an omegaconfig version of this.
+
+        Returns:
+            omegaconf.OmegaConf:
+
+        Example:
+            >>> # xdoctest: +REQUIRES(module:omegaconf)
+            >>> import kwconf
+            >>> self = kwconf.Config.demo()
+            >>> oconf = self.to_omegaconf()
+        """
+        from omegaconf import OmegaConf
+        oconf = OmegaConf.create(self.to_dict())
+        return oconf
+
+    def argparse(self,
+                 parser: Optional[argparse_mod.ArgumentParser] = None,
+                 special_options: bool = False,
+                 allow_subconfig_overrides: bool = False) -> argparse_mod.ArgumentParser:
+        """
+        construct or update an argparse.ArgumentParser CLI parser
+
+        Args:
+            parser (None | argparse.ArgumentParser): if specified this
+                parser is updated with options from this config.
+
+            special_options (bool):
+                adds special kwconf options, namely: --config, --dumps,
+                and --dump. Defaults to False.
+
+            allow_subconfig_overrides (bool):
+                If True, allow SubConfig selector overrides. SubConfig
+                selection requires multipass parsing; use ``cli`` instead.
+
+        Returns:
+            argparse.ArgumentParser : a new or updated argument parser
+
+        CommandLine:
+            xdoctest -m kwconf.config Config.argparse:0
+            xdoctest -m kwconf.config Config.argparse:1
+
+        TODO:
+            A good CLI spec for lists might be
+
+            # In the case where ``key`` ends with and ``=``, assume the list is
+            # given as a comma separated string with optional square brackets at
+            # each end.
+
+            --key=[f]
+
+            # In the case where ``key`` does not end with equals and we know
+            # the value is supposd to be a list, then we consume arguments
+            # until we hit the next one that starts with '--' (which means
+            # that list items cannot start with -- but they can contains
+            # commas)
+
+        FIXME:
+
+            * In the case where we have an nargs='+' action, and we specify
+              the option with an `=`, and then we give position args after it
+              there is no way to modify behavior of the action to just look at
+              the data in the string without modifying the ArgumentParser
+              itself. The action object has no control over it. For example
+              `--foo=bar baz biz` will parse as `[baz, biz]` which is really
+              not what we want. We may be able to overload ArgumentParser to
+              fix this.
+
+        Example:
+            >>> # You can now make instances of this class
+            >>> import kwconf
+            >>> self = kwconf.Config.demo()
+            >>> parser = self.argparse()
+            >>> parser.print_help()
+            >>> # xdoctest: +REQUIRES(PY3)
+            >>> # Python2 argparse does a hard sys.exit instead of raise
+            >>> ns, extra = parser.parse_known_args()
+
+        Example:
+            >>> # You can now make instances of this class
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __description__ = 'my CLI description'
+            >>>     __default__ = {
+            >>>         'path1':  scfg.Value(None, position=1, alias='src'),
+            >>>         'path2':  scfg.Value(None, position=2, alias='dst'),
+            >>>         'dry':  scfg.Value(False, isflag=True),
+            >>>         'approx':  scfg.Value(False, isflag=False, alias=['a1', 'a2']),
+            >>>     }
+            >>> self = MyConfig()
+            >>> special_options = True
+            >>> parser = None
+            >>> parser = self.argparse(special_options=special_options)
+            >>> parser.print_help()
+            >>> self._read_argv(argv=['objection', '42', '--path1=overruled!'])
+            >>> print('self = {!r}'.format(self))
+
+        Example:
+            >>> # Test required option
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __description__ = 'my CLI description'
+            >>>     __default__ = {
+            >>>         'path1':  scfg.Value(None, position=1, alias='src'),
+            >>>         'path2':  scfg.Value(None, position=2, alias='dst'),
+            >>>         'dry':  scfg.Value(False, isflag=True),
+            >>>         'important':  scfg.Value(False, required=True),
+            >>>         'approx':  scfg.Value(False, isflag=False, alias=['a1', 'a2']),
+            >>>     }
+            >>> self = MyConfig(data={'important': 1})
+            >>> special_options = True
+            >>> parser = None
+            >>> parser = self.argparse(special_options=special_options)
+            >>> parser.print_help()
+            >>> self._read_argv(argv=['objection', '42', '--path1=overruled!', '--important=1'])
+            >>> print('self = {!r}'.format(self))
+
+        Ignore:
+            >>> self._read_argv(argv=['hi','--path1=foobar'])
+            >>> self._read_argv(argv=['hi', 'hello', '--path1=foobar'])
+            >>> self._read_argv(argv=['hi', 'hello', '--path1=foobar', '--help'])
+            >>> self._read_argv(argv=['--path1=foobar', '--path1=baz'])
+            >>> print('self = {!r}'.format(self))
+
+        Example:
+            >>> # Is it possible to the CLI as a key/val pair or an exist bool flag?
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __default__ = {
+            >>>         'path1':  scfg.Value(None, position=1, alias='src'),
+            >>>         'path2':  scfg.Value(None, position=2, alias='dst'),
+            >>>         'flag':  scfg.Value(None, isflag=True),
+            >>>     }
+            >>> self = MyConfig()
+            >>> special_options = True
+            >>> parser = None
+            >>> parser = self.argparse(special_options=special_options)
+            >>> parser.print_help()
+            >>> print(self._read_argv(argv=[], strict=True))
+            >>> # Test that we can specify the flag as a pure flag
+            >>> print(self._read_argv(argv=['--flag']))
+            >>> print(self._read_argv(argv=['--no-flag']))
+            >>> # Test that we can specify the flag with a key/val pair
+            >>> print(self._read_argv(argv=['--flag', 'TRUE']))
+            >>> print(self._read_argv(argv=['--flag=1']))
+            >>> print(self._read_argv(argv=['--flag=0']))
+            >>> # Test flag and positional
+            >>> self = MyConfig()
+            >>> print(self._read_argv(argv=['--flag', 'TRUE', 'SUFFIX']))
+            >>> self = MyConfig()
+            >>> print(self._read_argv(argv=['PREFIX', '--flag', 'TRUE']))
+            >>> self = MyConfig()
+            >>> print(self._read_argv(argv=['--path2=PREFIX', '--flag', 'TRUE']))
+
+        Example:
+            >>> # Test groups
+            >>> import kwconf as scfg
+            >>> class MyConfig(scfg.Config):
+            >>>     __description__ = 'my CLI description'
+            >>>     __default__ = {
+            >>>         'arg1':  scfg.Value(None, group='a'),
+            >>>         'arg2':  scfg.Value(None, group='a', alias='a2'),
+            >>>         'arg3':  scfg.Value(None, group='b'),
+            >>>         'arg4':  scfg.Value(None, group='b', alias='a4'),
+            >>>         'arg5':  scfg.Value(None, mutex_group='b', isflag=True),
+            >>>         'arg6':  scfg.Value(None, mutex_group='b', alias='a6'),
+            >>>     }
+            >>> self = MyConfig()
+            >>> parser = self.argparse()
+            >>> parser.print_help()
+            >>> print(self.port_argparse(parser))
+            >>> import pytest
+            >>> import argparse
+            >>> with pytest.raises(SystemExit):
+            >>>     self._read_argv(argv=['--arg6', '42', '--arg5', '32'])
+            >>> # self._read_argv(argv=['--arg6', '42', '--arg5']) # Strange, this does not cause an mutex error
+            >>> self._read_argv(argv=['--arg6', '42'])
+            >>> self._read_argv(argv=['--arg5'])
+            >>> self._read_argv(argv=[])
+        """
+        from kwconf import argparse_ext
+        if getattr(self, '_has_subconfigs', False):
+            if allow_subconfig_overrides:
+                raise RuntimeError(
+                    'SubConfig selection overrides require multipass parsing; use cli()'
+                )
+            from kwconf import subconfig as _subcfg_mod
+            flat_helper = _subcfg_mod.flat_config_from_tree(self, include_class_options=False)
+            parser = flat_helper.argparse(parser=parser, special_options=special_options)
+            _subcfg_mod.add_forbidden_selector_args(parser, self)
+            return parser
+
+        if parser is None:
+            parserkw = self._parserkw()
+            # parser = argparse.ArgumentParser(**parserkw)
+            parser = argparse_ext.ExtendedArgumentParser(**parserkw)
+
+        # Use custom action used to mark which values were explicitly set on
+        # the commandline
+        parser._explicitly_given = set()  # type: ignore
+
+        _positions = {k: v.position for k, v in self._default.items()
+                      if v.position is not None}
+        if _positions:
+            if ub.find_duplicates(_positions.values()):
+                # TODO: make this a warning in 3.7+ and ensure there is a good
+                # API for just indicating that a value is supposed to be
+                # positional, and using its order in the dictionary as that
+                # position. Need to account for inheritance though.
+                raise Exception('two values have the same position')
+            _keyorder = ub.oset(ub.argsort(cast(Any, _positions)))
+            _keyorder |= (ub.oset(self._default) - _keyorder)
+        else:
+            _keyorder = ub.oset(self._default.keys())
+
+        FUZZY_HYPHENS = getattr(self, '__fuzzy_hyphens__', 1)
+
+        # Need to clean this up, metadata probably isn't necessary.
+        for key, value in self._data.items():
+            # Use the metadata in the Value class to enhance argparse
+            _value = self._default[key]
+            from kwconf import value as value_mod
+            value_mod._value_add_argument_to_parser(
+                value, _value, self, parser, key, fuzzy_hyphens=FUZZY_HYPHENS)
+
+        if special_options:
+            special_group = parser.add_argument_group(
+                'kwconf options')
+            special_group.add_argument('--config', default=None, help=ub.codeblock(
+                '''
+                special kwconf option that accepts the path to a on-disk
+                configuration file, and loads that into this {!r} object.
+                ''').format(self.__class__.__name__))
+
+            special_group.add_argument('--dump', default=None, help=ub.codeblock(
+                '''
+                If specified, dump this config to disk.
+                ''').format(self.__class__.__name__))
+
+            special_group.add_argument(
+                '--dumps', action=argparse_ext.BooleanFlagOrKeyValAction,
+                help=ub.codeblock(
+                    '''
+                    If specified, dump this config stdout
+                    ''').format(self.__class__.__name__))
+
+        return parser
+
+
+LegacyConfig = Config
+
+
+__notes__ = """
+export _ARC_DEBUG=1
+pip install argcomplete
+activate-global-python-argcomplete --dest=$HOME/.bash_completion.d --user
+eval "$(register-python-argcomplete xdev)"
+complete -r xdev
+"""
+
+_ubelt_repr_extension._register_ubelt_repr_extensions()
