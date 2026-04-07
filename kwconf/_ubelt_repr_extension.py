@@ -10,7 +10,7 @@ def _register_ubelt_repr_extensions() -> None:
 
     def _register_kwconf_extensions():
         import kwconf
-        @_REPR_EXTENSIONS.register(kwconf.Config)
+        @_REPR_EXTENSIONS.register(kwconf.DataConfig)
         def format_kwconf(data, **kwargs):
             name = data.__class__.__name__
             body = ub.urepr(data.to_dict(), **kwargs)

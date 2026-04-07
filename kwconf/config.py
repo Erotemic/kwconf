@@ -879,11 +879,11 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> data = {'src': 'hi'}
             >>> self = MyConfig.cli(data=data, argv=False)
             >>> assert self['src'] == 'hi'
-            >>> self = MyConfig.cli(default=data, argv=True)
+            >>> self = MyConfig.cli(default=data, argv=[])
             >>> assert self['src'] == 'hi'
             >>> # In 0.5.8 and previous src fails to populate!
             >>> # This is because argv=True overwrites data with defaults
-            >>> self = MyConfig.cli(data=data, argv=True)
+            >>> self = MyConfig.cli(data=data, argv=False)
             >>> assert self['src'] == 'hi', f'Got: {self}'
 
         Example:
@@ -1635,7 +1635,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> @click.option('--key2', default='456', help='another key')
             >>> def click_main(dataset, deployed, key1, key2):
             >>>     ...
-            >>> text = kwconf.Config.port_from_click(click_main)
+            >>> text = kwconf.DataConfig.port_from_click(click_main)
             >>> print(text)
             import ubelt as ub
             import kwconf

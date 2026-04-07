@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-xdoctest kwconf --style=google all "$@"
+python -m xdoctest -m kwconf --style=google all "$@"

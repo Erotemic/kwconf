@@ -21,7 +21,7 @@ def test_post_init_not_called_twice():
             self._post_init_count  = 0
         self._post_init_count += 1
 
-    class MyConfig(kwconf.Config):
+    class MyConfig(kwconf.DataConfig):
         __default__ = default
         __post_init__ = postinit
 

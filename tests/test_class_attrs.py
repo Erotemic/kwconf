@@ -5,17 +5,17 @@ Test that class attributes are correctly initialized.
 
 def test_class_inst_default_attr():
     """
-    kwconf.Config should now support the same declarative class-variable style
+    kwconf.DataConfig should now support the same declarative class-variable style
     as DataConfig.
     """
     import kwconf
 
-    class Config1(kwconf.Config):
+    class Config1(kwconf.DataConfig):
         option1: tuple = kwconf.Value((1, 2, 3), tuple, alias='a')
         option2: str = 'bar'
         option3 = None
 
-    class Config2(kwconf.Config):
+    class Config2(kwconf.DataConfig):
         __default__ = {
             'option1': kwconf.Value((1, 2, 3), tuple, alias='a'),
             'option2': 'bar',
@@ -55,7 +55,7 @@ def test_default_spelling_warns_but_works():
     import pytest
 
     with pytest.warns(Warning):
-        class LegacyConfig(kwconf.Config):
+        class LegacyConfig(kwconf.DataConfig):
             default = {
                 'option1': 1,
                 'option2': 2,
@@ -85,21 +85,21 @@ def test_class_inst_normalize_attr():
 
     with pytest.warns(Warning):
         @config_classes.append
-        class Config1A(kwconf.Config):
+        class Config1A(kwconf.DataConfig):
             __default__ = common_default
             def normalize(self):
                 test_state[self.__class__.__name__ + '.normalize'] += 1
                 self['opt1'] = 'normalized'
 
     @config_classes.append
-    class Config1B(kwconf.Config):
+    class Config1B(kwconf.DataConfig):
         __default__ = common_default
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
 
     @config_classes.append
-    class Config1C(kwconf.Config):
+    class Config1C(kwconf.DataConfig):
         __default__ = common_default
 
         def __post_init__(self):

@@ -16,7 +16,7 @@ def port_kwconf_from_argparse():
     parser.add_argument('--flag3', action='count', help='specified looooooooooooooooooooooonggg help ')
     parser.add_argument('--flag4', action='store_true', help='specified help')
 
-    text = kwconf.Config.port_argparse(parser)
+    text = kwconf.DataConfig.port_argparse(parser)
     print(text)
 
     tq = '"""'
@@ -26,7 +26,7 @@ def port_kwconf_from_argparse():
         import ubelt as ub
         import kwconf
 
-        class MyConfig(kwconf.Config):
+        class MyConfig(kwconf.DataConfig):
             """ + tq + """
             $
             """ + tq + """
@@ -57,7 +57,7 @@ def port_argparse_from_kwconf():
     xdoctest ~/code/kwconf/tests/test_argparse_roundtrip.py port_argparse_from_kwconf
     """
 
-    class MyConfig(kwconf.Config):
+    class MyConfig(kwconf.DataConfig):
         param1 = kwconf.Value(None, type=str, help='help text')
 
     argparse_text = MyConfig().port_to_argparse()
@@ -81,7 +81,7 @@ def port_argparse_from_kwconf_with_unwrapped_values():
     xdoctest ~/code/kwconf/tests/test_argparse_roundtrip.py port_argparse_from_kwconf_with_unwrapped_values
     """
 
-    class MyConfig(kwconf.Config):
+    class MyConfig(kwconf.DataConfig):
         option1 = kwconf.Value('default1', help='option1 help')
         option2 = kwconf.Value('default2', help='option2 help')
         option3 = kwconf.Value('default3', help='option3 help')
@@ -108,7 +108,7 @@ def port_argparse_from_kwconf_with_unwrapped_values():
 
 
 def test_port_argparse_with_optin_fancy_features():
-    class MyConfig(kwconf.Config):
+    class MyConfig(kwconf.DataConfig):
         my_flag = kwconf.Value(False, isflag=True)
         my_counter = kwconf.Value(0, isflag='counter')
         my_option = kwconf.Value('default')

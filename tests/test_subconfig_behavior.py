@@ -114,10 +114,10 @@ def test_reserved_class_name_error():
 
 
 def test_dotted_access_for_config_and_dataconfig():
-    class Inner(kwconf.Config):
+    class Inner(kwconf.DataConfig):
         __default__ = {'leaf': 1}
 
-    class Outer(kwconf.Config):
+    class Outer(kwconf.DataConfig):
         __default__ = {'inner': Inner()}
 
     cfg = Outer()
@@ -144,7 +144,7 @@ def test_dump_and_load_roundtrip(tmp_path):
     class ChoiceB(kwconf.DataConfig):
         x = 2
 
-    class Outer(kwconf.Config):
+    class Outer(kwconf.DataConfig):
         __default__ = {
             'inner': kwconf.SubConfig(ChoiceA, choices={'a': ChoiceA, 'b': ChoiceB}),
             'root': 3,
@@ -181,10 +181,10 @@ def test_subconfig_class_in_dict():
 
 
 def test_subconfig_stacklevel_localns_resolution():
-    class LocalOpt(kwconf.Config):
+    class LocalOpt(kwconf.DataConfig):
         __default__ = {'lr': 0.2}
 
-    class TrainLocal(kwconf.Config):
+    class TrainLocal(kwconf.DataConfig):
         __default__ = {
             'optim': kwconf.SubConfig(AdamConfig, choices={'adam': AdamConfig}),
         }
@@ -213,7 +213,7 @@ def test_subconfig_stacklevel_localns_resolution():
 
 
 def test_config_attribute_lookup_matches_typed_style():
-    class SimpleConfig(kwconf.Config):
+    class SimpleConfig(kwconf.DataConfig):
         value: int = 3
 
     cfg = SimpleConfig()
@@ -224,10 +224,10 @@ def test_config_attribute_lookup_matches_typed_style():
 
 def test_subconfig_nested_class_scope_resolution():
     class Container:
-        class LocalOpt(kwconf.Config):
+        class LocalOpt(kwconf.DataConfig):
             __default__ = {'lr': 0.3}
 
-    class ContainerTrain(kwconf.Config):
+    class ContainerTrain(kwconf.DataConfig):
         __default__ = {
             'optim': kwconf.SubConfig(
                 Container.LocalOpt,
@@ -245,10 +245,10 @@ def test_subconfig_nested_class_scope_resolution():
 
 def test_subconfig_local_scope_resolution_in_function():
     def build_cfg():
-        class LocalOpt(kwconf.Config):
+        class LocalOpt(kwconf.DataConfig):
             __default__ = {'lr': 0.4}
 
-        class TrainLocal(kwconf.Config):
+        class TrainLocal(kwconf.DataConfig):
             __default__ = {
                 'optim': kwconf.SubConfig(
                     LocalOpt,
@@ -268,13 +268,13 @@ def test_subconfig_local_scope_resolution_in_function():
 
 
 def test_value_wrapped_config_upgrades_to_subconfig():
-    class InnerConfig(kwconf.Config):
+    class InnerConfig(kwconf.DataConfig):
         __default__ = {'x': 1}
 
     class InnerDataConfig(kwconf.DataConfig):
         x = 2
 
-    class OuterConfig(kwconf.Config):
+    class OuterConfig(kwconf.DataConfig):
         __default__ = {
             'inner_cfg': kwconf.Value(InnerConfig()),
             'inner_dc': kwconf.Value(InnerDataConfig()),
@@ -361,10 +361,10 @@ def test_subconfig_config_string_cases():
 
 
 def test_subconfig_class_identifier_module_path():
-    class Inner(kwconf.Config):
+    class Inner(kwconf.DataConfig):
         __default__ = {'x': 1}
 
-    class Outer(kwconf.Config):
+    class Outer(kwconf.DataConfig):
         __default__ = {'inner': kwconf.SubConfig(Inner)}
 
     cfg = Outer()

@@ -160,7 +160,7 @@ class MetaModalCLI(type):
 
 class ModalCLI(metaclass=MetaModalCLI):
     """
-    Contains multiple kwconf.Config items with corresponding `main`
+    Contains multiple kwconf.DataConfig items with corresponding `main`
     functions.
 
     CommandLine:
@@ -172,7 +172,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> self = ModalCLI(description='A modal CLI')
         >>> #
         >>> @self.register
-        >>> class Command1Config(kwconf.Config):
+        >>> class Command1Config(kwconf.DataConfig):
         >>>     __command__ = 'command1'
         >>>     __default__ = {
         >>>         'foo': 'spam'
@@ -439,7 +439,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         Add a sub-CLI to this modal CLI
 
         Args:
-            cli_cls (kwconf.Config | None):
+            cli_cls (kwconf.DataConfig | None):
                 A CLI-aware config object to register as a sub CLI.
                 If None, then this is called as a wrapped closure
 

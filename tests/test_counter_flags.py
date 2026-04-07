@@ -69,7 +69,7 @@ def port_argparse_counter_to_kwconf():
     parser.add_argument('--flag4', action='store_true', help='specified help')
 
     import kwconf
-    text = kwconf.Config.port_argparse(parser)
+    text = kwconf.DataConfig.port_argparse(parser)
     print(text)
     import ubelt as ub
 

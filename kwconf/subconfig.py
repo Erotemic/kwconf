@@ -124,9 +124,9 @@ def add_forbidden_selector_args(parser, cfg):
     Example:
         >>> import argparse
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> parser = argparse.ArgumentParser()
         >>> add_forbidden_selector_args(parser, Outer())
@@ -158,7 +158,7 @@ class SubConfig(Value):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
         >>> meta = SubConfig(Inner)
         >>> inst = meta.instantiate()
@@ -207,14 +207,14 @@ def wrap_subconfig_defaults(cfg, _dont_call_post_init=False):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': Inner()}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> assert cfg._has_subconfigs
-        >>> class OuterValue(kwconf.Config):
+        >>> class OuterValue(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.Value(Inner())}
         >>> cfg = OuterValue(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -256,9 +256,9 @@ def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> cfg._data['inner'] = None
@@ -424,9 +424,9 @@ def _path_is_subconfig(cfg, parts):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -460,11 +460,11 @@ def extract_selector_overrides(cfg, argv, allow_import=True, localns=None, stack
 
     Example:
         >>> import kwconf
-        >>> class Adam(kwconf.Config):
+        >>> class Adam(kwconf.DataConfig):
         ...     __default__ = {'lr': 1e-3}
-        >>> class Sgd(kwconf.Config):
+        >>> class Sgd(kwconf.DataConfig):
         ...     __default__ = {'momentum': 0.9}
-        >>> class Train(kwconf.Config):
+        >>> class Train(kwconf.DataConfig):
         ...     __default__ = {'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
         >>> cfg = Train(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -531,9 +531,9 @@ def _ensure_parent_node(cfg, parts):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -569,7 +569,7 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
         >>> meta = SubConfig(Inner, choices={'inner': Inner})
         >>> assert _resolve_class_spec(meta, 'inner', True) is Inner
@@ -608,11 +608,11 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
 
     Example:
         >>> import kwconf
-        >>> class Adam(kwconf.Config):
+        >>> class Adam(kwconf.DataConfig):
         ...     __default__ = {'lr': 1e-3}
-        >>> class Sgd(kwconf.Config):
+        >>> class Sgd(kwconf.DataConfig):
         ...     __default__ = {'momentum': 0.9}
-        >>> class Train(kwconf.Config):
+        >>> class Train(kwconf.DataConfig):
         ...     __default__ = {'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
         >>> cfg = Train(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -656,9 +656,9 @@ def apply_dot_updates(cfg, updates, *, allow_import=True, localns=None, stacklev
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -722,9 +722,9 @@ def has_selector_overrides(cfg, updates):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -753,9 +753,9 @@ def flatten_defaults(cfg, prefix=(), include_class_options=False):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -790,9 +790,9 @@ def flat_config_from_tree(cfg, include_class_options=False):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -818,9 +818,9 @@ def expand_multipass_parser(cfg, parser, argv=None, special_options=True,
     Example:
         >>> import argparse
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -892,9 +892,9 @@ def finalize_post_init(cfg):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -916,7 +916,7 @@ def _class_identifier(cls):
 
     Example:
         >>> import kwconf
-        >>> assert _class_identifier(kwconf.Config).endswith('.Config')
+        >>> assert _class_identifier(kwconf.DataConfig).endswith('.Config')
     """
     return f'{cls.__module__}.{cls.__name__}'
 
@@ -927,9 +927,9 @@ def find_subconfig_paths(cfg):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -954,9 +954,9 @@ def config_to_nested_dict(cfg, include_class=True):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.Config):
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)

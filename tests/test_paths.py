@@ -21,7 +21,7 @@ def test_paths_with_commas():
 
 def test_paths_with_commas_in_config():
     import kwconf
-    class TestConfig(kwconf.Config):
+    class TestConfig(kwconf.DataConfig):
         __default__ = {
             'key': kwconf.Value(None, type=str),
         }
@@ -48,7 +48,7 @@ def test_globstr_with_nargs():
     ub.touch(join(dpath, 'file2.txt'))
     ub.touch(join(dpath, 'file3.txt'))
 
-    class TestConfig(kwconf.Config):
+    class TestConfig(kwconf.DataConfig):
         __default__ = {
             'paths': kwconf.Value(None, nargs='+'),
         }

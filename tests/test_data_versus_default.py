@@ -19,23 +19,13 @@ def generate_dataconfig_instance_variants():
     config = ExampleConfig1()
     yield config, 'dataconfig'
 
-    class ExampleConfig2(kwconf.Config):
+    class ExampleConfig2(kwconf.DataConfig):
         num: int = 1
         mode: str = 'bar'
         ignore: list = kwconf.Value(default_factory=lambda: ['baz', 'biz'])
 
     config = ExampleConfig2()
     yield config, 'typed-config'
-
-    with pytest.warns(Warning):
-        class ExampleConfig3(kwconf.Config):
-            default = dict(
-                num=1,
-                mode='bar',
-                ignore=['baz', 'biz'],
-            )
-    config = ExampleConfig3()
-    yield config, 'legacy-default'
 
 
 @pytest.mark.parametrize('config, test_name', generate_dataconfig_instance_variants())

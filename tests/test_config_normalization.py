@@ -4,7 +4,7 @@ import kwconf
 
 
 def test_leaf_defaults_are_normalized():
-    class LeafConfig(kwconf.Config):
+    class LeafConfig(kwconf.DataConfig):
         __default__ = {
             'alpha': 1,
             'beta': kwconf.Value(2),
@@ -16,7 +16,7 @@ def test_leaf_defaults_are_normalized():
 
 
 def test_bool_defaults_become_flags():
-    class BoolConfig(kwconf.Config):
+    class BoolConfig(kwconf.DataConfig):
         __default__ = {
             'flag': False,
             'enabled': True,
@@ -33,10 +33,10 @@ def test_bool_defaults_become_flags():
 
 
 def test_subconfig_defaults_are_normalized():
-    class Inner(kwconf.Config):
+    class Inner(kwconf.DataConfig):
         __default__ = {'leaf': 1}
 
-    class Outer(kwconf.Config):
+    class Outer(kwconf.DataConfig):
         __default__ = {
             'inner_class': Inner,
             'inner_inst': Inner(),

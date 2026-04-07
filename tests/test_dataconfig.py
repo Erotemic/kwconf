@@ -158,7 +158,7 @@ def test_dataconfig_docstring():
 
 
 def test_config_is_typed_first_too():
-    class MyConfig(kwconf.Config):
+    class MyConfig(kwconf.DataConfig):
         x: int = 0
         y: str = '3'
 
@@ -169,7 +169,7 @@ def test_config_is_typed_first_too():
 
 
 def test_value_default_factory():
-    class MyConfig(kwconf.Config):
+    class MyConfig(kwconf.DataConfig):
         tags: list[str] = kwconf.Value(default_factory=list)
 
     cfg1 = MyConfig()

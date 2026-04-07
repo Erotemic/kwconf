@@ -1,7 +1,7 @@
 """
 Compatibility layer for the older `DataConfig` name.
 
-New `kwconf` code should generally prefer :class:`kwconf.Config`, which now
+New `kwconf` code should generally prefer :class:`kwconf.DataConfig`, which now
 supports the same typed class-variable schema style. `DataConfig` remains as a
 transition-friendly subclass and compatibility surface.
 
@@ -14,7 +14,7 @@ attributes much like you would write a dataclass.
 Creating an instance of a ``DataConfig`` class works just like a regular
 dataclass, and nothing special happens. You can create the argument parser by
 using the :func:``DataConfig.cli`` classmethod, which works similarly to the
-old-style :class:`kwconf.Config` constructor.
+old-style :class:`kwconf.DataConfig` constructor.
 
 The following is the same top-level example as in :mod:`kwconf.config`,
 but using ``DataConfig`` instead. It works as a drop-in replacement.
@@ -307,7 +307,7 @@ class DataConfig(Config, metaclass=MetaDataConfig):
         * ``__default__`` (Dict[str, Any]): an alternate way to specify key/default-values based on an existing dictionary. Specifying an item in this dictionary has the same effect as specifying a class-attribute.
 
     SeeAlso:
-        :class:`kwconf.Config`
+        :class:`kwconf.DataConfig`
     """
     # Not sure if having a docstring for this will break user-configs.
     # No docstring, because user-specified docstring will define the default

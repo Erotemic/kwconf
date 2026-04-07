@@ -325,7 +325,7 @@ class Flag(Value):
 
 class Path(Value):
     """
-    Note this is mean to be used only with kwconf.Config.
+    Note this is mean to be used only with kwconf.DataConfig.
     It does NOT represent a pathlib object.
 
     NOTE:
