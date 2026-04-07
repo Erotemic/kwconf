@@ -662,6 +662,8 @@ class ModalCLI(metaclass=MetaModalCLI):
 
         # To handle opaque sub commands we always parse known arguments but we
         # will raise an error if strict and the subcommand is not opqaue
+        if isinstance(argv, (int, bool)) and argv:
+            argv = None
         try:
             ns, unknown_args = parser.parse_known_args(args=argv)
         except SystemExit as ex:
