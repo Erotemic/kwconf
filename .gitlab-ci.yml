@@ -43,8 +43,8 @@ stages:
   <<: *common_template
   stage: build
   script:
-  - python -m pip install pip -U
-  - python -m pip install setuptools>=0.8 wheel build twine
+  - python -m pip install pip uv -U
+  - python -m uv pip install setuptools>=0.8 wheel build twine
   - python -m build --sdist --outdir dist
   - python -m twine check ./dist/kwconf*.tar.gz
   artifacts:
@@ -57,8 +57,8 @@ stages:
   - 'python -V  # Print out python version for debugging'
   - df -h
   script:
-  - python -m pip install pip -U
-  - python -m pip install setuptools>=0.8 wheel build twine
+  - python -m pip install pip uv -U
+  - python -m uv pip install setuptools>=0.8 wheel build twine
   - python -m build --wheel --outdir dist
   - python -m twine check ./dist/kwconf*.whl
   artifacts:
@@ -81,20 +81,20 @@ stages:
     python -m pip install virtualenv
     python -m virtualenv venv$PYVER
     source venv$PYVER/bin/activate
-    python -m pip install pip -U
-    python -m pip install setuptools -U
-    python -m pip install pygments
+    python -m pip install pip uv -U
+    python -m uv pip install setuptools -U
+    python -m uv pip install pygments
     python --version  # Print out python version for debugging
   script:
   - export INSTALL_EXTRAS="tests"
   - echo "Finding the path to the wheel"
   - ls dist || echo "dist does not exist"
   - 'echo "Installing helpers: update pip"'
-  - python -m pip install pip -U
+  - python -m pip install pip uv -U
   - 'echo "Installing helpers: setuptools"'
-  - python -m pip install setuptools>=0.8 setuptools_scm wheel build -U
+  - python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
   - 'echo "Installing helpers: tomli and pkginfo"'
-  - python -m pip install tomli pkginfo packaging
+  - python -m uv pip install tomli pkginfo packaging
   - |-
     export WHEEL_FPATH=$(python -c "if 1:
         import pathlib
@@ -157,20 +157,20 @@ stages:
     python -m pip install virtualenv
     python -m virtualenv venv$PYVER
     source venv$PYVER/bin/activate
-    python -m pip install pip -U
-    python -m pip install setuptools -U
-    python -m pip install pygments
+    python -m pip install pip uv -U
+    python -m uv pip install setuptools -U
+    python -m uv pip install pygments
     python --version  # Print out python version for debugging
   script:
   - export INSTALL_EXTRAS="tests,optional"
   - echo "Finding the path to the wheel"
   - ls dist || echo "dist does not exist"
   - 'echo "Installing helpers: update pip"'
-  - python -m pip install pip -U
+  - python -m pip install pip uv -U
   - 'echo "Installing helpers: setuptools"'
-  - python -m pip install setuptools>=0.8 setuptools_scm wheel build -U
+  - python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
   - 'echo "Installing helpers: tomli and pkginfo"'
-  - python -m pip install tomli pkginfo packaging
+  - python -m uv pip install tomli pkginfo packaging
   - |-
     export WHEEL_FPATH=$(python -c "if 1:
         import pathlib
@@ -233,20 +233,20 @@ stages:
     python -m pip install virtualenv
     python -m virtualenv venv$PYVER
     source venv$PYVER/bin/activate
-    python -m pip install pip -U
-    python -m pip install setuptools -U
-    python -m pip install pygments
+    python -m pip install pip uv -U
+    python -m uv pip install setuptools -U
+    python -m uv pip install pygments
     python --version  # Print out python version for debugging
   script:
   - export INSTALL_EXTRAS="tests-strict,runtime-strict"
   - echo "Finding the path to the wheel"
   - ls dist || echo "dist does not exist"
   - 'echo "Installing helpers: update pip"'
-  - python -m pip install pip -U
+  - python -m pip install pip uv -U
   - 'echo "Installing helpers: setuptools"'
-  - python -m pip install setuptools>=0.8 setuptools_scm wheel build -U
+  - python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
   - 'echo "Installing helpers: tomli and pkginfo"'
-  - python -m pip install tomli pkginfo packaging
+  - python -m uv pip install tomli pkginfo packaging
   - |-
     export WHEEL_FPATH=$(python -c "if 1:
         import pathlib
@@ -309,20 +309,20 @@ stages:
     python -m pip install virtualenv
     python -m virtualenv venv$PYVER
     source venv$PYVER/bin/activate
-    python -m pip install pip -U
-    python -m pip install setuptools -U
-    python -m pip install pygments
+    python -m pip install pip uv -U
+    python -m uv pip install setuptools -U
+    python -m uv pip install pygments
     python --version  # Print out python version for debugging
   script:
   - export INSTALL_EXTRAS="tests-strict,runtime-strict,optional-strict"
   - echo "Finding the path to the wheel"
   - ls dist || echo "dist does not exist"
   - 'echo "Installing helpers: update pip"'
-  - python -m pip install pip -U
+  - python -m pip install pip uv -U
   - 'echo "Installing helpers: setuptools"'
-  - python -m pip install setuptools>=0.8 setuptools_scm wheel build -U
+  - python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
   - 'echo "Installing helpers: tomli and pkginfo"'
-  - python -m pip install tomli pkginfo packaging
+  - python -m uv pip install tomli pkginfo packaging
   - |-
     export WHEEL_FPATH=$(python -c "if 1:
         import pathlib
@@ -383,75 +383,6 @@ test/sdist/minimal-loose/cp314-linux-x86_64:
   image: python:3.14
   needs:
   - build/sdist
-build/cp37-linux-x86_64:
-  <<: *build_wheel_template
-  image: python:3.7
-test/minimal-loose/cp37-linux-x86_64:
-  <<: *test_minimal-loose_template
-  image: python:3.7
-  needs:
-  - build/cp37-linux-x86_64
-test/full-loose/cp37-linux-x86_64:
-  <<: *test_full-loose_template
-  image: python:3.7
-  needs:
-  - build/cp37-linux-x86_64
-test/minimal-strict/cp37-linux-x86_64:
-  <<: *test_minimal-strict_template
-  image: python:3.7
-  needs:
-  - build/cp37-linux-x86_64
-test/full-strict/cp37-linux-x86_64:
-  <<: *test_full-strict_template
-  image: python:3.7
-  needs:
-  - build/cp37-linux-x86_64
-build/cp38-linux-x86_64:
-  <<: *build_wheel_template
-  image: python:3.8
-test/minimal-loose/cp38-linux-x86_64:
-  <<: *test_minimal-loose_template
-  image: python:3.8
-  needs:
-  - build/cp38-linux-x86_64
-test/full-loose/cp38-linux-x86_64:
-  <<: *test_full-loose_template
-  image: python:3.8
-  needs:
-  - build/cp38-linux-x86_64
-test/minimal-strict/cp38-linux-x86_64:
-  <<: *test_minimal-strict_template
-  image: python:3.8
-  needs:
-  - build/cp38-linux-x86_64
-test/full-strict/cp38-linux-x86_64:
-  <<: *test_full-strict_template
-  image: python:3.8
-  needs:
-  - build/cp38-linux-x86_64
-build/cp39-linux-x86_64:
-  <<: *build_wheel_template
-  image: python:3.9
-test/minimal-loose/cp39-linux-x86_64:
-  <<: *test_minimal-loose_template
-  image: python:3.9
-  needs:
-  - build/cp39-linux-x86_64
-test/full-loose/cp39-linux-x86_64:
-  <<: *test_full-loose_template
-  image: python:3.9
-  needs:
-  - build/cp39-linux-x86_64
-test/minimal-strict/cp39-linux-x86_64:
-  <<: *test_minimal-strict_template
-  image: python:3.9
-  needs:
-  - build/cp39-linux-x86_64
-test/full-strict/cp39-linux-x86_64:
-  <<: *test_full-strict_template
-  image: python:3.9
-  needs:
-  - build/cp39-linux-x86_64
 build/cp310-linux-x86_64:
   <<: *build_wheel_template
   image: python:3.10
@@ -574,8 +505,8 @@ lint:
   before_script:
   - df -h
   script:
-  - python -m pip install pip -U
-  - python -m pip install -r requirements/linting.txt
+  - python -m pip install pip uv -U
+  - python -m uv pip install -r requirements/linting.txt
   - ./run_linter.sh
   - python -m pip install ty
   - pip install -r requirements/runtime.txt
@@ -629,17 +560,11 @@ gpgsign/wheels:
         $GPG_EXECUTABLE --verify $WHEEL_PATH.asc $WHEEL_PATH
     done
   - ls dist
-  - python -m pip install pip -U
-  - python -m pip install opentimestamps-client
+  - python -m pip install pip uv -U
+  - python -m uv pip install opentimestamps-client
   - ots stamp dist/*.whl dist/*.asc dist/*.tar.gz
   needs:
   - job: build/sdist
-    artifacts: true
-  - job: build/cp37-linux-x86_64
-    artifacts: true
-  - job: build/cp38-linux-x86_64
-    artifacts: true
-  - job: build/cp39-linux-x86_64
     artifacts: true
   - job: build/cp310-linux-x86_64
     artifacts: true
@@ -659,8 +584,8 @@ deploy/wheels:
     refs:
     - release
   script:
-  - python -m pip install pip -U
-  - python -m pip install pyopenssl ndg-httpsclient pyasn1 requests[security] setuptools twine -U
+  - python -m pip install pip uv -U
+  - python -m uv pip install pyopenssl ndg-httpsclient pyasn1 requests[security] setuptools twine -U
   - ls dist
   - |-
     set -e

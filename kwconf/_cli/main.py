@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
-import kwconf as scfg
+import kwconf
 from kwconf import __version__
 
 
-class KwconfModal(scfg.ModalCLI):
+class KwconfModal(kwconf.ModalCLI):
     """
     Top level modal CLI for kwconf helpers
     """

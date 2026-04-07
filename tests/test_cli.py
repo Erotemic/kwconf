@@ -1,9 +1,9 @@
-import kwconf as scfg
+import kwconf
 
 
 def test_cli_dataconfig():
 
-    class ConfigCls(scfg.DataConfig):
+    class ConfigCls(kwconf.DataConfig):
         x: int = 0
         y: str = 3
 
@@ -12,8 +12,8 @@ def test_cli_dataconfig():
 
 def test_cli_dataconfig_with_alias():
 
-    class ConfigCls(scfg.DataConfig):
-        foo = scfg.Value(0, alias=['x'], type=int)
+    class ConfigCls(kwconf.DataConfig):
+        foo = kwconf.Value(0, alias=['x'], type=int)
         y: str = 3
 
     _test_common_cli_classmethod(ConfigCls)
@@ -21,8 +21,8 @@ def test_cli_dataconfig_with_alias():
 
 def test_cli_config_with_alias():
 
-    class ConfigCls(scfg.Config):
-        foo: int = scfg.Value(0, alias=['x'], type=int)
+    class ConfigCls(kwconf.Config):
+        foo: int = kwconf.Value(0, alias=['x'], type=int)
         y: str = 3
 
     _test_common_cli_classmethod(ConfigCls)
@@ -30,7 +30,7 @@ def test_cli_config_with_alias():
 
 def test_cli_config():
 
-    class ConfigCls(scfg.Config):
+    class ConfigCls(kwconf.Config):
         x: int = 0
         y: str = 3
     _test_common_cli_classmethod(ConfigCls)

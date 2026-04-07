@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
-import kwconf as scfg
+import kwconf
 import ubelt as ub
 
 
-class TemplateCLI(scfg.DataConfig):
+class TemplateCLI(kwconf.DataConfig):
     """
     Generate boilerplate for a template CLI script.
     """
     __command__ = 'template'
 
-    type = scfg.Value('single', help='The type of CLI to make', choices=['single', 'modal'], position=1)
+    type = kwconf.Value('single', help='The type of CLI to make', choices=['single', 'modal'], position=1)
 
-    name = scfg.Value('Template', help='The name of the config', position=2)
+    name = kwconf.Value('Template', help='The name of the config', position=2)
 
-    verbose = scfg.Value(False)
+    verbose = kwconf.Value(False)
 
     @classmethod
     def main(cls, argv : int | bool = 1, **kwargs):
@@ -44,16 +44,16 @@ def _build_single_template(config):
         f'''
         #!/usr/bin/env python3
         # PYTHON_ARGCOMPLETE_OK
-        import kwconf as scfg
+        import kwconf
 
 
-        class {classname}(scfg.DataConfig):
+        class {classname}(kwconf.DataConfig):
             """
             Write your documentation here
             """
 
             # List your default parameters here
-            # param1 = scfg.Value(None, help='your parameter help string')
+            # param1 = kwconf.Value(None, help='your parameter help string')
 
             @classmethod
             def main(cls, argv=1, **kwargs):
@@ -85,10 +85,10 @@ def _build_modal_template(config):
         f'''
         #!/usr/bin/env python3
         # PYTHON_ARGCOMPLETE_OK
-        import kwconf as scfg
+        import kwconf
         # from module.cli.script import ScriptCLI
 
-        class {classname}(scfg.ModalCLI):
+        class {classname}(kwconf.ModalCLI):
             """
             Your description here
             """

@@ -9,12 +9,12 @@ def _register_ubelt_repr_extensions() -> None:
         _REPR_EXTENSIONS = ub.util_format._FORMATTER_EXTENSIONS  # type: ignore[attr-defined]
 
     def _register_kwconf_extensions():
-        import kwconf as scfg
-        @_REPR_EXTENSIONS.register(scfg.Config)
+        import kwconf
+        @_REPR_EXTENSIONS.register(kwconf.Config)
         def format_kwconf(data, **kwargs):
             name = data.__class__.__name__
             body = ub.urepr(data.to_dict(), **kwargs)
-            if isinstance(data, scfg.DataConfig):
+            if isinstance(data, kwconf.DataConfig):
                 text = f'{name}(**{body})'
             else:
                 text = f'{name}({body})'

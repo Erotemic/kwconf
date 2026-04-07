@@ -1,11 +1,11 @@
 
 
 def test_counter_flags():
-    import kwconf as scfg
+    import kwconf
 
-    class MyConfig(scfg.DataConfig):
-        flag0 = scfg.Value(False, short_alias=['e'], isflag=True)
-        flag1 = scfg.Value(0, short_alias=['f'], isflag='counter')
+    class MyConfig(kwconf.DataConfig):
+        flag0 = kwconf.Value(False, short_alias=['e'], isflag=True)
+        flag1 = kwconf.Value(0, short_alias=['f'], isflag='counter')
 
     config = MyConfig.cli(argv=[])
     assert config.flag0 is False
@@ -68,8 +68,8 @@ def port_argparse_counter_to_kwconf():
     parser.add_argument('--flag3', action='count', help='specified looooooooooooooooooooooonggg help ')
     parser.add_argument('--flag4', action='store_true', help='specified help')
 
-    import kwconf as scfg
-    text = scfg.Config.port_argparse(parser)
+    import kwconf
+    text = kwconf.Config.port_argparse(parser)
     print(text)
     import ubelt as ub
 
@@ -78,19 +78,19 @@ def port_argparse_counter_to_kwconf():
     want = ub.codeblock(
         """
         import ubelt as ub
-        import kwconf as scfg
+        import kwconf
 
-        class MyConfig(scfg.DataConfig):
+        class MyConfig(kwconf.DataConfig):
             """ + tq + """
             $
             """ + tq + """
-            flag1 = scfg.Value(None, isflag='counter', help=None)
-            flag2 = scfg.Value(False, isflag=True, help=None)
-            flag3 = scfg.Value(None, isflag='counter', help=ub.paragraph(
+            flag1 = kwconf.Value(None, isflag='counter', help=None)
+            flag2 = kwconf.Value(False, isflag=True, help=None)
+            flag3 = kwconf.Value(None, isflag='counter', help=ub.paragraph(
                     '''
                     specified looooooooooooooooooooooonggg help
                     '''))
-            flag4 = scfg.Value(False, isflag=True, help='specified help')
+            flag4 = kwconf.Value(False, isflag=True, help='specified help')
         """).replace('$', '')
     print(text)
     print(want)

@@ -11,20 +11,20 @@ CommandLine:
 
 Example
 
-    >>> import kwconf as scfg
+    >>> import kwconf
     >>> #
-    >>> class DoFooCLI(scfg.DataConfig):
+    >>> class DoFooCLI(kwconf.DataConfig):
     >>>     __command__ = 'do_foo'
-    >>>     option1 = scfg.Value(None, help='option1')
+    >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
     >>>     @classmethod
     >>>     def main(cls, cmdline=1, **kwargs):
     >>>         self = cls.cli(cmdline=cmdline, data=kwargs)
     >>>         print('Called Foo with: ' + str(self))
     >>> #
-    >>> class DoBarCLI(scfg.DataConfig):
+    >>> class DoBarCLI(kwconf.DataConfig):
     >>>     __command__ = 'do_bar'
-    >>>     option1 = scfg.Value(None, help='option1')
+    >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
     >>>     @classmethod
     >>>     def main(cls, cmdline=1, **kwargs):
@@ -32,7 +32,7 @@ Example
     >>>         print('Called Bar with: ' + str(self))
     >>> #
     >>> #
-    >>> class MyModalCLI(scfg.ModalCLI):
+    >>> class MyModalCLI(kwconf.ModalCLI):
     >>>     __version__ = '1.2.3'
     >>>     foo = DoFooCLI
     >>>     bar = DoBarCLI
@@ -51,13 +51,13 @@ Note:
     :meth:`register`). For declarative metadata (e.g. aliases) use
     :class:`kwconf.ModalValue`.
 
-    >>> import kwconf as scfg
-    >>> class ChildModal(scfg.ModalCLI):
+    >>> import kwconf
+    >>> class ChildModal(kwconf.ModalCLI):
     >>>     ...
-    >>> class ParentModal(scfg.ModalCLI):
+    >>> class ParentModal(kwconf.ModalCLI):
     >>>     child = ChildModal           # supported
-    >>>     child2 = scfg.ModalValue(ChildModal, alias=['kid'])  # supported
-    >>>     # child3 = scfg.Value(ChildModal)  # Value is for config values
+    >>>     child2 = kwconf.ModalValue(ChildModal, alias=['kid'])  # supported
+    >>>     # child3 = kwconf.Value(ChildModal)  # Value is for config values
 
     If you want nested config nodes that are wrapped in ``Value(...)``, see
     :class:`kwconf.SubConfig` in ``docs/source/manual/nested_configs.rst``.
@@ -82,13 +82,13 @@ class ModalValue(ub.NiceRepr):
     Declarative wrapper for registering a modal subcommand with extra metadata.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Child(scfg.DataConfig):
+        >>> import kwconf
+        >>> class Child(kwconf.DataConfig):
         ...     @classmethod
         ...     def main(cls, argv=1, **kwargs):
         ...         ...
-        >>> class Root(scfg.ModalCLI):
-        ...     child = scfg.ModalValue(Child, alias=['kid'])
+        >>> class Root(kwconf.ModalCLI):
+        ...     child = kwconf.ModalValue(Child, alias=['kid'])
     """
 
     def __init__(self,
@@ -168,11 +168,11 @@ class ModalCLI(metaclass=MetaModalCLI):
 
     Example:
         >>> from kwconf.modal import *  # NOQA
-        >>> import kwconf as scfg
+        >>> import kwconf
         >>> self = ModalCLI(description='A modal CLI')
         >>> #
         >>> @self.register
-        >>> class Command1Config(scfg.Config):
+        >>> class Command1Config(kwconf.Config):
         >>>     __command__ = 'command1'
         >>>     __default__ = {
         >>>         'foo': 'spam'
@@ -183,7 +183,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> @self.register
-        >>> class Command2Config(scfg.DataConfig):
+        >>> class Command2Config(kwconf.DataConfig):
         >>>     __command__ = 'command2'
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
@@ -216,18 +216,18 @@ class ModalCLI(metaclass=MetaModalCLI):
 
     Example:
         >>> # Declarative modal CLI (new in 0.7.9)
-        >>> import kwconf as scfg
-        >>> class MyModalCLI(scfg.ModalCLI):
+        >>> import kwconf
+        >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     #
-        >>>     class Command1(scfg.DataConfig):
+        >>>     class Command1(kwconf.DataConfig):
         >>>         __command__ = 'command1'
-        >>>         foo = scfg.Value('spam', help='spam spam spam spam')
+        >>>         foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>         @classmethod
         >>>         def main(cls, cmdline=1, **kwargs):
         >>>             config = cls.cli(cmdline=cmdline, data=kwargs)
         >>>             print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>>     #
-        >>>     class Command2(scfg.DataConfig):
+        >>>     class Command2(kwconf.DataConfig):
         >>>         __command__ = 'command2'
         >>>         foo = 'eggs'
         >>>         baz = 'biz'
@@ -241,20 +241,20 @@ class ModalCLI(metaclass=MetaModalCLI):
 
     Example:
         >>> # Declarative modal CLI (new in 0.7.9)
-        >>> import kwconf as scfg
-        >>> class MyModalCLI(scfg.ModalCLI):
+        >>> import kwconf
+        >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     ...
         >>> #
         >>> @MyModalCLI.register(command='command1')
-        >>> class Command1(scfg.DataConfig):
-        >>>     foo = scfg.Value('spam', help='spam spam spam spam')
+        >>> class Command1(kwconf.DataConfig):
+        >>>     foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>     @classmethod
         >>>     def main(cls, cmdline=1, **kwargs):
         >>>         config = cls.cli(cmdline=cmdline, data=kwargs)
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> @MyModalCLI.register(command='command2')
-        >>> class Command2(scfg.DataConfig):
+        >>> class Command2(kwconf.DataConfig):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
@@ -267,16 +267,16 @@ class ModalCLI(metaclass=MetaModalCLI):
 
     Example:
         >>> # Key/value modal CLI (uses names as commands)
-        >>> import kwconf as scfg
+        >>> import kwconf
         >>> #
-        >>> class Command1(scfg.DataConfig):
-        >>>     foo = scfg.Value('spam', help='spam spam spam spam')
+        >>> class Command1(kwconf.DataConfig):
+        >>>     foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>     @classmethod
         >>>     def main(cls, cmdline=1, **kwargs):
         >>>         config = cls.cli(cmdline=cmdline, data=kwargs)
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
-        >>> class Command2(scfg.DataConfig):
+        >>> class Command2(kwconf.DataConfig):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
@@ -284,7 +284,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         config = cls.cli(cmdline=cmdline, data=kwargs)
         >>>         print('config2 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
-        >>> class MyModalCLI(scfg.ModalCLI):
+        >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     command1 = Command1
         >>>     command2 = Command2
         >>> #

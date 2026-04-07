@@ -1,5 +1,5 @@
 import ubelt as ub
-import kwconf as scfg
+import kwconf
 from collections import defaultdict
 
 
@@ -9,10 +9,10 @@ def test_modal_fuzzy_hyphens():
 
     callnums = defaultdict(lambda: 0)
 
-    class _TestCommandTemplate(scfg.DataConfig):
+    class _TestCommandTemplate(kwconf.DataConfig):
         # not a normal pattern, just make tests more concise.
         __command__ = '_base_'
-        common_option = scfg.Flag(None, help='an option with an underscore')
+        common_option = kwconf.Flag(None, help='an option with an underscore')
 
         @classmethod
         def main(cls, argv=1, **kwargs):
@@ -39,7 +39,7 @@ def test_modal_fuzzy_hyphens():
         __command__ = 'do_command4'
         __aliases__ = ['do-command4']
 
-    class TestSubModalCLI(scfg.ModalCLI):
+    class TestSubModalCLI(kwconf.ModalCLI):
         """
         Second level modal CLI
         """
@@ -54,7 +54,7 @@ def test_modal_fuzzy_hyphens():
         def _parserkw(self):
             return super()._parserkw() | {'exit_on_error': False}
 
-    class TestModalCLI(scfg.ModalCLI):
+    class TestModalCLI(kwconf.ModalCLI):
         """
         Top level modal CLI
         """
@@ -101,20 +101,20 @@ def test_modal_fuzzy_hyphens():
 
 
 def test_modal_customize_command_classlevel():
-    class MyModalCLI(scfg.ModalCLI):
+    class MyModalCLI(kwconf.ModalCLI):
         ...
 
     @MyModalCLI.register(command='command1')
-    class Command1(scfg.DataConfig):
+    class Command1(kwconf.DataConfig):
         __alias__ = ['alias1']  # should be used because alias not given in the decorator
-        foo = scfg.Value('spam', help='spam spam spam spam')
+        foo = kwconf.Value('spam', help='spam spam spam spam')
 
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     @MyModalCLI.register(command='command2', alias=['alias2', 'alias3'])
-    class Command2(scfg.DataConfig):
+    class Command2(kwconf.DataConfig):
         bar = 'biz'
         __alias__ = ['overwritten']  # wil not be used because alias is given in the decorator
 
@@ -138,21 +138,21 @@ def test_modal_customize_command_classlevel():
 
 
 def test_modal_customize_command_instancelevel():
-    class MyModalCLI(scfg.ModalCLI):
+    class MyModalCLI(kwconf.ModalCLI):
         ...
 
     modal = MyModalCLI()
 
     @modal.register(command='command1')
-    class Command1(scfg.DataConfig):
+    class Command1(kwconf.DataConfig):
         __alias__ = 'alias1'
-        foo = scfg.Value('spam', help='spam spam spam spam')
+        foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     @modal.register(command='command2', alias=['alias2', 'alias3'])
-    class Command2(scfg.DataConfig):
+    class Command2(kwconf.DataConfig):
         __alias__ = ['overwritten']
         bar = 'biz'
         @classmethod
@@ -180,17 +180,17 @@ def test_customized_modals():
     have them be under different commands.
     """
 
-    class Modal1(scfg.ModalCLI):
+    class Modal1(kwconf.ModalCLI):
         ...
 
-    class Modal2(scfg.ModalCLI):
+    class Modal2(kwconf.ModalCLI):
         ...
 
     modal1 = Modal1()
     modal2 = Modal2()
 
-    class Command1(scfg.DataConfig):
-        foo = scfg.Value('spam', help='spam spam spam spam')
+    class Command1(kwconf.DataConfig):
+        foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
@@ -222,21 +222,21 @@ def test_submodals():
     CommandLine:
         xdoctest -m tests/test_modal.py test_submodals
     """
-    import kwconf as scfg
+    import kwconf
     from kwconf.modal import NoCommandError
 
-    class Modal1(scfg.ModalCLI):
+    class Modal1(kwconf.ModalCLI):
         ...
 
-    class Modal2(scfg.ModalCLI):
+    class Modal2(kwconf.ModalCLI):
         ...
 
-    class Modal3(scfg.ModalCLI):
+    class Modal3(kwconf.ModalCLI):
         ...
 
-    class Command(scfg.DataConfig):
+    class Command(kwconf.DataConfig):
         __command__ = 'command'
-        foo = scfg.Value('spam', help='spam spam spam spam')
+        foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
@@ -296,17 +296,17 @@ def test_modal_version():
     CommandLine:
         DEBUG_SCRIPTCONFIG=1 xdoctest -m tests/test_modal.py test_submodals
     """
-    import kwconf as scfg
+    import kwconf
     # from kwconf import diagnostics
     # diagnostics.DEBUG_MODAL = 1
 
-    class Modal1(scfg.ModalCLI):
+    class Modal1(kwconf.ModalCLI):
         __version__ = '1.1.1'
 
-        class Modal2(scfg.ModalCLI):
+        class Modal2(kwconf.ModalCLI):
             __version__ = '2.2.2'
 
-            class Modal3(scfg.ModalCLI):
+            class Modal3(kwconf.ModalCLI):
                 __version__ = '3.3.3'
 
     with ub.CaptureStdout(suppress=0) as cap:
@@ -327,20 +327,20 @@ def test_modal_command_name_resolution():
     The user should be able to specify the command using the variable name of
     the command unless a __command__ attribute is explicitly given.
     """
-    import kwconf as scfg
+    import kwconf
 
-    class Command1(scfg.DataConfig):
+    class Command1(kwconf.DataConfig):
         __command__ = 'command1'
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
-    class Command2(scfg.DataConfig):
+    class Command2(kwconf.DataConfig):
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
-    class Modal1(scfg.ModalCLI):
+    class Modal1(kwconf.ModalCLI):
         __version__ = '1.1.1'
 
         wont_use_this_key = Command1
@@ -357,7 +357,7 @@ def test_submodal_usage_improvement():
     """
     We print the deepest usage helps unlike default argparse
     """
-    import kwconf as scfg
+    import kwconf
     import pytest
     import sys
 
@@ -367,14 +367,14 @@ def test_submodal_usage_improvement():
     # from kwconf import diagnostics
     # diagnostics.DEBUG_MODAL = 1
 
-    class Modal1(scfg.ModalCLI):
+    class Modal1(kwconf.ModalCLI):
         __version__ = '1.1.1'
 
-        class Modal2(scfg.ModalCLI):
+        class Modal2(kwconf.ModalCLI):
 
-            class Modal3(scfg.ModalCLI):
+            class Modal3(kwconf.ModalCLI):
 
-                class Command1(scfg.DataConfig):
+                class Command1(kwconf.DataConfig):
                     arg1 = 'foobar'
 
                     @classmethod
@@ -421,16 +421,16 @@ def test_submodal_usage_improvement():
 
 
 def test_modal_value_declarative_registration():
-    class Command1(scfg.DataConfig):
+    class Command1(kwconf.DataConfig):
         foo = 'spam'
 
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
-    class MyModalCLI(scfg.ModalCLI):
+    class MyModalCLI(kwconf.ModalCLI):
         # command defaults to the attribute name: "my_cmd"
-        my_cmd = scfg.ModalValue(Command1, alias=['alias_cmd'])
+        my_cmd = kwconf.ModalValue(Command1, alias=['alias_cmd'])
 
     with ub.CaptureStdout(suppress=True) as cap:
         MyModalCLI.main(argv=['--help'], _noexit=True)
@@ -442,13 +442,13 @@ def test_modal_value_declarative_registration():
 
 
 def test_modal_value_command_override():
-    class Command1(scfg.DataConfig):
+    class Command1(kwconf.DataConfig):
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
-    class MyModalCLI(scfg.ModalCLI):
-        configured_name = scfg.ModalValue(Command1, command='real_name', alias='rn')
+    class MyModalCLI(kwconf.ModalCLI):
+        configured_name = kwconf.ModalValue(Command1, command='real_name', alias='rn')
 
     with ub.CaptureStdout(suppress=True) as cap:
         MyModalCLI.main(argv=['--help'], _noexit=True)
@@ -461,22 +461,22 @@ def test_modal_value_command_override():
 
 
 def test_modal_value_alias_fuzzy_hyphens():
-    class Command1(scfg.DataConfig):
+    class Command1(kwconf.DataConfig):
         @classmethod
         def main(cls, argv=1, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
-    class FuzzyModal(scfg.ModalCLI):
+    class FuzzyModal(kwconf.ModalCLI):
         __fuzzy_hyphens__ = 1
-        my_cmd = scfg.ModalValue(Command1, alias='alias_cmd')
+        my_cmd = kwconf.ModalValue(Command1, alias='alias_cmd')
 
-    class StrictModal(scfg.ModalCLI):
+    class StrictModal(kwconf.ModalCLI):
         __fuzzy_hyphens__ = 0
-        my_cmd = scfg.ModalValue(Command1, alias='alias_cmd')
+        my_cmd = kwconf.ModalValue(Command1, alias='alias_cmd')
 
-    class FuzzyModalHyphenAlias(scfg.ModalCLI):
+    class FuzzyModalHyphenAlias(kwconf.ModalCLI):
         __fuzzy_hyphens__ = 1
-        my_cmd = scfg.ModalValue(Command1, alias='alias-cmd')
+        my_cmd = kwconf.ModalValue(Command1, alias='alias-cmd')
 
     assert FuzzyModal.main(argv=['my_cmd']) == 0
     assert FuzzyModal.main(argv=['my-cmd']) == 0
@@ -495,7 +495,7 @@ def test_modal_value_alias_fuzzy_hyphens():
 
 
 def test_arbitrary_opaque_subparser():
-    import kwconf as scfg
+    import kwconf
     # import pytest
     import sys
 
@@ -508,7 +508,7 @@ def test_arbitrary_opaque_subparser():
         ns = parser.parse_args()
         print(f'Successfully called the opaque main and got ns={ns}')
 
-    class MyModal(scfg.ModalCLI):
+    class MyModal(kwconf.ModalCLI):
         __version__ = '1.1.1'
 
     modal = MyModal()
@@ -545,14 +545,14 @@ def test_modal_with_positional_arguments_variant1():
     Test that modals can have subcommands with positional arguments,
     including nested modals.
     """
-    class NestedModalCLI(scfg.ModalCLI):
+    class NestedModalCLI(kwconf.ModalCLI):
         """Nested modal with positional command"""
         __command__ = 'nested'
 
-    class NestedCommand(scfg.DataConfig):
+    class NestedCommand(kwconf.DataConfig):
         """A nested command with positional args"""
-        pos_arg = scfg.Value('default_pos', position=1, help='A positional argument')
-        opt_arg = scfg.Value('default_opt', help='An optional argument')
+        pos_arg = kwconf.Value('default_pos', position=1, help='A positional argument')
+        opt_arg = kwconf.Value('default_opt', help='An optional argument')
 
         @classmethod
         def main(cls, argv=None, **kwargs):
@@ -560,16 +560,16 @@ def test_modal_with_positional_arguments_variant1():
 
     NestedModalCLI.register(NestedCommand, command='nested_cmd')
 
-    class SimpleCommand(scfg.DataConfig):
+    class SimpleCommand(kwconf.DataConfig):
         """Command with a positional argument"""
-        filename = scfg.Value('input.txt', position=1, help='Input filename')
-        verbose = scfg.Flag(False, help='Verbose mode')
+        filename = kwconf.Value('input.txt', position=1, help='Input filename')
+        verbose = kwconf.Flag(False, help='Verbose mode')
 
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=False)
 
-    class TopModalCLI(scfg.ModalCLI):
+    class TopModalCLI(kwconf.ModalCLI):
         """Top-level modal with positional subcommands"""
 
     TopModalCLI.register(SimpleCommand, command='simple_pos')
@@ -610,32 +610,32 @@ def test_modal_with_positional_arguments_variant2():
     including nested modals. Second variant using algernative declarations
     """
 
-    class NestedCommand(scfg.DataConfig):
+    class NestedCommand(kwconf.DataConfig):
         """A nested command with positional args"""
-        pos_arg = scfg.Value('default_pos', position=1, help='A positional argument')
-        opt_arg = scfg.Value('default_opt', help='An optional argument')
+        pos_arg = kwconf.Value('default_pos', position=1, help='A positional argument')
+        opt_arg = kwconf.Value('default_opt', help='An optional argument')
 
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=False)
 
-    class SimpleCommand(scfg.DataConfig):
+    class SimpleCommand(kwconf.DataConfig):
         """Command with a positional argument"""
-        filename = scfg.Value('input.txt', position=1, help='Input filename')
-        verbose = scfg.Flag(False, help='Verbose mode')
+        filename = kwconf.Value('input.txt', position=1, help='Input filename')
+        verbose = kwconf.Flag(False, help='Verbose mode')
 
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=False)
 
-    class NestedModalCLI(scfg.ModalCLI):
+    class NestedModalCLI(kwconf.ModalCLI):
         """Nested modal with positional command"""
-        nested_cmd = scfg.ModalValue(NestedCommand)
+        nested_cmd = kwconf.ModalValue(NestedCommand)
 
-    class TopModalCLI(scfg.ModalCLI):
+    class TopModalCLI(kwconf.ModalCLI):
         """Top-level modal with positional subcommands"""
-        nested_modal = scfg.ModalValue(NestedModalCLI)
-        simple_pos = scfg.ModalValue(SimpleCommand)
+        nested_modal = kwconf.ModalValue(NestedModalCLI)
+        simple_pos = kwconf.ModalValue(SimpleCommand)
 
     # Test 1: simple positional argument in subcommand
     result = SimpleCommand.cli(argv=['myfile.txt'])
@@ -672,36 +672,36 @@ def test_modal_with_config_field_special_options():
     when __special_options__ = False is set as a class attribute.
     """
 
-    class NestedCommand(scfg.DataConfig):
+    class NestedCommand(kwconf.DataConfig):
         """A nested command with a config field"""
         __special_options__ = False  # Disable special options at class level
         
-        config = scfg.Value('default_config.yaml', help='Config file path')
-        opt_arg = scfg.Value('default_opt', help='An optional argument')
+        config = kwconf.Value('default_config.yaml', help='Config file path')
+        opt_arg = kwconf.Value('default_opt', help='An optional argument')
 
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=False)
 
-    class SimpleCommand(scfg.DataConfig):
+    class SimpleCommand(kwconf.DataConfig):
         """Command with a config field"""
         __special_options__ = False  # Disable special options at class level
         
-        config = scfg.Value('config.yaml', help='Config file path')
-        verbose = scfg.Flag(False, help='Verbose mode')
+        config = kwconf.Value('config.yaml', help='Config file path')
+        verbose = kwconf.Flag(False, help='Verbose mode')
 
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=False)
 
-    class NestedModalCLI(scfg.ModalCLI):
+    class NestedModalCLI(kwconf.ModalCLI):
         """Nested modal with config command"""
-        nested_cmd = scfg.ModalValue(NestedCommand)
+        nested_cmd = kwconf.ModalValue(NestedCommand)
 
-    class TopModalCLI(scfg.ModalCLI):
+    class TopModalCLI(kwconf.ModalCLI):
         """Top-level modal with config subcommands"""
-        nested_modal = scfg.ModalValue(NestedModalCLI)
-        simple_cmd = scfg.ModalValue(SimpleCommand)
+        nested_modal = kwconf.ModalValue(NestedModalCLI)
+        simple_cmd = kwconf.ModalValue(SimpleCommand)
 
     # Test 1: simple command with default config
     result = SimpleCommand.cli(argv=[])

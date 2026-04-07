@@ -45,7 +45,7 @@ Notes:
 
         Enter the following information:
             Set the Repository NAME: kwconf
-            Set the Repository URL: None
+            Set the Repository URL: https://github.com/Erotemic/kwconf
 
         Make sure you have a .readthedocs.yml file
 
@@ -68,7 +68,7 @@ Notes:
 
         Then go to
 
-            None/hooks
+            https://github.com/Erotemic/kwconf/hooks
 
             Click "Add new webhook".
 
@@ -141,8 +141,8 @@ def parse_version(fpath):
 
 
 project = 'kwconf'
-copyright = '2026, Jon Crall'
-author = 'Jon Crall'
+copyright = '2026, Kitware Inc., Jon Crall'
+author = 'Kitware Inc., Jon Crall'
 modname = 'kwconf'
 
 repo_dpath = dirname(dirname(dirname(__file__)))
@@ -374,7 +374,13 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'kwconf.tex', 'kwconf Documentation', 'Jon Crall', 'manual'),
+    (
+        master_doc,
+        'kwconf.tex',
+        'kwconf Documentation',
+        'Kitware Inc., Jon Crall',
+        'manual',
+    ),
 ]
 
 

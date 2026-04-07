@@ -1,22 +1,22 @@
 
 def test_config_aliases():
-    import kwconf as scfg
+    import kwconf
     import pytest
     # import ubelt as ub
 
     __common_default__ = {
-        'opt1': scfg.Value(None, alias=['option1']),
-        'opt2': scfg.Value(None, alias=['option2', 'old_name']),
+        'opt1': kwconf.Value(None, alias=['option1']),
+        'opt2': kwconf.Value(None, alias=['option2', 'old_name']),
     }
 
-    class Config1(scfg.Config):
+    class Config1(kwconf.Config):
         __default__ = __common_default__
 
     with pytest.warns(Warning):
-        class Config2(scfg.Config):
+        class Config2(kwconf.Config):
             default = __common_default__
 
-    class Config3(scfg.DataConfig):
+    class Config3(kwconf.DataConfig):
         __default__ = __common_default__
 
     config1 = Config1()

@@ -28,8 +28,8 @@ jobs:
         python-version: '3.14'
     - name: Install dependencies
       run: |-
-        python -m pip install pip -U
-        python -m pip install flake8
+        python -m pip install pip uv -U
+        python -m uv pip install flake8
     - name: Lint with flake8
       run: |-
         # stop the build if there are Python syntax errors or undefined names
@@ -55,14 +55,14 @@ jobs:
         python-version: '3.14'
     - name: Upgrade pip
       run: |-
-        python -m pip install pip -U
+        python -m pip install pip uv -U
         python -m pip install --prefer-binary -r requirements/tests.txt
         python -m pip install --prefer-binary -r requirements/runtime.txt
     - name: Build sdist
       shell: bash
       run: |-
-        python -m pip install pip -U
-        python -m pip install setuptools>=0.8 wheel build twine
+        python -m pip install pip uv -U
+        python -m uv pip install setuptools>=0.8 wheel build twine
         python -m build --sdist --outdir wheelhouse
         python -m twine check ./wheelhouse/kwconf*.tar.gz
     - name: Install sdist
@@ -136,8 +136,8 @@ jobs:
     - name: Build pure wheel
       shell: bash
       run: |-
-        python -m pip install pip -U
-        python -m pip install setuptools>=0.8 wheel build twine
+        python -m pip install pip uv -U
+        python -m uv pip install setuptools>=0.8 wheel build twine
         python -m build --wheel --outdir wheelhouse
         python -m twine check ./wheelhouse/kwconf*.whl
     - name: Show built files
@@ -164,15 +164,15 @@ jobs:
         # Xcookie generates an explicit list of environments that will be used
         # for testing instead of using the more concise matrix notation.
         include:
-        - python-version: '3.7'
+        - python-version: '3.10'
           install-extras: tests-strict,runtime-strict
-          os: ubuntu-22.04
+          os: ubuntu-latest
           arch: auto
-        - python-version: '3.7'
+        - python-version: '3.10'
           install-extras: tests-strict,runtime-strict
-          os: macos-13
+          os: macOS-latest
           arch: auto
-        - python-version: '3.7'
+        - python-version: '3.10'
           install-extras: tests-strict,runtime-strict
           os: windows-latest
           arch: auto
@@ -195,18 +195,6 @@ jobs:
         - python-version: '3.14'
           install-extras: tests
           os: windows-latest
-          arch: auto
-        - python-version: '3.7'
-          install-extras: tests,optional
-          os: ubuntu-22.04
-          arch: auto
-        - python-version: '3.8'
-          install-extras: tests,optional
-          os: ubuntu-latest
-          arch: auto
-        - python-version: '3.9'
-          install-extras: tests,optional
-          os: ubuntu-latest
           arch: auto
         - python-version: '3.10'
           install-extras: tests,optional
@@ -232,18 +220,6 @@ jobs:
           install-extras: tests,optional
           os: ubuntu-latest
           arch: auto
-        - python-version: '3.7'
-          install-extras: tests,optional
-          os: macos-13
-          arch: auto
-        - python-version: '3.8'
-          install-extras: tests,optional
-          os: macOS-latest
-          arch: auto
-        - python-version: '3.9'
-          install-extras: tests,optional
-          os: macOS-latest
-          arch: auto
         - python-version: '3.10'
           install-extras: tests,optional
           os: macOS-latest
@@ -267,18 +243,6 @@ jobs:
         - python-version: pypy-3.9
           install-extras: tests,optional
           os: macOS-latest
-          arch: auto
-        - python-version: '3.7'
-          install-extras: tests,optional
-          os: windows-latest
-          arch: auto
-        - python-version: '3.8'
-          install-extras: tests,optional
-          os: windows-latest
-          arch: auto
-        - python-version: '3.9'
-          install-extras: tests,optional
-          os: windows-latest
           arch: auto
         - python-version: '3.10'
           install-extras: tests,optional
@@ -338,11 +302,11 @@ jobs:
         echo "Finding the path to the wheel"
         ls wheelhouse || echo "wheelhouse does not exist"
         echo "Installing helpers: update pip"
-        python -m pip install pip -U
+        python -m pip install pip uv -U
         echo "Installing helpers: setuptools"
-        python -m pip install setuptools>=0.8 setuptools_scm wheel build -U
+        python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
         echo "Installing helpers: tomli and pkginfo"
-        python -m pip install tomli pkginfo packaging
+        python -m uv pip install tomli pkginfo packaging
         export WHEEL_FPATH=$(python -c "if 1:
             import pathlib
             from packaging import tags

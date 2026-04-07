@@ -623,7 +623,7 @@ def _maker_smart_parse_action(self):
     import argparse
     from itertools import chain
 
-    scfg_object = self
+    kwconf_object = self
 
     ### TODO: be slightly less smart
     class ParseAction(argparse._StoreAction):
@@ -643,7 +643,7 @@ def _maker_smart_parse_action(self):
                 # the template (if it exists) or try using a smartcast.
                 def _smart_type(value):
                     key = self.dest
-                    template = scfg_object.default[key]
+                    template = kwconf_object.default[key]
                     value = template.cast(value)
                     return value
 

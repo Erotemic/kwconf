@@ -8,48 +8,35 @@ def test_class_inst_default_attr():
     kwconf.Config should now support the same declarative class-variable style
     as DataConfig.
     """
-    import kwconf as scfg
-    import pytest
+    import kwconf
 
-    class Config1(scfg.Config):
-        option1: tuple = scfg.Value((1, 2, 3), tuple, alias='a')
+    class Config1(kwconf.Config):
+        option1: tuple = kwconf.Value((1, 2, 3), tuple, alias='a')
         option2: str = 'bar'
         option3 = None
 
-    class Config2(scfg.Config):
+    class Config2(kwconf.Config):
         __default__ = {
-            'option1': scfg.Value((1, 2, 3), tuple, alias='a'),
+            'option1': kwconf.Value((1, 2, 3), tuple, alias='a'),
             'option2': 'bar',
             'option3': None,
         }
 
-    class DataConfig3(scfg.DataConfig):
-        option1: tuple = scfg.Value((1, 2, 3), tuple, alias='a')
+    class DataConfig3(kwconf.DataConfig):
+        option1: tuple = kwconf.Value((1, 2, 3), tuple, alias='a')
         option2: str = 'bar'
         option3 = None
-
-    with pytest.warns(Warning):
-        class LegacyDefaultConfig(scfg.Config):
-            # Still supported as a legacy spelling.
-            # Kept as a warning-backed compatibility path.
-            default = {
-                'option1': scfg.Value((1, 2, 3), tuple, alias='a'),
-                'option2': 'bar',
-                'option3': None,
-            }
 
     config1 = Config1()
     config2 = Config2()
     config3 = DataConfig3()
-    config4 = LegacyDefaultConfig()
 
     a = config1.to_dict()
     b = config2.to_dict()
     c = config3.to_dict()
-    d = config4.to_dict()
-    assert a == b == c == d
+    assert a == b == c
 
-    config_instances = [config1, config2, config3, config4]
+    config_instances = [config1, config2, config3]
 
     import ubelt as ub
     for config in config_instances:
@@ -64,11 +51,11 @@ def test_class_inst_default_attr():
 
 
 def test_default_spelling_warns_but_works():
-    import kwconf as scfg
+    import kwconf
     import pytest
 
     with pytest.warns(Warning):
-        class LegacyConfig(scfg.Config):
+        class LegacyConfig(kwconf.Config):
             default = {
                 'option1': 1,
                 'option2': 2,
@@ -83,7 +70,7 @@ def test_class_inst_normalize_attr():
     """
     The normalize and __post_init__ methods should function equivalently
     """
-    import kwconf as scfg
+    import kwconf
     import ubelt as ub
     import pytest
 
@@ -92,27 +79,27 @@ def test_class_inst_normalize_attr():
     config_classes = []
 
     common_default = {
-        'opt1': scfg.Value(None, alias=['option1']),
-        'opt2': scfg.Value(None, alias=['option2', 'old_name']),
+        'opt1': kwconf.Value(None, alias=['option1']),
+        'opt2': kwconf.Value(None, alias=['option2', 'old_name']),
     }
 
     with pytest.warns(Warning):
         @config_classes.append
-        class Config1A(scfg.Config):
+        class Config1A(kwconf.Config):
             __default__ = common_default
             def normalize(self):
                 test_state[self.__class__.__name__ + '.normalize'] += 1
                 self['opt1'] = 'normalized'
 
     @config_classes.append
-    class Config1B(scfg.Config):
+    class Config1B(kwconf.Config):
         __default__ = common_default
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
 
     @config_classes.append
-    class Config1C(scfg.Config):
+    class Config1C(kwconf.Config):
         __default__ = common_default
 
         def __post_init__(self):
@@ -125,21 +112,21 @@ def test_class_inst_normalize_attr():
 
     with pytest.warns(Warning):
         @config_classes.append
-        class DataConfig2A(scfg.DataConfig):
+        class DataConfig2A(kwconf.DataConfig):
             __default__ = common_default
             def normalize(self):
                 test_state[self.__class__.__name__ + '.normalize'] += 1
                 self['opt1'] = 'normalized'
 
     @config_classes.append
-    class DataConfig2B(scfg.DataConfig):
+    class DataConfig2B(kwconf.DataConfig):
         __default__ = common_default
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
 
     @config_classes.append
-    class DataConfig2C(scfg.DataConfig):
+    class DataConfig2C(kwconf.DataConfig):
         __default__ = common_default
 
         def __post_init__(self):

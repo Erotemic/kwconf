@@ -1,10 +1,10 @@
-import kwconf as scfg
+import kwconf
 
 
 def test_dataconfig_setattr_simple():
     import pytest
 
-    class ExampleDataConfig(scfg.DataConfig):
+    class ExampleDataConfig(kwconf.DataConfig):
         x: int = 0
         y: str = 3
 
@@ -49,7 +49,7 @@ def test_dataconfig_setattr_simple():
 
 def test_dataconfig_setattr_combos():
 
-    class ExampleDataConfig(scfg.DataConfig):
+    class ExampleDataConfig(kwconf.DataConfig):
         x: int = 0
         y: str = 3
 
@@ -99,17 +99,17 @@ def test_dataconfig_warning():
     """
     Test that the user gets a warning if they make this common mistake
     """
-    import kwconf as scfg
+    import kwconf
     import pytest
     with pytest.warns(Warning):
-        class ExampleDataConfig(scfg.DataConfig):
-            x = scfg.Value(None),
+        class ExampleDataConfig(kwconf.DataConfig):
+            x = kwconf.Value(None),
 
 
 def test_dataconfig_with_funcs():
-    import kwconf as scfg
+    import kwconf
 
-    class MyConfig(scfg.DataConfig):
+    class MyConfig(kwconf.DataConfig):
         __default__ = {
             'a': 1,
             'b': 1,
@@ -138,12 +138,12 @@ def test_dataconfig_with_funcs():
 
 
 def test_dataconfig_docstring():
-    import kwconf as scfg
+    import kwconf
 
-    class MyConfig1(scfg.DataConfig):
+    class MyConfig1(kwconf.DataConfig):
         ...
 
-    class MyConfig2(scfg.DataConfig):
+    class MyConfig2(kwconf.DataConfig):
         """
         Hello World
         """
@@ -158,7 +158,7 @@ def test_dataconfig_docstring():
 
 
 def test_config_is_typed_first_too():
-    class MyConfig(scfg.Config):
+    class MyConfig(kwconf.Config):
         x: int = 0
         y: str = '3'
 
@@ -169,8 +169,8 @@ def test_config_is_typed_first_too():
 
 
 def test_value_default_factory():
-    class MyConfig(scfg.Config):
-        tags: list[str] = scfg.Value(default_factory=list)
+    class MyConfig(kwconf.Config):
+        tags: list[str] = kwconf.Value(default_factory=list)
 
     cfg1 = MyConfig()
     cfg2 = MyConfig()

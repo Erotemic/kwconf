@@ -3,8 +3,8 @@ def test_without_special_options():
     The "special options" of "config", "dump", and "dumps" are useful but they
     prevent the user from being able to use them as official config args.
     """
-    import kwconf as scfg
-    class MyConfig(scfg.DataConfig):
+    import kwconf
+    class MyConfig(kwconf.DataConfig):
         config = None
 
     # Without using the ``cli`` classmethod there should be no issue with using

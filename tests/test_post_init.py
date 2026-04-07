@@ -3,11 +3,11 @@ def test_post_init_not_called_twice():
     """
     xdoctest ~/code/kwconf/tests/test_post_init.py test_post_init_not_called_twice
     """
-    import kwconf as scfg
+    import kwconf
     import ubelt as ub
 
     default = {
-        'option1': scfg.Value((1, 2, 3), type=tuple, alias='a'),
+        'option1': kwconf.Value((1, 2, 3), type=tuple, alias='a'),
         'option2': 'bar',
         'option3': None,
     }
@@ -21,11 +21,11 @@ def test_post_init_not_called_twice():
             self._post_init_count  = 0
         self._post_init_count += 1
 
-    class MyConfig(scfg.Config):
+    class MyConfig(kwconf.Config):
         __default__ = default
         __post_init__ = postinit
 
-    class MyDataConfig(scfg.DataConfig):
+    class MyDataConfig(kwconf.DataConfig):
         __default__ = default
         __post_init__ = postinit
 

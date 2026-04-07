@@ -21,10 +21,10 @@ but using ``DataConfig`` instead. It works as a drop-in replacement.
 
 
 Example:
-    >>> import kwconf as scfg
+    >>> import kwconf
     >>> # In its simplest incarnation, the config class specifies default values.
     >>> # For each configuration parameter.
-    >>> class ExampleConfig(scfg.DataConfig):
+    >>> class ExampleConfig(kwconf.DataConfig):
     >>>      num = 1
     >>>      mode = 'bar'
     >>>      ignore = ['baz', 'biz']
@@ -84,13 +84,13 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
 
     Example:
         >>> from kwconf.dataconfig import *  # NOQA
-        >>> import kwconf as scfg
+        >>> import kwconf
         >>> @dataconf
         >>> class ExampleDataConfig2:
-        >>>     chip_dims = scfg.Value((256, 256), help='chip size')
-        >>>     time_dim = scfg.Value(3, help='number of time steps')
-        >>>     channels = scfg.Value('*:(red|green|blue)', help='sensor / channel code')
-        >>>     time_sampling = scfg.Value('soft2')
+        >>>     chip_dims = kwconf.Value((256, 256), help='chip size')
+        >>>     time_dim = kwconf.Value(3, help='number of time steps')
+        >>>     channels = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
+        >>>     time_sampling = kwconf.Value('soft2')
         >>> cls = ExampleDataConfig2
         >>> print(f'cls={cls}')
         >>> self = cls()
@@ -98,18 +98,18 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
 
     Example:
         >>> from kwconf.dataconfig import *  # NOQA
-        >>> import kwconf as scfg
+        >>> import kwconf
         >>> @dataconf
         >>> class PathologicalConfig:
-        >>>     default0 = scfg.Value((256, 256), help='chip size')
-        >>>     default = scfg.Value((256, 256), help='chip size')
+        >>>     default0 = kwconf.Value((256, 256), help='chip size')
+        >>>     default = kwconf.Value((256, 256), help='chip size')
         >>>     keys = [1, 2, 3]
         >>>     __default__ = {
         >>>         'argparse': 3.3,
         >>>         'keys': [4, 5],
         >>>     }
         >>>     default = None
-        >>>     time_sampling = scfg.Value('soft2')
+        >>>     time_sampling = kwconf.Value('soft2')
         >>>     def foobar(self):
         >>>         ...
         >>> self = PathologicalConfig(1, 2, 3)
@@ -119,18 +119,18 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
     # Example:
     #     >>> # Using inheritance and the decorator lets you pickle the object
     #     >>> from kwconf.dataconfig import *  # NOQA
-    #     >>> import kwconf as scfg
+    #     >>> import kwconf
     #     >>> @dataconf
-    #     >>> class PathologicalConfig2(scfg.DataConfig):
-    #     >>>     default0 = scfg.Value((256, 256), help='chip size')
-    #     >>>     default2 = scfg.Value((256, 256), help='chip size')
+    #     >>> class PathologicalConfig2(kwconf.DataConfig):
+    #     >>>     default0 = kwconf.Value((256, 256), help='chip size')
+    #     >>>     default2 = kwconf.Value((256, 256), help='chip size')
     #     >>>     #keys = [1, 2, 3] : Too much
     #     >>>     __default__3 = {
     #     >>>         'argparse': 3.3,
     #     >>>         'keys2': [4, 5],
     #     >>>     }
     #     >>>     default2 = None
-    #     >>>     time_sampling = scfg.Value('soft2')
+    #     >>>     time_sampling = kwconf.Value('soft2')
     #     >>> config = PathologicalConfig2()
     #     >>> import pickle
     #     >>> serial = pickle.dumps(config)
@@ -283,11 +283,11 @@ class DataConfig(Config, metaclass=MetaDataConfig):
     otherwise it can be treated exactly as a dictionary.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class MyConfig(scfg.DataConfig):
+        >>> import kwconf
+        >>> class MyConfig(kwconf.DataConfig):
         >>>     key1 = 'default-value1'
         >>>     key2 = 'default-value2'
-        >>>     key3 = scfg.Value('default-value3', help='extra metadata!')
+        >>>     key3 = kwconf.Value('default-value3', help='extra metadata!')
         >>> # Create a programmatic instance
         >>> config = MyConfig()
         >>> print(f'config={config}')
@@ -352,10 +352,10 @@ class DataConfig(Config, metaclass=MetaDataConfig):
         self._has_subconfigs = False
         wrap_subconfig_defaults(self, _dont_call_post_init=_dont_call_post_init)
         self._enable_setattr = True
-        self._scfg_post_init_done = False
+        self._kwconf_post_init_done = False
         if not _dont_call_post_init:
             self.__post_init__()
-            self._scfg_post_init_done = True
+            self._kwconf_post_init_done = True
 
     def __getattr__(self, key: str) -> Any:
         # Note: attributes that mirror the public API will be suppressed
@@ -399,28 +399,6 @@ class DataConfig(Config, metaclass=MetaDataConfig):
                 self.__dict__[key] = value
 
     @classmethod
-    def legacy(cls,
-               cmdline: bool = False,
-               data: Optional[Any] = None,
-               default: Optional[Dict[str, Any]] = None,
-               strict: bool = False) -> "DataConfig":
-        """
-        Calls the original "load" way of creating non-dataclass config objects.
-        This may be refactored in the future.
-        """
-        import ubelt as ub
-        ub.schedule_deprecation(
-            'kwconf', 'legacy', 'classmethod',
-            migration='use the cli classmethod instead.',
-            deprecate='0.7.2', error='1.0.0', remove='1.0.1',
-        )
-        if default is None:
-            default = {}
-        self = cls(**default)
-        self.load(data, cmdline=cmdline, default=default, strict=strict)
-        return self
-
-    @classmethod
     def parse_args(cls,
                    args: Optional[List[str]] = None,
                    namespace: Optional[Any] = None) -> "DataConfig":
@@ -444,16 +422,6 @@ class DataConfig(Config, metaclass=MetaDataConfig):
                 'namespaces are not handled in kwconf')
         return cast("DataConfig", cls.cli(argv=args, strict=False))
 
-    @property
-    def default(self) -> Dict[str, Any]:
-        import ubelt as ub
-        ub.schedule_deprecation(
-            'kwconf', 'default', 'attribute',
-            migration='use the __default__ instead.',
-            deprecate='0.7.7', error='1.0.0', remove='1.0.1',
-        )
-        return self.__default__
-
     @classmethod
     def _register_main(cls, func):
         """
@@ -467,7 +435,7 @@ def __example__() -> None:
     """
     Doctests are broken for DataConfigs, so putting them here.
     """
-    import kwconf as scfg
+    import kwconf
     dataclasses: Any
     try:
         import dataclasses
@@ -493,24 +461,24 @@ def __example__() -> None:
 
     @dataclasses.dataclass
     class ExampleDataConfig2:
-        chip_dims = scfg.Value((256, 256), help='chip size')
-        time_dim = scfg.Value(3, help='number of time steps')
-        channels = scfg.Value('*:(red|green|blue)', help='sensor / channel code')
-        time_sampling = scfg.Value('soft2')
+        chip_dims = kwconf.Value((256, 256), help='chip size')
+        time_dim = kwconf.Value(3, help='number of time steps')
+        channels = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
+        time_sampling = kwconf.Value('soft2')
 
     @dataclasses.dataclass
     class ExampleDataConfig2d:
-        chip_dims = scfg.Value((256, 256), help='chip size')
-        time_dim: Any = scfg.Value(3, help='number of time steps')
-        channels: Any = scfg.Value('*:(red|green|blue)', help='sensor / channel code')
-        time_sampling: Any = scfg.Value('soft2')
+        chip_dims = kwconf.Value((256, 256), help='chip size')
+        time_dim: Any = kwconf.Value(3, help='number of time steps')
+        channels: Any = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
+        time_sampling: Any = kwconf.Value('soft2')
 
     class ExampleDataConfig3:
         __default__ = {
-            'chip_dims': scfg.Value((256, 256), help='chip size'),
-            'time_dim': scfg.Value(3, type=int, help='number of time steps'),
-            'channels': scfg.Value('*:(red|green|blue)', type=str, help='sensor / channel code'),
-            'time_sampling': scfg.Value('soft2', type=str),
+            'chip_dims': kwconf.Value((256, 256), help='chip size'),
+            'time_dim': kwconf.Value(3, type=int, help='number of time steps'),
+            'channels': kwconf.Value('*:(red|green|blue)', type=str, help='sensor / channel code'),
+            'time_sampling': kwconf.Value('soft2', type=str),
         }
 
     classes = [ExampleDataConfig0, ExampleDataConfig1, ExampleDataConfig1d,
@@ -523,4 +491,4 @@ def __example__() -> None:
     # cls = ExampleDataConfig2
     # cls.__annotations__['channels'].__dict__
     # cls.__annotations__['set_cover_algo'].__dict__
-    # # @scfg.dataconfig
+    # # @kwconf.dataconfig

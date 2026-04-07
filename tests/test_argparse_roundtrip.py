@@ -1,7 +1,7 @@
 """
 Test porting back and forth to / from argparse
 """
-import kwconf as scfg
+import kwconf
 import ubelt as ub
 import argparse
 
@@ -16,7 +16,7 @@ def port_kwconf_from_argparse():
     parser.add_argument('--flag3', action='count', help='specified looooooooooooooooooooooonggg help ')
     parser.add_argument('--flag4', action='store_true', help='specified help')
 
-    text = scfg.Config.port_argparse(parser)
+    text = kwconf.Config.port_argparse(parser)
     print(text)
 
     tq = '"""'
@@ -24,19 +24,19 @@ def port_kwconf_from_argparse():
     want = ub.codeblock(
         """
         import ubelt as ub
-        import kwconf as scfg
+        import kwconf
 
-        class MyConfig(scfg.Config):
+        class MyConfig(kwconf.Config):
             """ + tq + """
             $
             """ + tq + """
-            flag1 = scfg.Value(None, isflag='counter', help=None)
-            flag2 = scfg.Value(False, isflag=True, help=None)
-            flag3 = scfg.Value(None, isflag='counter', help=ub.paragraph(
+            flag1 = kwconf.Value(None, isflag='counter', help=None)
+            flag2 = kwconf.Value(False, isflag=True, help=None)
+            flag3 = kwconf.Value(None, isflag='counter', help=ub.paragraph(
                     '''
                     specified looooooooooooooooooooooonggg help
                     '''))
-            flag4 = scfg.Value(False, isflag=True, help='specified help')
+            flag4 = kwconf.Value(False, isflag=True, help='specified help')
         """).replace('$', '')
     print(text)
     print(want)
@@ -57,8 +57,8 @@ def port_argparse_from_kwconf():
     xdoctest ~/code/kwconf/tests/test_argparse_roundtrip.py port_argparse_from_kwconf
     """
 
-    class MyConfig(scfg.Config):
-        param1 = scfg.Value(None, type=str, help='help text')
+    class MyConfig(kwconf.Config):
+        param1 = kwconf.Value(None, type=str, help='help text')
 
     argparse_text = MyConfig().port_to_argparse()
 
@@ -81,10 +81,10 @@ def port_argparse_from_kwconf_with_unwrapped_values():
     xdoctest ~/code/kwconf/tests/test_argparse_roundtrip.py port_argparse_from_kwconf_with_unwrapped_values
     """
 
-    class MyConfig(scfg.Config):
-        option1 = scfg.Value('default1', help='option1 help')
-        option2 = scfg.Value('default2', help='option2 help')
-        option3 = scfg.Value('default3', help='option3 help')
+    class MyConfig(kwconf.Config):
+        option1 = kwconf.Value('default1', help='option1 help')
+        option2 = kwconf.Value('default2', help='option2 help')
+        option3 = kwconf.Value('default3', help='option3 help')
         option4 = 'default4'
 
     argparse_text = MyConfig().port_to_argparse()
@@ -108,10 +108,10 @@ def port_argparse_from_kwconf_with_unwrapped_values():
 
 
 def test_port_argparse_with_optin_fancy_features():
-    class MyConfig(scfg.Config):
-        my_flag = scfg.Value(False, isflag=True)
-        my_counter = scfg.Value(0, isflag='counter')
-        my_option = scfg.Value('default')
+    class MyConfig(kwconf.Config):
+        my_flag = kwconf.Value(False, isflag=True)
+        my_counter = kwconf.Value(0, isflag='counter')
+        my_option = kwconf.Value('default')
 
     argparse_text = MyConfig().port_to_argparse(
         fuzzy_hyphens=True, flag_value_mode=True)

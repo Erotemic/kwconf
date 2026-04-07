@@ -10,11 +10,11 @@ The rest of this module contains utilities that both :class:`Config` and
 defaults, files, kwargs, and staged CLI parsing.
 
 Example:
-    >>> import kwconf as scfg
-    >>> class Inner(scfg.DataConfig):
+    >>> import kwconf
+    >>> class Inner(kwconf.DataConfig):
     ...     depth = 1
-    >>> class Outer(scfg.DataConfig):
-    ...     inner = scfg.SubConfig(Inner, choices={'inner': Inner})
+    >>> class Outer(kwconf.DataConfig):
+    ...     inner = kwconf.SubConfig(Inner, choices={'inner': Inner})
     >>> cfg = Outer.cli(argv=['--inner.depth=3'])
     >>> assert cfg.inner.depth == 3
     >>> cfg2 = Outer.cli(argv=['--inner=inner', '--inner.depth=4'])
@@ -123,11 +123,11 @@ def add_forbidden_selector_args(parser, cfg):
 
     Example:
         >>> import argparse
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> parser = argparse.ArgumentParser()
         >>> add_forbidden_selector_args(parser, Outer())
         >>> assert '--inner' in parser._option_string_actions
@@ -157,8 +157,8 @@ class SubConfig(Value):
             (``module.qualname.Class``) to be dynamically imported.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
         >>> meta = SubConfig(Inner)
         >>> inst = meta.instantiate()
@@ -206,19 +206,19 @@ def wrap_subconfig_defaults(cfg, _dont_call_post_init=False):
     Normalize any SubConfig / Config defaults into tracked metadata.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': Inner()}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> assert cfg._has_subconfigs
-        >>> class OuterValue(scfg.Config):
-        ...     __default__ = {'inner': scfg.Value(Inner())}
+        >>> class OuterValue(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.Value(Inner())}
         >>> cfg = OuterValue(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
-        >>> assert isinstance(cfg._subconfig_meta['inner'], scfg.SubConfig)
+        >>> assert isinstance(cfg._subconfig_meta['inner'], kwconf.SubConfig)
     """
     cfg._subconfig_meta = {}
     cfg._has_subconfigs = False
@@ -255,11 +255,11 @@ def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
     Ensure SubConfig values are instantiated on the config.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> cfg._data['inner'] = None
         >>> ensure_subconfigs_instantiated(cfg, _dont_call_post_init=True)
@@ -423,11 +423,11 @@ def _path_is_subconfig(cfg, parts):
     Determine if a dotted path refers to a SubConfig node.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> _path_is_subconfig(cfg, ['inner'])
@@ -459,13 +459,13 @@ def extract_selector_overrides(cfg, argv, allow_import=True, localns=None, stack
     Extract and apply selector-like arguments from argv in a staged manner.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Adam(scfg.Config):
+        >>> import kwconf
+        >>> class Adam(kwconf.Config):
         ...     __default__ = {'lr': 1e-3}
-        >>> class Sgd(scfg.Config):
+        >>> class Sgd(kwconf.Config):
         ...     __default__ = {'momentum': 0.9}
-        >>> class Train(scfg.Config):
-        ...     __default__ = {'optim': scfg.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
+        >>> class Train(kwconf.Config):
+        ...     __default__ = {'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
         >>> cfg = Train(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> selectors, _ = extract_selector_overrides(cfg, ['--optim=sgd'])
@@ -530,11 +530,11 @@ def _ensure_parent_node(cfg, parts):
     Traverse a dotted path and return the parent node.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> parent = _ensure_parent_node(cfg, ['inner'])
@@ -568,8 +568,8 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
            ``module.qualname.Class``.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
         >>> meta = SubConfig(Inner, choices={'inner': Inner})
         >>> assert _resolve_class_spec(meta, 'inner', True) is Inner
@@ -607,13 +607,13 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
     Apply selector overrides until a fixed point is reached.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Adam(scfg.Config):
+        >>> import kwconf
+        >>> class Adam(kwconf.Config):
         ...     __default__ = {'lr': 1e-3}
-        >>> class Sgd(scfg.Config):
+        >>> class Sgd(kwconf.Config):
         ...     __default__ = {'momentum': 0.9}
-        >>> class Train(scfg.Config):
-        ...     __default__ = {'optim': scfg.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
+        >>> class Train(kwconf.Config):
+        ...     __default__ = {'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
         >>> cfg = Train(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> _apply_selectors_fixpoint(cfg, {'optim': 'sgd'})
@@ -655,11 +655,11 @@ def apply_dot_updates(cfg, updates, *, allow_import=True, localns=None, stacklev
     Apply dotted-path updates and selectors to a nested Config / DataConfig.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> apply_dot_updates(cfg, {'inner.x': 5})
@@ -721,11 +721,11 @@ def has_selector_overrides(cfg, updates):
     Determine if updates contain selector overrides for SubConfig nodes.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> assert has_selector_overrides(cfg, {'inner.__class__': 'inner'})
@@ -752,11 +752,11 @@ def flatten_defaults(cfg, prefix=(), include_class_options=False):
     Flatten config defaults into dotted keys.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> flat = flatten_defaults(cfg)
@@ -789,11 +789,11 @@ def flat_config_from_tree(cfg, include_class_options=False):
     Build a temporary Config instance to parse realized leaf arguments.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> flat = flat_config_from_tree(cfg)
@@ -817,11 +817,11 @@ def expand_multipass_parser(cfg, parser, argv=None, special_options=True,
 
     Example:
         >>> import argparse
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> parser = argparse.ArgumentParser()
@@ -891,19 +891,19 @@ def finalize_post_init(cfg):
     Run __post_init__ once on a nested config tree.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> finalize_post_init(cfg)
     """
     if isinstance(cfg, Config):
-        if not getattr(cfg, '_scfg_post_init_done', False):
+        if not getattr(cfg, '_kwconf_post_init_done', False):
             cfg.__post_init__()
-            cfg._scfg_post_init_done = True
+            cfg._kwconf_post_init_done = True
     if isinstance(cfg, Config):
         for value in cfg._data.values():
             if isinstance(value, Config):
@@ -915,8 +915,8 @@ def _class_identifier(cls):
     Return a module-qualified class identifier.
 
     Example:
-        >>> import kwconf as scfg
-        >>> assert _class_identifier(scfg.Config).endswith('.Config')
+        >>> import kwconf
+        >>> assert _class_identifier(kwconf.Config).endswith('.Config')
     """
     return f'{cls.__module__}.{cls.__name__}'
 
@@ -926,11 +926,11 @@ def find_subconfig_paths(cfg):
     Yield dotted paths to SubConfig nodes in the realized tree.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> assert 'inner' in find_subconfig_paths(cfg)
@@ -953,11 +953,11 @@ def config_to_nested_dict(cfg, include_class=True):
     Convert a realized config tree to a nested dictionary.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
-        ...     __default__ = {'inner': scfg.SubConfig(Inner)}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> data = config_to_nested_dict(cfg)

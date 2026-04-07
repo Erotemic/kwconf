@@ -1,22 +1,22 @@
 import pytest
 
-import kwconf as scfg
+import kwconf
 
 
 def test_leaf_defaults_are_normalized():
-    class LeafConfig(scfg.Config):
+    class LeafConfig(kwconf.Config):
         __default__ = {
             'alpha': 1,
-            'beta': scfg.Value(2),
+            'beta': kwconf.Value(2),
         }
 
-    assert isinstance(LeafConfig.__default__['alpha'], scfg.Value)
+    assert isinstance(LeafConfig.__default__['alpha'], kwconf.Value)
     assert LeafConfig.__default__['alpha'].value == 1
-    assert isinstance(LeafConfig.__default__['beta'], scfg.Value)
+    assert isinstance(LeafConfig.__default__['beta'], kwconf.Value)
 
 
 def test_bool_defaults_become_flags():
-    class BoolConfig(scfg.Config):
+    class BoolConfig(kwconf.Config):
         __default__ = {
             'flag': False,
             'enabled': True,
@@ -33,34 +33,34 @@ def test_bool_defaults_become_flags():
 
 
 def test_subconfig_defaults_are_normalized():
-    class Inner(scfg.Config):
+    class Inner(kwconf.Config):
         __default__ = {'leaf': 1}
 
-    class Outer(scfg.Config):
+    class Outer(kwconf.Config):
         __default__ = {
             'inner_class': Inner,
             'inner_inst': Inner(),
-            'inner_value': scfg.Value(Inner, help='inner config'),
+            'inner_value': kwconf.Value(Inner, help='inner config'),
         }
 
-    assert isinstance(Outer.__default__['inner_class'], scfg.SubConfig)
-    assert isinstance(Outer.__default__['inner_inst'], scfg.SubConfig)
-    assert isinstance(Outer.__default__['inner_value'], scfg.SubConfig)
+    assert isinstance(Outer.__default__['inner_class'], kwconf.SubConfig)
+    assert isinstance(Outer.__default__['inner_inst'], kwconf.SubConfig)
+    assert isinstance(Outer.__default__['inner_value'], kwconf.SubConfig)
     assert Outer.__default__['inner_value'].help == 'inner config'
 
 
 def test_selector_override_remains_available():
-    class SGDConfig(scfg.DataConfig):
-        lr = scfg.Value(0.01, type=float)
-        momentum = scfg.Value(0.9, type=float)
+    class SGDConfig(kwconf.DataConfig):
+        lr = kwconf.Value(0.01, type=float)
+        momentum = kwconf.Value(0.9, type=float)
 
-    class AdamConfig(scfg.DataConfig):
-        lr = scfg.Value(0.001, type=float)
-        beta1 = scfg.Value(0.9, type=float)
+    class AdamConfig(kwconf.DataConfig):
+        lr = kwconf.Value(0.001, type=float)
+        beta1 = kwconf.Value(0.9, type=float)
 
-    class TrainConfig(scfg.DataConfig):
-        optim = scfg.SubConfig(AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig})
-        epochs = scfg.Value(10, type=int)
+    class TrainConfig(kwconf.DataConfig):
+        optim = kwconf.SubConfig(AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig})
+        epochs = kwconf.Value(10, type=int)
 
     cfg = TrainConfig.cli(
         argv=['--optim=sgd', '--optim.momentum=0.8'],

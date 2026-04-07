@@ -2,40 +2,40 @@ import textwrap
 
 import pytest
 
-import kwconf as scfg
+import kwconf
 
 
-class SGDConfig(scfg.DataConfig):
-    lr = scfg.Value(0.01, type=float)
-    momentum = scfg.Value(0.9, type=float)
+class SGDConfig(kwconf.DataConfig):
+    lr = kwconf.Value(0.01, type=float)
+    momentum = kwconf.Value(0.9, type=float)
 
 
-class AdamConfig(scfg.DataConfig):
-    lr = scfg.Value(0.001, type=float)
-    beta1 = scfg.Value(0.9, type=float)
+class AdamConfig(kwconf.DataConfig):
+    lr = kwconf.Value(0.001, type=float)
+    beta1 = kwconf.Value(0.9, type=float)
 
 
-class BackboneConfig(scfg.DataConfig):
-    patch = scfg.Value(4, type=int)
+class BackboneConfig(kwconf.DataConfig):
+    patch = kwconf.Value(4, type=int)
 
 
-class SegformerConfig(scfg.DataConfig):
-    backbone = scfg.SubConfig(BackboneConfig, choices={'vit': BackboneConfig})
+class SegformerConfig(kwconf.DataConfig):
+    backbone = kwconf.SubConfig(BackboneConfig, choices={'vit': BackboneConfig})
     heads = 1
 
 
-class ModelConfig(scfg.DataConfig):
+class ModelConfig(kwconf.DataConfig):
     name = 'base'
 
 
-class TrainConfig(scfg.DataConfig):
-    optim = scfg.SubConfig(AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig})
-    model = scfg.SubConfig(ModelConfig, choices={'base': ModelConfig, 'seg': SegformerConfig})
-    epochs = scfg.Value(10, type=int)
+class TrainConfig(kwconf.DataConfig):
+    optim = kwconf.SubConfig(AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig})
+    model = kwconf.SubConfig(ModelConfig, choices={'base': ModelConfig, 'seg': SegformerConfig})
+    epochs = kwconf.Value(10, type=int)
 
 
 def test_flat_fastpath():
-    class FlatConfig(scfg.DataConfig):
+    class FlatConfig(kwconf.DataConfig):
         foo = 1
 
     cfg = FlatConfig.cli(argv=['--foo', '3'])
@@ -109,15 +109,15 @@ def test_unknown_key_error():
 
 def test_reserved_class_name_error():
     with pytest.raises(ValueError):
-        class BadConfig(scfg.DataConfig):
+        class BadConfig(kwconf.DataConfig):
             __default__ = {'__class__': 1}
 
 
 def test_dotted_access_for_config_and_dataconfig():
-    class Inner(scfg.Config):
+    class Inner(kwconf.Config):
         __default__ = {'leaf': 1}
 
-    class Outer(scfg.Config):
+    class Outer(kwconf.Config):
         __default__ = {'inner': Inner()}
 
     cfg = Outer()
@@ -125,10 +125,10 @@ def test_dotted_access_for_config_and_dataconfig():
     assert cfg['inner.leaf'] == 5
     assert cfg['inner']['leaf'] == 5
 
-    class InnerDC(scfg.DataConfig):
+    class InnerDC(kwconf.DataConfig):
         leaf = 1
 
-    class OuterDC(scfg.DataConfig):
+    class OuterDC(kwconf.DataConfig):
         inner = InnerDC()
 
     dcfg = OuterDC()
@@ -138,15 +138,15 @@ def test_dotted_access_for_config_and_dataconfig():
 
 
 def test_dump_and_load_roundtrip(tmp_path):
-    class ChoiceA(scfg.DataConfig):
+    class ChoiceA(kwconf.DataConfig):
         x = 1
 
-    class ChoiceB(scfg.DataConfig):
+    class ChoiceB(kwconf.DataConfig):
         x = 2
 
-    class Outer(scfg.Config):
+    class Outer(kwconf.Config):
         __default__ = {
-            'inner': scfg.SubConfig(ChoiceA, choices={'a': ChoiceA, 'b': ChoiceB}),
+            'inner': kwconf.SubConfig(ChoiceA, choices={'a': ChoiceA, 'b': ChoiceB}),
             'root': 3,
         }
 
@@ -181,12 +181,12 @@ def test_subconfig_class_in_dict():
 
 
 def test_subconfig_stacklevel_localns_resolution():
-    class LocalOpt(scfg.Config):
+    class LocalOpt(kwconf.Config):
         __default__ = {'lr': 0.2}
 
-    class TrainLocal(scfg.Config):
+    class TrainLocal(kwconf.Config):
         __default__ = {
-            'optim': scfg.SubConfig(AdamConfig, choices={'adam': AdamConfig}),
+            'optim': kwconf.SubConfig(AdamConfig, choices={'adam': AdamConfig}),
         }
 
     def wrapper_cli():
@@ -213,7 +213,7 @@ def test_subconfig_stacklevel_localns_resolution():
 
 
 def test_config_attribute_lookup_matches_typed_style():
-    class SimpleConfig(scfg.Config):
+    class SimpleConfig(kwconf.Config):
         value: int = 3
 
     cfg = SimpleConfig()
@@ -224,12 +224,12 @@ def test_config_attribute_lookup_matches_typed_style():
 
 def test_subconfig_nested_class_scope_resolution():
     class Container:
-        class LocalOpt(scfg.Config):
+        class LocalOpt(kwconf.Config):
             __default__ = {'lr': 0.3}
 
-    class ContainerTrain(scfg.Config):
+    class ContainerTrain(kwconf.Config):
         __default__ = {
-            'optim': scfg.SubConfig(
+            'optim': kwconf.SubConfig(
                 Container.LocalOpt,
                 choices={'local': Container.LocalOpt},
             ),
@@ -245,12 +245,12 @@ def test_subconfig_nested_class_scope_resolution():
 
 def test_subconfig_local_scope_resolution_in_function():
     def build_cfg():
-        class LocalOpt(scfg.Config):
+        class LocalOpt(kwconf.Config):
             __default__ = {'lr': 0.4}
 
-        class TrainLocal(scfg.Config):
+        class TrainLocal(kwconf.Config):
             __default__ = {
-                'optim': scfg.SubConfig(
+                'optim': kwconf.SubConfig(
                     LocalOpt,
                     choices={'local': LocalOpt},
                 ),
@@ -268,28 +268,28 @@ def test_subconfig_local_scope_resolution_in_function():
 
 
 def test_value_wrapped_config_upgrades_to_subconfig():
-    class InnerConfig(scfg.Config):
+    class InnerConfig(kwconf.Config):
         __default__ = {'x': 1}
 
-    class InnerDataConfig(scfg.DataConfig):
+    class InnerDataConfig(kwconf.DataConfig):
         x = 2
 
-    class OuterConfig(scfg.Config):
+    class OuterConfig(kwconf.Config):
         __default__ = {
-            'inner_cfg': scfg.Value(InnerConfig()),
-            'inner_dc': scfg.Value(InnerDataConfig()),
+            'inner_cfg': kwconf.Value(InnerConfig()),
+            'inner_dc': kwconf.Value(InnerDataConfig()),
         }
 
     cfg = OuterConfig()
     assert cfg._has_subconfigs
-    assert isinstance(cfg._subconfig_meta['inner_cfg'], scfg.SubConfig)
-    assert isinstance(cfg._subconfig_meta['inner_dc'], scfg.SubConfig)
+    assert isinstance(cfg._subconfig_meta['inner_cfg'], kwconf.SubConfig)
+    assert isinstance(cfg._subconfig_meta['inner_dc'], kwconf.SubConfig)
     assert isinstance(cfg['inner_cfg'], InnerConfig)
     assert isinstance(cfg['inner_dc'], InnerDataConfig)
 
 
 def test_dataconfig_class_default_selector_by_classname():
-    class OptimizerConfig(scfg.DataConfig):
+    class OptimizerConfig(kwconf.DataConfig):
         lr = 1e-3
 
     class Adam(OptimizerConfig):
@@ -298,49 +298,49 @@ def test_dataconfig_class_default_selector_by_classname():
     class Sgd(OptimizerConfig):
         momentum = 0.9
 
-    class TrainCfg(scfg.DataConfig):
+    class TrainCfg(kwconf.DataConfig):
         optim = Adam
-        epochs = scfg.Value(10, type=int)
+        epochs = kwconf.Value(10, type=int)
 
     cfg = TrainCfg.cli(
         argv='--optim=Sgd --optim.momentum=0.8 --epochs=20',
         allow_subconfig_overrides=True,
     )
-    assert isinstance(cfg._subconfig_meta['optim'], scfg.SubConfig)
+    assert isinstance(cfg._subconfig_meta['optim'], kwconf.SubConfig)
     assert isinstance(cfg.optim, Sgd)
     assert cfg.optim.momentum == pytest.approx(0.8)
     assert cfg.epochs == 20
 
 
 def test_dataconfig_value_wrapped_subconfig():
-    class OptimizerConfig(scfg.DataConfig):
+    class OptimizerConfig(kwconf.DataConfig):
         lr = 1e-3
 
     class Adam(OptimizerConfig):
         beta1 = 0.9
 
-    class TrainCfg(scfg.DataConfig):
-        optim = scfg.Value(Adam)
+    class TrainCfg(kwconf.DataConfig):
+        optim = kwconf.Value(Adam)
 
     cfg = TrainCfg()
-    assert isinstance(cfg._subconfig_meta['optim'], scfg.SubConfig)
+    assert isinstance(cfg._subconfig_meta['optim'], kwconf.SubConfig)
     assert isinstance(cfg.optim, Adam)
 
 
 def test_subconfig_config_string_cases():
-    class OptimizerConfig(scfg.DataConfig):
-        lr = scfg.Value(0.01, type=float)
+    class OptimizerConfig(kwconf.DataConfig):
+        lr = kwconf.Value(0.01, type=float)
 
     class SGDLocal(OptimizerConfig):
-        momentum = scfg.Value(0.9, type=float)
+        momentum = kwconf.Value(0.9, type=float)
 
     class AdamLocal(OptimizerConfig):
-        beta1 = scfg.Value(0.9, type=float)
+        beta1 = kwconf.Value(0.9, type=float)
 
-    class TrainLocal(scfg.DataConfig):
-        optim = scfg.SubConfig(SGDLocal, choices={'adam': AdamLocal, 'sgd': SGDLocal})
-        model = scfg.Value('vit', choices=['vit', 'resnet50'])
-        epochs = scfg.Value(10, type=int)
+    class TrainLocal(kwconf.DataConfig):
+        optim = kwconf.SubConfig(SGDLocal, choices={'adam': AdamLocal, 'sgd': SGDLocal})
+        model = kwconf.Value('vit', choices=['vit', 'resnet50'])
+        epochs = kwconf.Value(10, type=int)
 
     cases = [
         {'argv': '--config "{model: resnet50, optim.momentum: 0.88}"', 'optim': SGDLocal},
@@ -361,11 +361,11 @@ def test_subconfig_config_string_cases():
 
 
 def test_subconfig_class_identifier_module_path():
-    class Inner(scfg.Config):
+    class Inner(kwconf.Config):
         __default__ = {'x': 1}
 
-    class Outer(scfg.Config):
-        __default__ = {'inner': scfg.SubConfig(Inner)}
+    class Outer(kwconf.Config):
+        __default__ = {'inner': kwconf.SubConfig(Inner)}
 
     cfg = Outer()
     data = cfg.to_dict()

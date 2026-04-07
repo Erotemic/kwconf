@@ -15,10 +15,10 @@ Note:
 To get started lets consider some example usage:
 
 Example:
-    >>> import kwconf as scfg
+    >>> import kwconf
     >>> # In its simplest incarnation, the config class specifies default values.
     >>> # For each configuration parameter.
-    >>> class ExampleConfig(scfg.Config):
+    >>> class ExampleConfig(kwconf.DataConfig):
     >>>     __default__ = {
     >>>         'num': 1,
     >>>         'mode': 'bar',
@@ -51,11 +51,11 @@ Example:
     >>> # contents of sys.argv
 
 Ignore:
-    >>> class ExampleConfig(scfg.Config):
+    >>> class ExampleConfig(kwconf.DataConfig):
     >>>     __default__ = {
     >>>         'num': 1,
     >>>         'mode': 'bar',
-    >>>         'mode2': scfg.Value('bar', str),
+    >>>         'mode2': kwconf.Value('bar', str),
     >>>         'ignore': ['baz', 'biz'],
     >>>     }
     >>> config = ExampleConfig()
@@ -66,11 +66,11 @@ Ignore:
     >>> config.load(cmdline=['--mode=spam,eggs', '--mode2=spam,eggs'])
 
     >>> # FIXME: We need make parsing lists a bit more intuitive
-    >>> class ExampleConfig(scfg.Config):
+    >>> class ExampleConfig(kwconf.DataConfig):
     >>>     __default__ = {
     >>>         'item1': [],
-    >>>         'item2': scfg.Value([], list),
-    >>>         'item3': scfg.Value([]),
+    >>>         'item2': kwconf.Value([], list),
+    >>>         'item3': kwconf.Value([]),
     >>>     }
     >>> config = ExampleConfig()
     >>> # IDEALLY BOTH CASES SHOULD WORK
@@ -93,7 +93,7 @@ import ubelt as ub
 import itertools as it
 import argparse as argparse_mod
 import types
-from typing import IO, Any, Dict, Iterable, Iterator, List, Mapping, Optional, Tuple, Type, Union, cast
+from typing import IO, Dict, Iterable, List, Optional, Tuple, Type, Union, cast
 from kwconf import _ubelt_repr_extension
 from kwconf import smartcast
 from kwconf.dict_like import DictLike
@@ -106,30 +106,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 # from kwconf.util.util_class import class_or_instancemethod
 
-__all__ = ['Config', 'LegacyConfig', 'define']
-
-__docstubs__ = """
-from typing import Any
-
-KT = Any
-omegaconf: Any
-OmegaConf: object
-"""
-
-
-# def _is_autoreload_enabled():
-#     """
-#     Detect if IPython has autoreloaded this module
-#     https://stackoverflow.com/questions/63469147/programmatically-check-for-and-disable-ipython-autoreload-extension
-#     """
-#     try:
-#         __IPYTHON__
-#     except NameError:
-#         return False
-#     else:
-#         from IPython import get_ipython
-#         ipy = get_ipython()
-#         return ipy.magics_manager.magics['line']['autoreload'].__self__._reloader.enabled
+__all__ = ['Config', 'define']
 
 
 def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
@@ -152,8 +129,8 @@ def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
     vals: Dict[str, Any] = {'default': default}
     code = dedent(
         '''
-        import kwconf as scfg
-        class {name}(scfg.Config):
+        import kwconf
+        class {name}(kwconf.DataConfig):
             __default__ = default
         '''.strip('\n').format(name=name))
     exec(code, vals)
@@ -226,15 +203,15 @@ def _normalize_class_defaults(defaults, annotations=None):
     Normalize class-level defaults to ensure Value/SubConfig metadata is present.
 
     Example:
-        >>> import kwconf as scfg
-        >>> class Inner(scfg.Config):
+        >>> import kwconf
+        >>> class Inner(kwconf.DataConfig):
         ...     __default__ = {'x': 1}
-        >>> class Outer(scfg.Config):
+        >>> class Outer(kwconf.DataConfig):
         ...     __default__ = {'inner': Inner, 'flag': False, 'leaf': 3}
         >>> norms = _normalize_class_defaults(Outer.__default__)
-        >>> assert isinstance(norms['inner'], scfg.SubConfig)
-        >>> assert isinstance(norms['flag'], scfg.Value) and norms['flag'].isflag is True
-        >>> assert isinstance(norms['leaf'], scfg.Value)
+        >>> assert isinstance(norms['inner'], kwconf.SubConfig)
+        >>> assert isinstance(norms['flag'], kwconf.Value) and norms['flag'].isflag is True
+        >>> assert isinstance(norms['leaf'], kwconf.Value)
     """
     normalized = {}
     if defaults is None:
@@ -447,7 +424,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         self._default: Dict[str, Value] = {}
         self._subconfig_meta: Dict[str, Any] = {}
         self._has_subconfigs = False
-        self._scfg_post_init_done = False
+        self._kwconf_post_init_done = False
         cls_default = getattr(self, '__default__', getattr(self, 'default', None))
         if cls_default:
             self._default.update(_materialize_default_items(cls_default))
@@ -474,7 +451,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
-    ) -> Config:       
+    ) -> Config:
         """
         Create a command-line aware config instance.
 
@@ -550,10 +527,10 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 disable caller introspection.
 
         Example:
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
+            >>> import kwconf
+            >>> class MyConfig(kwconf.DataConfig):
             >>>     __default__ = {
-            >>>         'option1': scfg.Value((1, 2, 3), tuple),
+            >>>         'option1': kwconf.Value((1, 2, 3), tuple),
             >>>         'option2': 'bar',
             >>>         'option3': None,
             >>>         'verbose': False,
@@ -617,18 +594,18 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> self.load(cmdline=True)
             >>> print(ub.urepr(self, nl=1))
         """
-        import kwconf as scfg
-        class DemoConfig(scfg.Config):
+        import kwconf
+        class DemoConfig(kwconf.DataConfig):
             """
-            This was generated by kwconf.Config.demo
+            This was generated by kwconf.DataConfig.demo
             """
             __default__ = {
-                'option1': scfg.Value('bar', help='an option'),
-                'option2': scfg.Value((1, 2, 3), tuple, help='another option'),
+                'option1': kwconf.Value('bar', help='an option'),
+                'option2': kwconf.Value((1, 2, 3), tuple, help='another option'),
                 'option3': None,
                 'option4': 'foo',
-                'discrete': scfg.Value(None, choices=['a', 'b', 'c']),
-                'apath': scfg.Path(help='a path'),
+                'discrete': kwconf.Value(None, choices=['a', 'b', 'c']),
+                'apath': kwconf.Path(help='a path'),
             }
         self = DemoConfig()
         return self
@@ -753,7 +730,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             if key not in self._data:
                 if not getattr(self, '__allow_newattr__', False):
                     raise Exception(
-                        'Cannot add keys to kwconf.Config objects unless '
+                        'Cannot add keys to kwconf.DataConfig objects unless '
                         'self.__allow_newattr__ is True'
                     )
         if isinstance(value, Value):
@@ -821,7 +798,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
-    ) -> Config:        
+    ) -> Config:
         """
         Updates the configuration from a given data source.
 
@@ -894,70 +871,32 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
         Example:
             >>> # Test load works correctly in cmdline True and False mode
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
+            >>> import kwconf
+            >>> class MyConfig(kwconf.DataConfig):
             >>>     __default__ = {
-            >>>         'src': scfg.Value(None, help=('some help msg')),
+            >>>         'src': kwconf.Value(None, help=('some help msg')),
             >>>     }
             >>> data = {'src': 'hi'}
-            >>> self = MyConfig(data=data, cmdline=False)
+            >>> self = MyConfig.cli(data=data, argv=False)
             >>> assert self['src'] == 'hi'
-            >>> self = MyConfig(default=data, cmdline=True)
+            >>> self = MyConfig.cli(default=data, argv=True)
             >>> assert self['src'] == 'hi'
             >>> # In 0.5.8 and previous src fails to populate!
-            >>> # This is because cmdline=True overwrites data with defaults
-            >>> self = MyConfig(data=data, cmdline=True)
+            >>> # This is because argv=True overwrites data with defaults
+            >>> self = MyConfig.cli(data=data, argv=True)
             >>> assert self['src'] == 'hi', f'Got: {self}'
 
         Example:
-            >>> # Test load works correctly in strict mode
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
-            >>>     __default__ = {
-            >>>         'src': scfg.Value(None, help=('some help msg')),
-            >>>     }
-            >>> data = {'src': 'hi'}
-            >>> cmdlinekw = {
-            >>>     'strict': True,
-            >>>     'argv': '--src=hello',
-            >>> }
-            >>> self = MyConfig(data=data, cmdline=cmdlinekw)
-            >>> cmdlinekw = {
-            >>>     'strict': True,
-            >>>     'special_options': False,
-            >>>     'argv': '--src=hello --extra=arg',
-            >>> }
-            >>> import pytest
-            >>> with pytest.raises(SystemExit):
-            >>>     self = MyConfig(data=data, cmdline=cmdlinekw)
-
-        Example:
-            >>> # Test load works correctly with required
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
-            >>>     __default__ = {
-            >>>         'src': scfg.Value(None, help=('some help msg'), required=True),
-            >>>     }
-            >>> cmdlinekw = {
-            >>>     'strict': True,
-            >>>     'special_options': False,
-            >>>     'argv': '',
-            >>> }
-            >>> import pytest
-            >>> with pytest.raises(Exception):
-            ...   self = MyConfig(cmdline=cmdlinekw)
-
-        Example:
             >>> # Test load works correctly with alias
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
+            >>> import kwconf
+            >>> class MyConfig(kwconf.DataConfig):
             >>>     __default__ = {
-            >>>         'opt1': scfg.Value(None),
-            >>>         'opt2': scfg.Value(None, alias=['arg2']),
+            >>>         'opt1': kwconf.Value(None),
+            >>>         'opt2': kwconf.Value(None, alias=['arg2']),
             >>>     }
-            >>> config1 = MyConfig(data={'opt2': 'foo'})
+            >>> config1 = MyConfig(**{'opt2': 'foo'})
             >>> assert config1['opt2'] == 'foo'
-            >>> config2 = MyConfig(data={'arg2': 'bar'})
+            >>> config2 = MyConfig(**{'arg2': 'bar'})
             >>> assert config2['opt2'] == 'bar'
             >>> assert 'arg2' not in config2
         """
@@ -1141,22 +1080,15 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                    localns=None, stacklevel=0):
         """
         Example:
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
-            >>>     description = 'my CLI description'
+            >>> import kwconf
+            >>> class MyConfig(kwconf.DataConfig):
+            >>>     'my CLI description'
             >>>     __default__ = {
-            >>>         'src':  scfg.Value(['foo'], position=1, nargs='+'),
-            >>>         'dry':  scfg.Value(False),
-            >>>         'approx':  scfg.Value(False, isflag=True, alias=['a1', 'a2']),
+            >>>         'src':  kwconf.Value(['foo'], position=1, nargs='+'),
+            >>>         'dry':  kwconf.Value(False),
+            >>>         'approx':  kwconf.Value(False, isflag=True, alias=['a1', 'a2']),
             >>>     }
             >>> self = MyConfig()
-            >>> # xdoctest: +REQUIRES(PY3)
-            >>> # Python2 argparse does a hard sys.exit instead of raise
-            >>> import sys
-            >>> if sys.version_info[0:2] < (3, 6):
-            >>>     # also skip on 3.5 because of dict ordering
-            >>>     import pytest
-            >>>     pytest.skip()
             >>> self._read_argv(argv='')
             >>> print('self = {}'.format(self))
             >>> self = MyConfig()
@@ -1201,9 +1133,9 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> x = parser.parse_known_args()
 
         Example:
-            >>> import kwconf as scfg
+            >>> import kwconf
             >>> import pytest
-            >>> class EmptyConfig(scfg.Config):
+            >>> class EmptyConfig(kwconf.DataConfig):
             >>>     ...
             >>> self = EmptyConfig()
             >>> with pytest.raises(Exception) as ex:
@@ -1233,15 +1165,15 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
         Example:
             >>> # SubConfig case: staged parsing + dotted overrides
-            >>> import kwconf as scfg
+            >>> import kwconf
             >>> import pytest
-            >>> class Adam(scfg.Config):
+            >>> class Adam(kwconf.DataConfig):
             ...     __default__ = {'lr': 1e-3}
-            >>> class Sgd(scfg.Config):
+            >>> class Sgd(kwconf.DataConfig):
             ...     __default__ = {'momentum': 0.9}
-            >>> class TrainCfg(scfg.Config):
+            >>> class TrainCfg(kwconf.DataConfig):
             ...     __default__ = {
-            ...         'optim': scfg.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd}),
+            ...         'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd}),
             ...     }
             >>> cfg = TrainCfg()
             >>> cfg._read_argv(argv='--optim=sgd --optim.momentum=0.8')
@@ -1595,8 +1527,8 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             xdoctest -m kwconf.config Config.port_to_dataconf
 
         Example:
-            >>> import kwconf as scfg
-            >>> self = scfg.Config.demo()
+            >>> import kwconf
+            >>> self = kwconf.DataConfig.demo()
             >>> print(self.port_to_dataconf())
         """
         entries = []
@@ -1624,22 +1556,13 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             indent = ' ' * 8
 
         if style == 'orig':
-            recon_str = [
-                'import ubelt as ub',
-                'import kwconf as scfg',
-                '',
-                'class ' + name + '(scfg.Config):',
-                '    """',
-                ub.indent(description or ''),
-                '    """',
-                '    __default__ = {',
-            ]
+            raise Exception('no longer supported')
         elif style == 'dataconf':
             recon_str = [
                 'import ubelt as ub',
-                'import kwconf as scfg',
+                'import kwconf',
                 '',
-                'class ' + name + '(scfg.Config):',
+                'class ' + name + '(kwconf.DataConfig):',
                 '    """',
                 ub.indent(description or ''),
                 '    """',
@@ -1658,9 +1581,9 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             val_body = ', '.join(value_args)
 
             if style == 'orig':
-                recon_str.append("{}'{}': scfg.Value({}),".format(indent, key, val_body))
+                recon_str.append("{}'{}': kwconf.Value({}),".format(indent, key, val_body))
             elif style ==  'dataconf':
-                recon_str.append("{}{} = scfg.Value({})".format(indent, key, val_body))
+                recon_str.append("{}{} = kwconf.Value({})".format(indent, key, val_body))
             else:
                 raise KeyError(style)
 
@@ -1704,7 +1627,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> # xdoctest: +REQUIRES(module:click)
             >>> from kwconf.config import *  # NOQA
             >>> import click
-            >>> import kwconf as scfg
+            >>> import kwconf
             >>> @click.command()
             >>> @click.option('--dataset', required=True, type=click.Path(exists=True), help='input dataset')
             >>> @click.option('--deployed', required=True, type=click.Path(exists=True), help='weights file')
@@ -1712,19 +1635,19 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> @click.option('--key2', default='456', help='another key')
             >>> def click_main(dataset, deployed, key1, key2):
             >>>     ...
-            >>> text = scfg.Config.port_from_click(click_main)
+            >>> text = kwconf.Config.port_from_click(click_main)
             >>> print(text)
             import ubelt as ub
-            import kwconf as scfg
+            import kwconf
             ...
-            class click_main(scfg.DataConfig):
+            class click_main(kwconf.DataConfig):
                 ...
                 argparse CLI generated by kwconf ...
                 ...
-                dataset = scfg.Value(None, required=True, help='input dataset')
-                deployed = scfg.Value(None, required=True, help='weights file')
-                key1 = scfg.Value(123, help='some key')
-                key2 = scfg.Value(456, help='another key')
+                dataset = kwconf.Value(None, required=True, help='input dataset')
+                deployed = kwconf.Value(None, required=True, help='weights file')
+                key1 = kwconf.Value(123, help='some key')
+                key2 = kwconf.Value(456, help='another key')
         """
         import click
         ctx = click.Context(click.Command(''))
@@ -1776,7 +1699,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             - [ ] Handle mutually exclusive groups
 
         Example:
-            >>> import kwconf as scfg
+            >>> import kwconf
             >>> import argparse
             >>> parser = argparse.ArgumentParser(description='my argparse')
             >>> parser.add_argument('pos_arg1')
@@ -1797,7 +1720,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> mutex_group3 = parser.add_mutually_exclusive_group()
             >>> mutex_group3.add_argument('--mgroup3_opt1')
             >>> mutex_group3.add_argument('--mgroup3_opt2')
-            >>> text = scfg.Config.port_from_argparse(parser, name='PortedConfig', style='dataconf')
+            >>> text = kwconf.DataConfig.port_from_argparse(parser, name='PortedConfig', style='dataconf')
             >>> print(text)
             >>> # Make an instance of the ported class
             >>> vals = {}
@@ -1839,7 +1762,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             xdoctest -m kwconf.config Config.cls_from_argparse
 
         Example:
-            >>> import kwconf as scfg
+            >>> import kwconf
             >>> import argparse
             >>> parser = argparse.ArgumentParser(description='my argparse')
             >>> parser.add_argument('pos_arg1')
@@ -1860,7 +1783,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> mutex_group3 = parser.add_mutually_exclusive_group()
             >>> mutex_group3.add_argument('--mgroup3_opt1')
             >>> mutex_group3.add_argument('--mgroup3_opt2')
-            >>> DynamicClass = scfg.DataConfig.cls_from_argparse(parser)
+            >>> DynamicClass = kwconf.DataConfig.cls_from_argparse(parser)
             >>> print(f'DynamicClass.__default__ = {ub.urepr(DynamicClass.__default__, nl=1)}')
             >>> self = DynamicClass()
             >>> print(f'self = {ub.urepr(self, nl=1)}')
@@ -1991,10 +1914,10 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             xdoctest -m kwconf.config Config.port_to_argparse
 
         Example:
-            >>> import kwconf as scfg
-            >>> class DemoCLI(scfg.DataConfig):
-            >>>     my_opt = scfg.Value('v1', help='demo option')
-            >>>     flag = scfg.Value(False, isflag=True, help='demo flag')
+            >>> import kwconf
+            >>> class DemoCLI(kwconf.DataConfig):
+            >>>     my_opt = kwconf.Value('v1', help='demo option')
+            >>>     flag = kwconf.Value(False, isflag=True, help='demo flag')
             >>> text = DemoCLI().port_to_argparse(
             >>>     fuzzy_hyphens=True, flag_value_mode=True)
             >>> print(text)
@@ -2004,9 +1927,9 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> assert 'from kwconf' not in text
 
         Example:
-            >>> import kwconf as scfg
-            >>> class SimpleCLI(scfg.DataConfig):
-            >>>     data = scfg.Value(None, help='input data', position=1)
+            >>> import kwconf
+            >>> class SimpleCLI(kwconf.DataConfig):
+            >>>     data = kwconf.Value(None, help='input data', position=1)
             >>> self = SimpleCLI()
             >>> text = self.port_to_argparse()
             >>> print(text)
@@ -2207,7 +2130,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         Example:
             >>> # xdoctest: +REQUIRES(module:omegaconf)
             >>> import kwconf
-            >>> self = kwconf.Config.demo()
+            >>> self = kwconf.DataConfig.demo()
             >>> oconf = self.to_omegaconf()
         """
         from omegaconf import OmegaConf
@@ -2269,7 +2192,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         Example:
             >>> # You can now make instances of this class
             >>> import kwconf
-            >>> self = kwconf.Config.demo()
+            >>> self = kwconf.DataConfig.demo()
             >>> parser = self.argparse()
             >>> parser.print_help()
             >>> # xdoctest: +REQUIRES(PY3)
@@ -2278,14 +2201,14 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
         Example:
             >>> # You can now make instances of this class
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
+            >>> import kwconf
+            >>> class MyConfig(kwconf.DataConfig):
             >>>     __description__ = 'my CLI description'
             >>>     __default__ = {
-            >>>         'path1':  scfg.Value(None, position=1, alias='src'),
-            >>>         'path2':  scfg.Value(None, position=2, alias='dst'),
-            >>>         'dry':  scfg.Value(False, isflag=True),
-            >>>         'approx':  scfg.Value(False, isflag=False, alias=['a1', 'a2']),
+            >>>         'path1':  kwconf.Value(None, position=1, alias='src'),
+            >>>         'path2':  kwconf.Value(None, position=2, alias='dst'),
+            >>>         'dry':  kwconf.Value(False, isflag=True),
+            >>>         'approx':  kwconf.Value(False, isflag=False, alias=['a1', 'a2']),
             >>>     }
             >>> self = MyConfig()
             >>> special_options = True
@@ -2297,17 +2220,17 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
         Example:
             >>> # Test required option
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
+            >>> import kwconf
+            >>> class MyConfig(kwconf.DataConfig):
             >>>     __description__ = 'my CLI description'
             >>>     __default__ = {
-            >>>         'path1':  scfg.Value(None, position=1, alias='src'),
-            >>>         'path2':  scfg.Value(None, position=2, alias='dst'),
-            >>>         'dry':  scfg.Value(False, isflag=True),
-            >>>         'important':  scfg.Value(False, required=True),
-            >>>         'approx':  scfg.Value(False, isflag=False, alias=['a1', 'a2']),
+            >>>         'path1':  kwconf.Value(None, position=1, alias='src'),
+            >>>         'path2':  kwconf.Value(None, position=2, alias='dst'),
+            >>>         'dry':  kwconf.Value(False, isflag=True),
+            >>>         'important':  kwconf.Value(False, required=True),
+            >>>         'approx':  kwconf.Value(False, isflag=False, alias=['a1', 'a2']),
             >>>     }
-            >>> self = MyConfig(data={'important': 1})
+            >>> self = MyConfig(**{'important': 1})
             >>> special_options = True
             >>> parser = None
             >>> parser = self.argparse(special_options=special_options)
@@ -2324,12 +2247,12 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
         Example:
             >>> # Is it possible to the CLI as a key/val pair or an exist bool flag?
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
+            >>> import kwconf
+            >>> class MyConfig(kwconf.DataConfig):
             >>>     __default__ = {
-            >>>         'path1':  scfg.Value(None, position=1, alias='src'),
-            >>>         'path2':  scfg.Value(None, position=2, alias='dst'),
-            >>>         'flag':  scfg.Value(None, isflag=True),
+            >>>         'path1':  kwconf.Value(None, position=1, alias='src'),
+            >>>         'path2':  kwconf.Value(None, position=2, alias='dst'),
+            >>>         'flag':  kwconf.Value(None, isflag=True),
             >>>     }
             >>> self = MyConfig()
             >>> special_options = True
@@ -2354,16 +2277,16 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
         Example:
             >>> # Test groups
-            >>> import kwconf as scfg
-            >>> class MyConfig(scfg.Config):
+            >>> import kwconf
+            >>> class MyConfig(kwconf.DataConfig):
             >>>     __description__ = 'my CLI description'
             >>>     __default__ = {
-            >>>         'arg1':  scfg.Value(None, group='a'),
-            >>>         'arg2':  scfg.Value(None, group='a', alias='a2'),
-            >>>         'arg3':  scfg.Value(None, group='b'),
-            >>>         'arg4':  scfg.Value(None, group='b', alias='a4'),
-            >>>         'arg5':  scfg.Value(None, mutex_group='b', isflag=True),
-            >>>         'arg6':  scfg.Value(None, mutex_group='b', alias='a6'),
+            >>>         'arg1':  kwconf.Value(None, group='a'),
+            >>>         'arg2':  kwconf.Value(None, group='a', alias='a2'),
+            >>>         'arg3':  kwconf.Value(None, group='b'),
+            >>>         'arg4':  kwconf.Value(None, group='b', alias='a4'),
+            >>>         'arg5':  kwconf.Value(None, mutex_group='b', isflag=True),
+            >>>         'arg6':  kwconf.Value(None, mutex_group='b', alias='a6'),
             >>>     }
             >>> self = MyConfig()
             >>> parser = self.argparse()
@@ -2445,9 +2368,6 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                     ''').format(self.__class__.__name__))
 
         return parser
-
-
-LegacyConfig = Config
 
 
 __notes__ = """

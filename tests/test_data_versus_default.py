@@ -3,14 +3,14 @@ The difference between data and default is that default will update the
 defaults and persist between multiple load operations whereas data will
 only set the immediate values and not persist over multiple loads.
 """
-import kwconf as scfg
+import kwconf
 import pytest
 
 
 def generate_dataconfig_instance_variants():
     # In its simplest incarnation, the config class specifies default values.
     # For each configuration parameter.
-    class ExampleConfig1(scfg.DataConfig):
+    class ExampleConfig1(kwconf.DataConfig):
         num = 1
         mode = 'bar'
         ignore = ['baz', 'biz']
@@ -19,16 +19,16 @@ def generate_dataconfig_instance_variants():
     config = ExampleConfig1()
     yield config, 'dataconfig'
 
-    class ExampleConfig2(scfg.Config):
+    class ExampleConfig2(kwconf.Config):
         num: int = 1
         mode: str = 'bar'
-        ignore: list = scfg.Value(default_factory=lambda: ['baz', 'biz'])
+        ignore: list = kwconf.Value(default_factory=lambda: ['baz', 'biz'])
 
     config = ExampleConfig2()
     yield config, 'typed-config'
 
     with pytest.warns(Warning):
-        class ExampleConfig3(scfg.Config):
+        class ExampleConfig3(kwconf.Config):
             default = dict(
                 num=1,
                 mode='bar',

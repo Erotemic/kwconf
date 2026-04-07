@@ -2,9 +2,6 @@
 requires = [ "setuptools>=41.0.1",]
 build-backend = "setuptools.build_meta"
 
-[tool.mypy]
-ignore_missing_imports = true
-
 [tool.xcookie]
 tags = [ "kitware", "gitlab", "github", "purepy",]
 mod_name = "kwconf"
@@ -12,11 +9,11 @@ repo_name = "kwconf"
 pkg_name = "kwconf"
 rel_mod_parent_dpath = "."
 os = [ "linux", "osx", "win",]
-min_python = "3.7"
+min_python = "3.10"
 version = "0.0.1"
 url = "None"
-author = "Jon Crall"
-author_email = "erotemic@gmail.com"
+author = "Kitware Inc., Jon Crall"
+author_email = "kitware@kitware.com, jon.crall@kitware.com"
 description = "The kwconf module"
 license = "Apache 2"
 dev_status = "planning"
@@ -33,3 +30,37 @@ branch = true
 [tool.coverage.report]
 exclude_lines = [ "pragma: no cover", ".*  # pragma: no cover", ".*  # nocover", "def __repr__", "raise AssertionError", "raise NotImplementedError", "if 0:", "if trace is not None", "verbose = .*", "^ *raise", "^ *pass *$", "if _debug:", "if __name__ == .__main__.:", ".*if six.PY2:",]
 omit = [ "kwconf/__main__.py", "*/setup.py",]
+
+[tool.codespell]
+skip = ['./docs/build', './scriptconfig.egg-info']
+count = true
+quiet-level = 3
+ignore-words-list = ["ANS", "doesnt", "cant"]
+
+[tool.mypy]
+ignore_missing_imports = true
+#ignore_errors = true
+
+[tool.ty.rules]
+unused-type-ignore-comment = "ignore"
+unresolved-import = "ignore"
+
+[tool.ruff]
+line-length = 80
+target-version = "py310"
+
+[tool.ruff.lint]
+# Enable Flake8 (E, F) and isort (I) rules.
+select = ["E", "F", "I"]
+# Ignore specific rules, for example, E501 (line too long) as it's handled by the formatter.
+ignore = [
+    "E501",  # line too long
+    "E402",  # Module level import not at top of file
+]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = false
