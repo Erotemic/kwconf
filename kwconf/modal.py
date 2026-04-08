@@ -18,8 +18,8 @@ Example
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
     >>>     @classmethod
-    >>>     def main(cls, cmdline=1, **kwargs):
-    >>>         self = cls.cli(cmdline=cmdline, data=kwargs)
+    >>>     def main(cls, argv=1, **kwargs):
+    >>>         self = cls.cli(argv=argv, data=kwargs)
     >>>         print('Called Foo with: ' + str(self))
     >>> #
     >>> class DoBarCLI(kwconf.DataConfig):
@@ -27,8 +27,8 @@ Example
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
     >>>     @classmethod
-    >>>     def main(cls, cmdline=1, **kwargs):
-    >>>         self = cls.cli(cmdline=cmdline, data=kwargs)
+    >>>     def main(cls, argv=1, **kwargs):
+    >>>         self = cls.cli(argv=argv, data=kwargs)
     >>>         print('Called Bar with: ' + str(self))
     >>> #
     >>> #
@@ -178,8 +178,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         'foo': 'spam'
         >>>     }
         >>>     @classmethod
-        >>>     def main(cls, cmdline=1, **kwargs):
-        >>>         config = cls(cmdline=cmdline, data=kwargs)
+        >>>     def main(cls, argv=1, **kwargs):
+        >>>         config = cls.cli(argv=argv, data=kwargs)
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> @self.register
@@ -188,8 +188,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
-        >>>     def main(cls, cmdline=1, **kwargs):
-        >>>         config = cls.cli(cmdline=cmdline, data=kwargs)
+        >>>     def main(cls, argv=1, **kwargs):
+        >>>         config = cls.cli(argv=argv, data=kwargs)
         >>>         print('config2 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> parser = self.argparse()
@@ -223,8 +223,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         __command__ = 'command1'
         >>>         foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>         @classmethod
-        >>>         def main(cls, cmdline=1, **kwargs):
-        >>>             config = cls.cli(cmdline=cmdline, data=kwargs)
+        >>>         def main(cls, argv=1, **kwargs):
+        >>>             config = cls.cli(argv=argv, data=kwargs)
         >>>             print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>>     #
         >>>     class Command2(kwconf.DataConfig):
@@ -232,8 +232,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         foo = 'eggs'
         >>>         baz = 'biz'
         >>>         @classmethod
-        >>>         def main(cls, cmdline=1, **kwargs):
-        >>>             config = cls.cli(cmdline=cmdline, data=kwargs)
+        >>>         def main(cls, argv=1, **kwargs):
+        >>>             config = cls.cli(argv=argv, data=kwargs)
         >>>             print('config2 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> MyModalCLI.main(argv=['command1'])
@@ -249,8 +249,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> class Command1(kwconf.DataConfig):
         >>>     foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>     @classmethod
-        >>>     def main(cls, cmdline=1, **kwargs):
-        >>>         config = cls.cli(cmdline=cmdline, data=kwargs)
+        >>>     def main(cls, argv=1, **kwargs):
+        >>>         config = cls.cli(argv=argv, data=kwargs)
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> @MyModalCLI.register(command='command2')
@@ -258,8 +258,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
-        >>>     def main(cls, cmdline=1, **kwargs):
-        >>>         config = cls.cli(cmdline=cmdline, data=kwargs)
+        >>>     def main(cls, argv=1, **kwargs):
+        >>>         config = cls.cli(argv=argv, data=kwargs)
         >>>         print('config2 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> MyModalCLI.main(argv=['command1'])
@@ -272,16 +272,16 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> class Command1(kwconf.DataConfig):
         >>>     foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>     @classmethod
-        >>>     def main(cls, cmdline=1, **kwargs):
-        >>>         config = cls.cli(cmdline=cmdline, data=kwargs)
+        >>>     def main(cls, argv=1, **kwargs):
+        >>>         config = cls.cli(argv=argv, data=kwargs)
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> class Command2(kwconf.DataConfig):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
-        >>>     def main(cls, cmdline=1, **kwargs):
-        >>>         config = cls.cli(cmdline=cmdline, data=kwargs)
+        >>>     def main(cls, argv=1, **kwargs):
+        >>>         config = cls.cli(argv=argv, data=kwargs)
         >>>         print('config2 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> class MyModalCLI(kwconf.ModalCLI):
@@ -364,7 +364,7 @@ class ModalCLI(metaclass=MetaModalCLI):
                 f'''
                 The ModalCLI expects that registered subconfigs have a
                 ``main`` classmethod with the signature
-                ``main(cls, cmdline: bool, **kwargs)``,
+                ``main(cls, argv: bool, **kwargs)``,
                 but {cli_cls} is missing one.
             '''))
 
@@ -764,13 +764,9 @@ class ModalCLI(metaclass=MetaModalCLI):
         if 'argv' in main_sig.parameters:
             # Use current standard argument control
             control_kw['argv'] = False
-        elif 'cmdline' in main_sig.parameters:
-            # Use legacy cmdline argument control
-            control_kw['cmdline'] = False
 
         try:
             ret = sub_main(**control_kw, **kw)
-            # cmdline=False, **kw)
         except Exception as ex:
             print('ERROR ex = {!r}'.format(ex))
             raise
