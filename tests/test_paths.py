@@ -29,12 +29,12 @@ def test_paths_with_commas_in_config():
     kw = {
         'key': '/path/with,commas',
     }
-    config = TestConfig(default=kw, cmdline=False)
+    config = TestConfig.cli(default=kw, argv=False)
     print(config['key'])
     assert isinstance(config['key'], str), 'specifying a type should prevent smartcast'
 
-    # In the past setting cmdline=True did cause an error
-    config = TestConfig(default=kw, cmdline=True)
+    # In the past setting argv=True did cause an error
+    config = TestConfig.cli(default=kw, argv=True)
     print(config['key'])
     assert isinstance(config['key'], str), 'specifying a type should prevent smartcast'
 
@@ -53,14 +53,14 @@ def test_globstr_with_nargs():
             'paths': kwconf.Value(None, nargs='+'),
         }
 
-    cmdline = '--paths {dpath}/*'.format(dpath=dpath)
-    config = TestConfig(cmdline=cmdline)
+    argv = '--paths {dpath}/*'.format(dpath=dpath)
+    config = TestConfig.cli(argv=argv)
 
     # ub.cmd(f'echo {dpath}/*', shell=True)
 
     import glob
-    cmdline = '--paths ' + ' '.join(list(glob.glob(join(dpath, '*'))))
-    config = TestConfig(cmdline=cmdline)
+    argv = '--paths ' + ' '.join(list(glob.glob(join(dpath, '*'))))
+    config = TestConfig.cli(argv=argv)
 
-    cmdline = '--paths=' + ','.join(list(glob.glob(join(dpath, '*'))))
-    config = TestConfig(cmdline=cmdline)  # NOQA
+    argv = '--paths=' + ','.join(list(glob.glob(join(dpath, '*'))))
+    config = TestConfig.cli(argv=argv)  # NOQA
