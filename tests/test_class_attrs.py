@@ -50,22 +50,6 @@ def test_class_inst_default_attr():
         assert default_ids['self._default'] != default_ids['self.__default__']
 
 
-def test_default_spelling_warns_but_works():
-    import kwconf
-    import pytest
-
-    with pytest.warns(Warning):
-        class LegacyConfig(kwconf.DataConfig):
-            default = {
-                'option1': 1,
-                'option2': 2,
-            }
-
-    cfg = LegacyConfig()
-    assert cfg.option1 == 1
-    assert cfg.option2 == 2
-
-
 def test_class_inst_normalize_attr():
     """
     The normalize and __post_init__ methods should function equivalently

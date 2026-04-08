@@ -916,7 +916,7 @@ def _class_identifier(cls):
 
     Example:
         >>> import kwconf
-        >>> assert _class_identifier(kwconf.DataConfig).endswith('.Config')
+        >>> assert _class_identifier(kwconf.DataConfig).endswith('.DataConfig')
     """
     return f'{cls.__module__}.{cls.__name__}'
 
