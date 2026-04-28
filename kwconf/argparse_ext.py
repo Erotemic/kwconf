@@ -9,7 +9,7 @@ import os
 import sys
 
 _FALSY: set[str] = {'0', 'false', 'f', 'no', ''}
-SCRIPTCONFIG_NORICH: bool = os.environ.get('SCRIPTCONFIG_NORICH', '').lower() not in _FALSY
+KWCONF_NORICH: bool = os.environ.get('KWCONF_NORICH', '').lower() not in _FALSY
 
 
 __docstubs__ = """
@@ -24,7 +24,7 @@ _RawDescriptionHelpFormatter: type[argparse.HelpFormatter]
 _ArgumentDefaultsHelpFormatter: type[argparse.HelpFormatter]
 
 try:
-    if SCRIPTCONFIG_NORICH:
+    if KWCONF_NORICH:
         raise ImportError
     import rich_argparse
 except ImportError:

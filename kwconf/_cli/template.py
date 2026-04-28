@@ -86,17 +86,17 @@ def _build_modal_template(config):
         #!/usr/bin/env python3
         # PYTHON_ARGCOMPLETE_OK
         import kwconf
-        # from module.cli.script import ScriptCLI
+        # from module.cli.command import KwconfCLI
 
         class {classname}(kwconf.ModalCLI):
             """
             Your description here
             """
             # Either add other kwconf clis as class variables here
-            # from module.cli.script import ScriptCLI as script
+            # from module.cli.command import KwconfCLI as command
 
         # Or register them here.
-        # {classname}.register(ScriptCLI)
+        # {classname}.register(KwconfCLI)
 
         __cli__ = {classname}
         main = __cli__.main

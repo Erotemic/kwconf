@@ -1815,7 +1815,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         Port argparse options to a list of key / values.
         """
         # This logic should be able to be used statically or dynamically
-        # to transition argparse to ScriptConfig code.
+        # to transition argparse back to kwconf config classes.
         pos_counter = it.count(1)
 
         # Determine if the parser has groups / mutex groups. Build mappings so

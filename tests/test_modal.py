@@ -294,7 +294,7 @@ def test_modal_version():
     Modal CLIs should be able to cause the version to print
 
     CommandLine:
-        DEBUG_SCRIPTCONFIG=1 xdoctest -m tests/test_modal.py test_submodals
+        DEBUG_KWCONF=1 xdoctest -m tests/test_modal.py test_submodals
     """
     import kwconf
     # from kwconf import diagnostics
