@@ -64,7 +64,7 @@ def port_argparse_from_kwconf():
 
     import re
     argparse_text = re.sub(
-        r"(description=')[^']*'",
+        r"(description=')[^']*',",
         r"\1kwconf',",
         argparse_text, count=1)
 
@@ -97,7 +97,7 @@ def port_argparse_from_kwconf_with_unwrapped_values():
     print(argparse_text)
 
     argparse_text = re.sub(
-        r"(description=')[^']*'",
+        r"(description=')[^']*',",
         r"\1kwconf',",
         argparse_text, count=1)
 
