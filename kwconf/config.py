@@ -828,7 +828,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             if template is not None and isinstance(template, Value):
                 # If the new value is raw data, and we have a underlying Value
                 # object update it.
-                self._data[key] = template.cast(value)
+                self._data[key] = template.coerce(value)
             else:
                 # If we don't have an underlying Value object simply set the
                 # raw data.
@@ -1355,7 +1355,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 # takes care of this.
                 template = self.__default__[key]
                 # print('template = {!r}'.format(template))
-                value = template.cast(value)
+                value = template.coerce(value)
 
             default_value = self.__default__[key].value
             # Preserve any data/default overrides that were already applied

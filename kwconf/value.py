@@ -168,20 +168,31 @@ class Value(ub.NiceRepr):
         return f'{self.value!r}'
 
     def update(self, value: Any) -> "Value":
-        self.value = self.cast(value)
+        self.value = self.coerce(value)
         return self
 
-    def cast(self, value: Any) -> Any:
+    def coerce(self, value: Any) -> Any:
+        """
+        Best-effort coercion of ``value`` toward this Value's expected runtime
+        type. The name is deliberate: this is not a clean type-cast.
+
+        On strings it delegates to ``smartcast``, which both type-infers and
+        (on the legacy un-typed path) splits comma-separated input into a
+        list. When ``self.type`` is set, smartcast routes to the typed path
+        (``_as_smart_type``) and ``allow_split`` is ignored, so a typed
+        schema is insulated from the legacy comma-splitting behavior.
+        """
         if isinstance(value, str):
             # FIXME: We want to move away from allow_split=True
-            # Note: when ``self.type`` is set, smartcast routes to the typed
-            # path (``_as_smart_type``) and the ``allow_split`` flag is
-            # ignored, so the typed schema path is already insulated from
-            # legacy comma splitting. The ``allow_split='auto'`` setting is
-            # only consulted on the un-typed legacy path.
             value = smartcast_mod.smartcast(value, self.type,
                                             allow_split='auto')
         return value
+
+    # Backwards-compatible alias of ``coerce``. Older kwconf / scriptconfig
+    # code (and possibly user subclasses of :class:`Value`) referenced this
+    # under the ``cast`` name; keep both available so existing overrides keep
+    # working.
+    cast = coerce
 
     def copy(self) -> "Value":
         import copy
@@ -194,7 +205,7 @@ class Value(ub.NiceRepr):
         import copy
         new = self.copy()
         if self.default_factory is not None:
-            new.value = new.cast(self.default_factory())
+            new.value = new.coerce(self.default_factory())
         else:
             new.value = copy.deepcopy(self.value)
         return new
@@ -343,10 +354,12 @@ class Path(Value):
                  alias: Sequence[str] | None = None) -> None:
         super(Path, self).__init__(value, str, help=help, alias=alias)
 
-    def cast(self, value: Any) -> Any:
+    def coerce(self, value: Any) -> Any:
         if isinstance(value, str):
             value = ub.expandpath(value)
         return value
+
+    cast = coerce
 
 
 class PathList(Value):
@@ -372,7 +385,7 @@ class PathList(Value):
         >>> assert len(PathList(['/a', '/b']).value) == 2
     """
 
-    def cast(self, value: Any = None) -> Any:
+    def coerce(self, value: Any = None) -> Any:
         if isinstance(value, str):
             import glob
             paths1 = sorted(glob.glob(ub.expandpath(value)))
@@ -382,6 +395,8 @@ class PathList(Value):
             else:
                 value = paths2
         return value
+
+    cast = coerce
 
 
 def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
@@ -649,7 +664,7 @@ def _maker_smart_parse_action(self):
                 def _smart_type(value):
                     key = self.dest
                     template = kwconf_object.default[key]
-                    value = template.cast(value)
+                    value = template.coerce(value)
                     return value
 
                 self.type = _smart_type
