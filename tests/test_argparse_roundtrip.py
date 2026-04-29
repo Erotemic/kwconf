@@ -28,7 +28,7 @@ def port_kwconf_from_argparse():
 
         class MyConfig(kwconf.DataConfig):
             """ + tq + """
-            $
+
             """ + tq + """
             flag1 = kwconf.Value(None, isflag='counter', help=None)
             flag2 = kwconf.Value(False, isflag=True, help=None)
