@@ -692,7 +692,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 'option3': None,
                 'option4': 'foo',
                 'discrete': kwconf.Value(None, choices=['a', 'b', 'c']),
-                'apath': kwconf.Path(help='a path'),
+                'apath': kwconf.Value(None, type=str, help='a path'),
             }
         self = DemoConfig()
         return self
@@ -1139,27 +1139,30 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> self._read_argv(argv='')
             >>> print('self = {}'.format(self))
             >>> self = MyConfig()
-            >>> self._read_argv(argv='--src [,]')
+            >>> # nargs='+' makes argparse build a list from each space-separated
+            >>> # token. kwconf does not split commas inside an individual token.
+            >>> self._read_argv(argv='--src a b')
             >>> print('self = {}'.format(self))
             >>> self = MyConfig()
-            >>> self._read_argv(argv='--src [,] --a1')
+            >>> self._read_argv(argv='--src a b --a1')
             >>> print('self = {}'.format(self))
             self = <MyConfig({'src': ['foo'], 'dry': False, 'approx': False})>
-            self = <MyConfig({'src': [], 'dry': False, 'approx': False})>
-            self = <MyConfig({'src': [], 'dry': False, 'approx': True})>
+            self = <MyConfig({'src': ['a', 'b'], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': ['a', 'b'], 'dry': False, 'approx': True})>
 
             >>> self = MyConfig()
             >>> self._read_argv(argv='p1 p2 p3')
             >>> print('self = {}'.format(self))
             >>> self = MyConfig()
+            >>> # ``--src=p4,p5,p6!`` is a single token: kwconf does NOT split it.
             >>> self._read_argv(argv='--src=p4,p5,p6!')
             >>> print('self = {}'.format(self))
             >>> self = MyConfig()
             >>> self._read_argv(argv='p1 p2 p3 --src=p4,p5,p6!')
             >>> print('self = {}'.format(self))
             self = <MyConfig({'src': ['p1', 'p2', 'p3'], 'dry': False, 'approx': False})>
-            self = <MyConfig({'src': ['p4', 'p5', 'p6!'], 'dry': False, 'approx': False})>
-            self = <MyConfig({'src': ['p4', 'p5', 'p6!'], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': ['p4,p5,p6!'], 'dry': False, 'approx': False})>
+            self = <MyConfig({'src': ['p4,p5,p6!'], 'dry': False, 'approx': False})>
 
             >>> self = MyConfig()
             >>> self._read_argv(argv='p1')

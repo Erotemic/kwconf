@@ -176,16 +176,16 @@ class Value(ub.NiceRepr):
         Best-effort coercion of ``value`` toward this Value's expected runtime
         type. The name is deliberate: this is not a clean type-cast.
 
-        On strings it delegates to ``smartcast``, which both type-infers and
-        (on the legacy un-typed path) splits comma-separated input into a
-        list. When ``self.type`` is set, smartcast routes to the typed path
-        (``_as_smart_type``) and ``allow_split`` is ignored, so a typed
-        schema is insulated from the legacy comma-splitting behavior.
+        Strings delegate to ``smartcast`` for type inference. kwconf
+        intentionally departs from scriptconfig here: comma-separated
+        strings are NOT split into lists -- a value like ``"a,b"`` stays the
+        literal string. The legacy comma-splitting behavior remains
+        available on the CLI side by declaring a Value with
+        ``type='smartcast:legacy'``.
         """
         if isinstance(value, str):
-            # FIXME: We want to move away from allow_split=True
             value = smartcast_mod.smartcast(value, self.type,
-                                            allow_split='auto')
+                                            allow_split=False)
         return value
 
     def copy(self) -> "Value":
@@ -331,62 +331,6 @@ class Flag(Value):
         assert isflag, 'Cannot disable isflag on a Flag value'
         kwargs['isflag'] = isflag
         super().__init__(value=value, **kwargs)
-
-
-class Path(Value):
-    """
-    Note this is mean to be used only with kwconf.DataConfig.
-    It does NOT represent a pathlib object.
-
-    NOTE:
-        Not well maintained or used, may be removed or refactored in the
-        future.
-    """
-    def __init__(self,
-                 value: Any = None,
-                 help: str | None = None,
-                 alias: Sequence[str] | None = None) -> None:
-        super(Path, self).__init__(value, str, help=help, alias=alias)
-
-    def coerce(self, value: Any) -> Any:
-        if isinstance(value, str):
-            value = ub.expandpath(value)
-        return value
-
-
-class PathList(Value):
-    """
-    Can be specified as a list or as a globstr
-
-    NOTE:
-        Not well maintained or used, may be removed or refactored in the
-        future.
-
-    FIXME:
-        will fail if there are any commas in the path name
-
-    Example:
-        >>> from os.path import join
-        >>> path = ub.modname_to_modpath('kwconf', hide_init=True)
-        >>> globstr = join(path, '*.py')
-        >>> # Passing in a globstr is accepted
-        >>> assert len(PathList(globstr).value) > 0
-        >>> # Smartcast should separate these
-        >>> assert len(PathList('/a,/b').value) == 2
-        >>> # Passing in a list is accepted
-        >>> assert len(PathList(['/a', '/b']).value) == 2
-    """
-
-    def coerce(self, value: Any = None) -> Any:
-        if isinstance(value, str):
-            import glob
-            paths1 = sorted(glob.glob(ub.expandpath(value)))
-            paths2 = smartcast_mod.smartcast(value)
-            if paths1:
-                value = paths1
-            else:
-                value = paths2
-        return value
 
 
 def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:

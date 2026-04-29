@@ -46,10 +46,9 @@ __submodules__ = {
 from . import diagnostics  # NOQA
 from .modal import (ModalCLI, ModalValue)
 from .config import (Config, define,)
-from .value import (Path, PathList, Value, Flag)
+from .value import (Value, Flag)
 from .dataconfig import (DataConfig, dataconf,)
 from .subconfig import (SubConfig,)
 
-__all__ = ['Config', 'DataConfig', 'Path', 'PathList',
-           'Value', 'dataconf', 'define', 'Flag', 'ModalCLI',
-           'ModalValue', 'SubConfig']
+__all__ = ['Config', 'DataConfig', 'Value', 'Flag',
+           'dataconf', 'define', 'ModalCLI', 'ModalValue', 'SubConfig']

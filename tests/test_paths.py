@@ -1,22 +1,22 @@
 
 
 def test_paths_with_commas():
-    from kwconf.value import Value, Path
+    """
+    kwconf intentionally does NOT split comma-separated strings into lists
+    (a deliberate departure from scriptconfig). A path that contains commas
+    must round-trip as a string both with and without an explicit type.
+    """
+    from kwconf.value import Value
 
     self = Value('key')
     self.update('/path/with,commas')
     print('self.value = {!r}'.format(self.value))
-    assert isinstance(self.value, list), 'without specifying types a string with commas will be smartcast'
+    assert self.value == '/path/with,commas'
 
     self = Value('key', type=str)
     self.update('/path/with,commas')
     print('self.value = {!r}'.format(self.value))
-    assert isinstance(self.value, str), 'specifying a type should prevent smartcast'
-
-    self = Path('key')
-    self.update('/path/with,commas')
-    print('self.value = {!r}'.format(self.value))
-    assert isinstance(self.value, str), 'specifying a type should prevent smartcast'
+    assert self.value == '/path/with,commas'
 
 
 def test_paths_with_commas_in_config():
