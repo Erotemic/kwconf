@@ -8,10 +8,6 @@ arguments. A script config object is defined by creating a subclass of
 ``Config`` object will behave similar a dictionary, but with a few
 conveniences.
 
-Note:
-    * This class implements the old-style legacy Config class, new applications
-      should favor using DataConfig instead, which has simpler boilerplate.
-
 To get started lets consider some example usage:
 
 Example:
@@ -89,6 +85,7 @@ from __future__ import annotations
 import copy
 import inspect
 import os
+import warnings
 import ubelt as ub
 import itertools as it
 import argparse as argparse_mod
@@ -198,6 +195,53 @@ def _materialize_default_items(defaults: Mapping[str, Any]) -> Dict[str, Any]:
     return realized
 
 
+def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Normalize a ``data`` argument (None, dict, Config, file/path/string) into
+    a plain dict ready for Config.load.
+
+    Supports:
+
+      * ``None`` -> ``{}``
+      * a :class:`Config` instance -> ``data.asdict()``
+      * a :class:`dict` -> returned as-is
+      * a file path (str / os.PathLike) or readable file -> parsed by
+        ``mode`` (auto-detected from file extension; defaults to yaml).
+      * a raw json or yaml string -> parsed in-memory.
+    """
+    if data is None:
+        return {}
+    if isinstance(data, Config):
+        return data.asdict()
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
+        if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
+            import json
+            try:
+                return json.loads(data)
+            except Exception:
+                import yaml  # type: ignore[import-untyped]
+                import io
+                return yaml.load(io.StringIO(data), Loader=yaml.SafeLoader)
+        if mode is None:
+            if isinstance(data, str) and data.lower().endswith('.json'):
+                mode = 'json'
+            elif isinstance(data, os.PathLike) and os.fspath(data).lower().endswith('.json'):
+                mode = 'json'
+            else:
+                mode = 'yaml'
+        with FileLike(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
+            if mode == 'yaml':
+                import yaml  # type: ignore[import-untyped]
+                return yaml.load(file, Loader=yaml.SafeLoader)
+            if mode == 'json':
+                import json
+                return json.load(file)
+            raise KeyError(mode)
+    raise TypeError(f'Expected path, dict, or Config; got {type(data)!r}')
+
+
 def _normalize_class_defaults(defaults, annotations=None):
     """
     Normalize class-level defaults to ensure Value/SubConfig metadata is present.
@@ -258,6 +302,11 @@ class MetaConfig(type):
     Ensures that class attributes are mirrored:
         * __default__ mirrors default
         * __post_init__ mirrors normalize
+
+    Also reserves the ``__class__`` key for SubConfig selector metadata and
+    warns on the common ``key = Value(...),`` trailing-comma typo. These
+    checks were previously only applied by :class:`MetaDataConfig` and now
+    apply uniformly to all kwconf config classes.
     """
 
     @staticmethod
@@ -270,16 +319,22 @@ class MetaConfig(type):
         if diagnostics.DEBUG_META_CONFIG:
             print(f'MetaConfig.__new__ called: {mcls=} {name=} {bases=} {namespace=} {args=} {kwargs=}')
 
+        # Skip class-attr collection only on Config itself (the root); all
+        # subclasses (including DataConfig and user classes) participate.
+        is_root_config = (
+            name == 'Config' and namespace.get('__module__') == __name__
+        )
+
         if 'default' in namespace and '__default__' not in namespace:
             # Ensure the user updates to the newer "__default__" paradigm
-            this_default = namespace['__default__'] = namespace['default']
+            namespace['__default__'] = namespace['default']
             ub.schedule_deprecation(
                 'kwconf', 'default', f'class attribute of {name}',
                 migration='Use __default__ instead',
                 deprecate='0.7.6', error='0.10.0', remove='1.0.0',
             )
 
-        if not (name == 'Config' and namespace.get('__module__') == __name__):
+        if not is_root_config:
             attr_default = _collect_declared_config_attrs(namespace)
             if attr_default:
                 for key in attr_default:
@@ -295,13 +350,31 @@ class MetaConfig(type):
                 this_default = {}
             this_default = ub.udict(this_default)
 
-            inheritence_default = {}
+            inheritence_default: Dict[str, Any] = {}
             for base in reversed(bases):
                 if hasattr(base, '__default__'):
                     inheritence_default.update(base.__default__)  # type: ignore
             inheritence_default.update(this_default)
             this_default = inheritence_default
-            if not (name == 'Config' and namespace.get('__module__') == __name__):
+
+            if not is_root_config:
+                # Reserve "__class__" for nested SubConfig selector metadata.
+                if '__class__' in this_default:
+                    raise ValueError(
+                        'The name "__class__" is reserved for nested DataConfig meta keys'
+                    )
+
+                # Warn on the common ``key = Value(...),`` trailing-comma typo.
+                for k, v in this_default.items():
+                    if isinstance(v, tuple) and len(v) == 1 and isinstance(v[0], Value):
+                        warnings.warn(ub.paragraph(
+                            f'''
+                            It looks like you have a trailing comma in your
+                            {name} DataConfig.  The variable {k!r} has a value of
+                            {v!r}, which is a Tuple[Value]. Typically it should be
+                            a Value.
+                            '''), UserWarning)
+
                 this_default = _normalize_class_defaults(
                     this_default, namespace.get('__annotations__', {}))
             namespace['__default__'] = namespace['default'] = this_default
@@ -419,21 +492,35 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             to use the ``cli`` classmethod to create a command line
             aware config instance..
         """
-        # The _data attribute holds
+        self._init_state(_dont_call_post_init=_dont_call_post_init)
+        self.load(data, cmdline=cmdline, default=default,
+                  _dont_call_post_init=_dont_call_post_init)
+
+    def _init_state(self, _dont_call_post_init: bool = False) -> None:
+        """
+        Initialize per-instance attribute storage from the class-level defaults.
+
+        Shared between :class:`Config` and :class:`DataConfig` constructors.
+        Builds ``self._default`` (a fresh per-instance copy), populates
+        ``self._data`` with raw values, and instantiates any SubConfig nodes.
+        """
         self._data: Dict[str, Any] = {}
         self._default: Dict[str, Value] = {}
         self._subconfig_meta: Dict[str, Any] = {}
         self._has_subconfigs = False
         self._kwconf_post_init_done = False
+        self._alias_map = None
         cls_default = getattr(self, '__default__', getattr(self, 'default', None))
         if cls_default:
             self._default.update(_materialize_default_items(cls_default))
-        self._alias_map = None
-        # Normalize SubConfig-like defaults early
+        # Seed _data with raw values; wrap_subconfig_defaults may overwrite
+        # entries for SubConfig nodes with realized config instances.
+        self._data = {
+            key: (value.value if isinstance(value, Value) else value)
+            for key, value in self._default.items()
+        }
         from kwconf.subconfig import wrap_subconfig_defaults
         wrap_subconfig_defaults(self, _dont_call_post_init=_dont_call_post_init)
-        self.load(data, cmdline=cmdline, default=default,
-                  _dont_call_post_init=_dont_call_post_init)
 
     @classmethod
     def cli(
@@ -910,48 +997,8 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         if default:
             self.update_defaults(default)
 
-        # Maybe this shouldn't be a deep copy?
-        import copy
         _default = copy.deepcopy(self._default)
-
-        if data is None:
-            user_config = {}
-        elif isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
-            if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
-                # Interpret this data as a raw json/YAML string
-                import json
-                try:
-                    user_config = json.loads(data)
-                except Exception:
-                    import yaml  # type: ignore[import-untyped]
-                    import io
-                    raw_file = io.StringIO(data)
-                    user_config = yaml.load(raw_file, Loader=yaml.SafeLoader)
-            else:
-                if mode is None:
-                    if isinstance(data, str):
-                        if data.lower().endswith('.json'):
-                            mode = 'json'
-                    elif isinstance(data, os.PathLike):
-                        if os.fspath(data).lower().endswith('.json'):
-                            mode = 'json'
-                if mode is None:
-                    # Default to yaml
-                    mode = 'yaml'
-                with FileLike(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
-                    if mode == 'yaml':
-                        import yaml  # type: ignore[import-untyped]
-                        user_config = yaml.load(file, Loader=yaml.SafeLoader)
-                    elif mode == 'json':
-                        import json
-                        user_config = json.load(file)
-        elif isinstance(data, dict):
-            user_config = data
-        elif isinstance(data, Config):
-            user_config = data.asdict()
-        else:
-            raise TypeError(
-                'Expected path or dict, but got {}'.format(type(data)))
+        user_config = _coerce_data_to_dict(data, mode=mode)
 
         # check for unknown values
         indirect_keys = set(user_config) - set(_default)
@@ -1008,7 +1055,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
         if cmdline or ub.iterable(cmdline):
             next_stacklevel = None if stacklevel is None else stacklevel + 1
-            read_argv_kwargs = {
+            read_argv_kwargs: Dict[str, Any] = {
                 'special_options': special_options,
                 'strict': strict,
                 'autocomplete': autocomplete,

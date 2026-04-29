@@ -174,6 +174,11 @@ class Value(ub.NiceRepr):
     def cast(self, value: Any) -> Any:
         if isinstance(value, str):
             # FIXME: We want to move away from allow_split=True
+            # Note: when ``self.type`` is set, smartcast routes to the typed
+            # path (``_as_smart_type``) and the ``allow_split`` flag is
+            # ignored, so the typed schema path is already insulated from
+            # legacy comma splitting. The ``allow_split='auto'`` setting is
+            # only consulted on the un-typed legacy path.
             value = smartcast_mod.smartcast(value, self.type,
                                             allow_split='auto')
         return value

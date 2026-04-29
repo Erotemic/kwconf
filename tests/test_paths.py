@@ -33,8 +33,10 @@ def test_paths_with_commas_in_config():
     print(config['key'])
     assert isinstance(config['key'], str), 'specifying a type should prevent smartcast'
 
-    # In the past setting argv=True did cause an error
-    config = TestConfig.cli(default=kw, argv=True)
+    # Pre-0.7 the bare ``argv=True`` path could raise on default values
+    # containing commas. Using an explicit empty argv here to avoid binding
+    # to the test runner's sys.argv while still exercising the cli path.
+    config = TestConfig.cli(default=kw, argv=[])
     print(config['key'])
     assert isinstance(config['key'], str), 'specifying a type should prevent smartcast'
 
