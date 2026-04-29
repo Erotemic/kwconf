@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional
 
 __all__ = ['smartcast']
 
@@ -9,41 +9,38 @@ NoneType = type(None)
 
 def smartcast(item: Any,
               astype: Any = None,
-              strict: bool = False,
-              allow_split: Union[bool, str] = 'auto') -> Any:
+              strict: bool = False) -> Any:
     r"""
-    Converts a string into a standard python type.
+    Convert a string into a standard python type.
 
     In many cases this is a simple alternative to `eval`. However, the syntax
-    rules use here are more permissive and forgiving.
+    rules used here are more permissive and forgiving.
 
-    The `astype` can be specified to provide a type hint, otherwise we try to
-    cast to the following types in this order: int, float, complex, bool, none,
-    list, tuple.
+    When ``astype`` is None, the inferred candidates are int, float, complex,
+    bool, and None, in that order. Sequences (list, tuple, set) are NOT
+    inferred -- pass an explicit ``astype`` to opt into sequence parsing.
+    This is a deliberate departure from scriptconfig: a value like
+    ``"a,b,c"`` stays the literal string instead of becoming a list.
 
     Args:
         item (str | Any):
-            represents some data of another type.
+            data to be coerced. Non-strings are returned as-is when
+            ``astype`` is None.
 
         astype (type | None):
-            if None, try infer what the best type is, if astype == 'eval' then
-            try to return `eval(item)`, Otherwise, try to cast to this type.
-            Default to None.
+            if None, infer the best scalar type. If ``eval`` (or ``'eval'``),
+            evaluate the literal. Otherwise, cast to this type.
+            Defaults to None.
 
         strict (bool):
-            if True raises a TypeError if conversion fails.
+            if True raises a TypeError when no inference candidate succeeds.
             Default to False.
 
-        allow_split (bool):
-            if True will interpret strings with commas as sequences.
-            Defaults to "auto", which pre 1.0 will default to True and warn the
-            user. In version 1.0 we will change the default to False.
-
     Returns:
-        Any: some item
+        Any: the coerced item.
 
     Raises:
-        TypeError: if we cannot determine the type
+        TypeError: when ``strict`` is True and inference fails.
 
     Example:
         >>> # Simple cases
@@ -51,18 +48,10 @@ def smartcast(item: Any,
         >>> print(repr(smartcast('1')))
         >>> print(repr(smartcast('1,2,3')))
         >>> print(repr(smartcast('abc')))
-        >>> print(repr(smartcast('[1,2,3,4]')))
-        >>> print(repr(smartcast('foo.py,/etc/conf.txt,/baz/biz,blah')))
         '?'
         1
-        [1, 2, 3]
+        '1,2,3'
         'abc'
-        [1, 2, 3, 4]
-        ['foo.py', '/etc/conf.txt', '/baz/biz', 'blah']
-
-        >>> # Weird cases
-        >>> print(repr(smartcast('[1],2,abc,4')))
-        ['[1]', 2, 'abc', 4]
 
     Example:
         >>> from kwconf.smartcast import *
@@ -77,8 +66,8 @@ def smartcast(item: Any,
         >>> assert smartcast('1', eval) == 1
         >>> assert smartcast('1', bool) is True
         >>> assert smartcast('[1,2]', eval) == [1, 2]
-        >>> assert smartcast('a,b', allow_split=False) == 'a,b'
-        >>> assert smartcast('a,b', allow_split=True) == ['a', 'b']
+        >>> assert smartcast('a,b') == 'a,b'
+        >>> assert smartcast('a,b', list) == ['a', 'b']
 
     Example:
         >>> def check_typed_value(item, want, astype=None):
@@ -101,63 +90,16 @@ def smartcast(item: Any,
     if callable(astype):
         if getattr(astype, '__name__', '') in {'smartcast', '_smart_type'}:
             astype = None
-        else:
-            _strastype = str(astype)
-            # Pathological case, where we have astype specified as a partial
-            # version of ourself, which happens with boolean values.
-            # need to fix this more robustly.
-            if '.partial' in _strastype and 'smartcast' in _strastype:
-                return astype(item)
-
-    # Hack handling the smartcast:v1 type should have been taken care of
-    # elsewhere, but it is apparently not, so do it here too as a quick fix.
-    if isinstance(astype, str) and astype == 'smartcast:v1':
-        if allow_split == 'auto':
-            allow_split = False
-            astype = None
-        else:
-            raise Exception
 
     if isinstance(item, str):
         if astype is None:
-            candidate_type_list = [int, float, complex, bool, NoneType]
-            if ',' in item:
-                # NOTE: THIS TRIES TO BE TOO CLEVER AND FAILS. We need to
-                # depreate this behavior where it will automagically split
-                # commas. We need to simplify the behavior and have the user
-                # explicitly enable similar behavior.
-
-                # The auto int / float / bool parts are fine. The auto list
-                # part is what is causing the problem. Perhaps we should just
-                # use YAML.
-
-                # Plan:
-                # 1. Add a allow_split flag that defaults to 'auto' and if this case
-                # is hit.
-                # 2. If this case is hit and the allow_split flag is auto, warn the
-                # user that the behavior will change in the future.
-                # 3. For now have auto default to True.
-                # 4. In the future change the default to False.
-
-                if allow_split == 'auto':
-                    import warnings
-                    warnings.warn(
-                        'smartcast has been given a string with commas and the '
-                        'allow_split="auto". Currently this will default to True and split the string into a list. '
-                        'After version 1.0 the default will change to False and strings will not be split into lists by default '
-                        'To disable this warning explicitly set allow_split=True to keep the string splitting behavior or allow_split=False '
-                        'to disable it and use the new default behavior. '
-                        'If using this in a Value object, you can prevent future incompatibility by '
-                        'setting type=str and handling casting in the __post_init__ method of the DataConfig'
-                    )
-                    allow_split = True
-                if allow_split:
-                    candidate_type_list += [list, tuple, set]  # type: ignore
-
-            # Try each candidate in the type list until something works
-            for astype in candidate_type_list:
+            # Try each candidate scalar type in turn until one succeeds.
+            # NOTE: lists / tuples / sets are NOT inferred. kwconf
+            # intentionally drops scriptconfig's auto comma-splitting; pass
+            # an explicit ``astype`` to opt into sequence parsing.
+            for candidate in [int, float, complex, bool, NoneType]:
                 try:
-                    return _as_smart_type(item, astype)
+                    return _as_smart_type(item, candidate)
                 except (TypeError, ValueError):
                     pass
 

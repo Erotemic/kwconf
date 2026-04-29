@@ -8,13 +8,18 @@ def test_typed_list_cli_with_nargs():
     assert cfg.tags == ['spam', 'eggs']
 
 
-def test_legacy_comma_split_is_opt_in():
+def test_comma_strings_stay_strings():
+    """
+    kwconf intentionally drops scriptconfig's auto comma-splitting. A
+    plain string field with a comma in its CLI value remains a single
+    string regardless of where the comma appears.
+    """
     import kwconf as kw
 
     class ExampleConfig(kw.Config):
-        legacy_items = kw.Value([], type='smartcast:legacy')
         plain_text: str = ''
+        untyped = kw.Value('default')
 
-    cfg = ExampleConfig.cli(argv=['--legacy_items=spam,eggs', '--plain_text=spam,eggs'])
-    assert cfg.legacy_items == ['spam', 'eggs']
+    cfg = ExampleConfig.cli(argv=['--plain_text=spam,eggs', '--untyped=foo,bar'])
     assert cfg.plain_text == 'spam,eggs'
+    assert cfg.untyped == 'foo,bar'

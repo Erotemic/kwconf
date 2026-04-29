@@ -177,15 +177,13 @@ class Value(ub.NiceRepr):
         type. The name is deliberate: this is not a clean type-cast.
 
         Strings delegate to ``smartcast`` for type inference. kwconf
-        intentionally departs from scriptconfig here: comma-separated
-        strings are NOT split into lists -- a value like ``"a,b"`` stays the
-        literal string. The legacy comma-splitting behavior remains
-        available on the CLI side by declaring a Value with
-        ``type='smartcast:legacy'``.
+        intentionally departs from scriptconfig: comma-separated strings are
+        NOT auto-split into lists -- a value like ``"a,b"`` stays the literal
+        string. To get a list, declare ``Value(..., type=list)`` or use
+        ``nargs='+'`` for CLI input.
         """
         if isinstance(value, str):
-            value = smartcast_mod.smartcast(value, self.type,
-                                            allow_split=False)
+            value = smartcast_mod.smartcast(value, self.type)
         return value
 
     def copy(self) -> "Value":
@@ -239,8 +237,6 @@ class Value(ub.NiceRepr):
         HACKS = 1
         if HACKS:
 
-            if value_kw['type'] == 'smartcast':
-                value_kw.pop('type')
             if orig_help and len(orig_help) > 40:
                 import textwrap
                 wrapped = ub.indent('\n'.join(textwrap.wrap(orig_help, width=60)), ' ' * 4)
@@ -420,18 +416,11 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any
         argkw.pop('type', None)
 
     if isinstance(argkw.get('type', None), str):
-        # Coerce the type into a callable. We may need to do this in other
-        # places if so, we should factor out common code.
-        if argkw['type'] == 'smartcast':
-            argkw['type'] = smartcast_mod.smartcast
-        elif argkw['type'] == 'smartcast:v1':
-            from functools import partial
-            argkw['type'] = partial(smartcast_mod.smartcast, allow_split=False)
-        elif argkw['type'] == 'smartcast:legacy':
-            from functools import partial
-            argkw['type'] = partial(smartcast_mod.smartcast, allow_split=True)
-        else:
-            raise KeyError(f'Unknown special type key: {argkw["type"]}')
+        raise TypeError(
+            f'Value type must be a callable or None, got the string '
+            f'{argkw["type"]!r}. The legacy smartcast string aliases '
+            f'(smartcast, smartcast:v1, smartcast:legacy) have been removed.'
+        )
 
     try:
         parent.add_argument(*option_strings, required=required, **argkw)
