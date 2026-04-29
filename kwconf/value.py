@@ -188,12 +188,6 @@ class Value(ub.NiceRepr):
                                             allow_split='auto')
         return value
 
-    # Backwards-compatible alias of ``coerce``. Older kwconf / scriptconfig
-    # code (and possibly user subclasses of :class:`Value`) referenced this
-    # under the ``cast`` name; keep both available so existing overrides keep
-    # working.
-    cast = coerce
-
     def copy(self) -> "Value":
         import copy
         return copy.copy(self)
@@ -359,8 +353,6 @@ class Path(Value):
             value = ub.expandpath(value)
         return value
 
-    cast = coerce
-
 
 class PathList(Value):
     """
@@ -395,8 +387,6 @@ class PathList(Value):
             else:
                 value = paths2
         return value
-
-    cast = coerce
 
 
 def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
