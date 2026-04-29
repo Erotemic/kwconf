@@ -18,6 +18,14 @@ Welcome to kwconf's documentation!
    :show-inheritance:
 
 .. toctree::
+   :caption: Manual
+   :maxdepth: 2
+
+   manual/migration_from_scriptconfig
+   manual/ADRs
+
+.. toctree::
+   :caption: API reference
    :maxdepth: 5
 
    auto/kwconf
