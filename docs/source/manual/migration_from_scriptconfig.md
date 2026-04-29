@@ -63,25 +63,32 @@ cfg = C.cli(argv=['--items=a,b,c'])
 assert cfg.items == 'a,b,c'   # the literal string, not ['a', 'b', 'c']
 ```
 
-If you need a list on the CLI, declare one of the following explicitly:
+If you need a list on the CLI, declare it explicitly with ``nargs``:
 
 ```python
-# preferred: typed list with nargs
 class C(kw.Config):
     tags: list = kw.Value(default_factory=list, nargs='+')
 
 cfg = C.cli(argv=['--tags', 'a', 'b', 'c'])
 assert cfg.tags == ['a', 'b', 'c']
+```
 
-# or: explicit list type, comma syntax
+If you specifically want a comma-separated CLI form, do the split in
+``__post_init__``:
+
+```python
 class C(kw.Config):
-    tags = kw.Value([], type=list)
+    tags: str = ''
+
+    def __post_init__(self):
+        if isinstance(self.tags, str):
+            self.tags = [t for t in self.tags.split(',') if t]
 
 cfg = C.cli(argv=['--tags=a,b,c'])
 assert cfg.tags == ['a', 'b', 'c']
 ```
 
-The old behavior cannot be re-enabled with a flag or string alias
+The old auto-split behavior cannot be re-enabled with a flag or string alias
 (see below).
 
 ## `type='smartcast'` aliases are removed
@@ -95,9 +102,10 @@ three are gone. Passing a string for `type` now raises a clear `TypeError`.
 kw.Value([], type='smartcast:legacy')
 
 # after -- pass a callable
-kw.Value([], type=list)              # explicit list parsing
 kw.Value(0, type=int)                # explicit int parsing
 kw.Value(None)                       # default scalar inference
+# (for CLI list input use ``nargs='+'`` instead of ``type=list``;
+#  see "Comma-splitting is gone" above.)
 ```
 
 The default un-typed inference (int, float, complex, bool, None) still
@@ -202,8 +210,8 @@ items listed above. Please file an issue.
 
 1. `import scriptconfig as scfg` -> `import kwconf as kw`.
 2. Find any `--key=a,b,c` CLI invocations and either:
-   * declare the field with `type=list` / `nargs='+'`, or
-   * adjust the caller to use space-separated `nargs` form.
+   * declare the field with `nargs='+'` and switch to space-separated input, or
+   * keep the comma form and split in `__post_init__`.
 3. Replace any `type='smartcast*'` strings with concrete callables.
 4. Replace `Path` / `PathList` usage with `Value(type=str)` plus explicit
    path handling in `__post_init__`.

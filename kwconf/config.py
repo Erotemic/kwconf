@@ -1,84 +1,71 @@
 """
-Write simple configs and update from CLI, kwargs, and/or json.
+Write simple configs and update from CLI, kwargs, json, and yaml.
 
-The ``kwconf`` provides a simple way to make configurable scripts using a
-combination of config files, command line arguments, and simple Python keyword
-arguments. A script config object is defined by creating a subclass of
-``Config`` with a ``default`` dict class attribute. An instance of a custom
-``Config`` object will behave similar a dictionary, but with a few
-conveniences.
+``kwconf`` provides a simple way to make configurable scripts that combine
+config files, command-line arguments, and Python keyword arguments. A
+config is defined by subclassing :class:`Config` and declaring fields as
+typed class variables. The instance behaves like a dict (it supports
+``config['x']``) and like a namespace (``config.x``).
 
-To get started lets consider some example usage:
+The future-facing schema style uses typed class variables. Use
+:class:`kwconf.Value` to attach CLI metadata (help text, aliases, choices,
+``isflag``, ``nargs``, positional, etc) when needed.
 
 Example:
-    >>> import kwconf
-    >>> # In its simplest incarnation, the config class specifies default values.
-    >>> # For each configuration parameter.
-    >>> class ExampleConfig(kwconf.DataConfig):
-    >>>     __default__ = {
-    >>>         'num': 1,
-    >>>         'mode': 'bar',
-    >>>         'ignore': ['baz', 'biz'],
-    >>>     }
-    >>> # Creating an instance, starts using the defaults
+    >>> import kwconf as kw
+    >>> # The simplest config: typed fields with raw defaults.
+    >>> class ExampleConfig(kw.Config):
+    ...     num: int = 1
+    ...     mode: str = 'bar'
+    ...     tags: list = kw.Value(default_factory=list, help='free-form tags')
+    >>> # Creating an instance starts from the declared defaults.
     >>> config = ExampleConfig()
-    >>> # Typically you will want to update default from a dict or file.  By
-    >>> # specifying cmdline=True you denote that it is ok for the contents of
-    >>> # `sys.argv` to override config values. Here we pass a dict to `load`.
-    >>> kwargs = {'num': 2}
-    >>> config.load(kwargs, cmdline=False)
+    >>> assert config['num'] == 1
+    >>> # Programmatic updates via load(data=...).
+    >>> config.load({'num': 2})
     >>> assert config['num'] == 2
-    >>> # The `load` method can also be passed a json/yaml file/path.
-    >>> import tempfile
-    >>> config_fpath = tempfile.mktemp()
-    >>> open(config_fpath, 'w').write('{"num": 3}')
-    >>> config.load(config_fpath, cmdline=False)
+    >>> # The `load` method can also accept a path to a json or yaml file,
+    >>> # or a raw json / yaml string.
+    >>> import tempfile, os
+    >>> path = tempfile.mktemp(suffix='.json')
+    >>> _ = open(path, 'w').write('{"num": 3}')
+    >>> config.load(path)
     >>> assert config['num'] == 3
-    >>> # It is possible to load only from CLI by setting cmdline=True
-    >>> # or by setting it to a custom sys.argv
-    >>> config.load(cmdline=['--num=4', '--mode' ,'fiz'])
-    >>> assert config['num'] == 4
-    >>> assert config['mode'] == 'fiz'
-    >>> # You can also just use the command line string itself
-    >>> config.load(cmdline='--num=4 --mode fiz')
-    >>> assert config['num'] == 4
-    >>> assert config['mode'] == 'fiz'
-    >>> # Note that using `config.load(cmdline=True)` will just use the
-    >>> # contents of sys.argv
+    >>> os.unlink(path)
+    >>> # CLI parsing is available through the cli classmethod (preferred).
+    >>> config = ExampleConfig.cli(argv=['--num=4', '--mode', 'fiz'])
+    >>> assert config['num'] == 4 and config['mode'] == 'fiz'
+    >>> # ``argv`` accepts a list, a shell-like string, True (read sys.argv),
+    >>> # or False (skip CLI parsing entirely).
+    >>> config = ExampleConfig.cli(argv='--num=4 --mode fiz')
+    >>> assert config['num'] == 4 and config['mode'] == 'fiz'
 
-Ignore:
-    >>> class ExampleConfig(kwconf.DataConfig):
-    >>>     __default__ = {
-    >>>         'num': 1,
-    >>>         'mode': 'bar',
-    >>>         'mode2': kwconf.Value('bar', str),
-    >>>         'ignore': ['baz', 'biz'],
-    >>>     }
-    >>> config = ExampleConfig()
-    >>> # smartcast can handle lists as long as there are no spaces
-    >>> config.load(cmdline=['--ignore=spam,eggs'])
-    >>> assert config['ignore'] == ['spam', 'eggs']
-    >>> # Note that the Value type can influence how data is parsed
-    >>> config.load(cmdline=['--mode=spam,eggs', '--mode2=spam,eggs'])
+Note:
+    kwconf intentionally departs from scriptconfig: a CLI string with
+    commas like ``--items=a,b,c`` stays the literal string ``"a,b,c"``
+    rather than being silently split into a list. For CLI list input use
+    ``nargs='+'`` (space-separated tokens). If you really want
+    comma-separated parsing, do the split in ``__post_init__``. See
+    ``docs/source/manual/migration_from_scriptconfig.md`` for the full
+    list of breaks.
 
-    >>> # FIXME: We need make parsing lists a bit more intuitive
-    >>> class ExampleConfig(kwconf.DataConfig):
-    >>>     __default__ = {
-    >>>         'item1': [],
-    >>>         'item2': kwconf.Value([], list),
-    >>>         'item3': kwconf.Value([]),
-    >>>     }
-    >>> config = ExampleConfig()
-    >>> # IDEALLY BOTH CASES SHOULD WORK
-    >>> config.load(cmdline=['--item1', 'spam', 'eggs', '--item2', 'spam', 'eggs', '--item3', 'spam', 'eggs'])
-    >>> print(ub.urepr(config, nl=1))
-    >>> config.load(cmdline=['--item1=spam,eggs', '--item2=spam,eggs', '--item3=spam,eggs'])
-    >>> print(ub.urepr(config, nl=1))
+Example:
+    >>> # Comma strings stay strings; lists are explicit.
+    >>> import kwconf as kw
+    >>> class ListConfig(kw.Config):
+    ...     plain: str = ''
+    ...     tags: list = kw.Value(default_factory=list, nargs='+')
+    >>> config = ListConfig.cli(argv=['--plain=a,b,c', '--tags', 'x', 'y'])
+    >>> # Plain strings are preserved literally:
+    >>> assert config['plain'] == 'a,b,c'
+    >>> # Lists are gathered from space-separated tokens via nargs:
+    >>> assert config['tags'] == ['x', 'y']
 
-TODO:
-    - [x] Handle Nested Configs?
-    - [ ] Integrate with Hyrda
-    - [x] Dataclass support - See DataConfig
+See Also:
+    :class:`kwconf.DataConfig` -- a thin compatibility wrapper that adds
+    a dataclass-style ``__init__(*args, **kwargs)``. The ``__default__``
+    dict form remains supported on both classes for compatibility with
+    existing code; new code should generally prefer typed class variables.
 """
 from __future__ import annotations
 
