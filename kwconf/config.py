@@ -79,7 +79,6 @@ import argparse as argparse_mod
 import types
 from typing import IO, Dict, Iterable, List, Optional, Tuple, Type, Union, cast
 from kwconf import _ubelt_repr_extension
-from kwconf import smartcast
 from kwconf.dict_like import DictLike
 from kwconf.file_like import FileLike
 from kwconf.value import Value
@@ -126,9 +125,13 @@ def _runtime_type_from_annotation(annotation: Any) -> type | None:
     if annotation is None or annotation is Any or isinstance(annotation, str):
         return None
     origin = typing.get_origin(annotation)
-    if origin is typing.Annotated:
-        args = typing.get_args(annotation)
-        return _runtime_type_from_annotation(args[0] if args else None)
+    if origin is typing.Literal:
+        # ``Literal['a', 'b']`` -> infer the type of the choices.
+        choice_types = {type(arg) for arg in typing.get_args(annotation)}
+        if len(choice_types) == 1:
+            (only_type,) = choice_types
+            return only_type
+        return None
     if origin in {Union, types.UnionType}:
         args = [arg for arg in typing.get_args(annotation) if arg is not type(None)]
         for arg in args:
@@ -143,16 +146,70 @@ def _runtime_type_from_annotation(annotation: Any) -> type | None:
     return None
 
 
+def _choices_from_annotation(annotation: Any) -> tuple | None:
+    """
+    Return the choices implied by ``annotation`` if it is (or wraps via
+    ``Optional``/``Union``) a :data:`typing.Literal`, otherwise None.
+    """
+    if annotation is None or isinstance(annotation, str):
+        return None
+    origin = typing.get_origin(annotation)
+    if origin is typing.Literal:
+        return typing.get_args(annotation)
+    if origin in {Union, types.UnionType}:
+        for arg in typing.get_args(annotation):
+            if arg is type(None):
+                continue
+            ch = _choices_from_annotation(arg)
+            if ch is not None:
+                return ch
+    return None
+
+
 def _maybe_apply_annotation_to_value(key, value, annotations):
+    """
+    Enrich a class-attribute default with information derived from its type
+    annotation (if any).
+
+    Recognized annotation forms:
+
+      * plain types (``int``, ``str``, ...): become ``Value.type``.
+      * generic origins (``list[int]``, ``dict[str, int]``): the origin
+        becomes ``Value.type``.
+      * ``Optional[T]`` / ``T | None``: behaves like ``T``.
+      * ``Literal['a', 'b', 'c']``: populates ``Value.choices`` and infers
+        the underlying type from the literal members.
+
+    Explicit metadata on a user-supplied :class:`Value` always wins over
+    annotation-derived values.
+    """
     annotation = annotations.get(key, None)
     runtime_type = _runtime_type_from_annotation(annotation)
+    choices = _choices_from_annotation(annotation)
+
+    if runtime_type is None and choices is None:
+        return value
+
+    # Apply choices from Literal[...] when the user hasn't already set them.
+    if choices is not None:
+        if isinstance(value, Value):
+            if not value.parsekw.get('choices'):
+                value = value.copy()
+                value.parsekw = dict(value.parsekw)
+                value.parsekw['choices'] = list(choices)
+        else:
+            value = Value(value, choices=list(choices),
+                          isflag=isinstance(value, bool))
+
     if runtime_type is None:
         return value
+
     if isinstance(value, Value):
         if value.type is not None:
             return value
         value = value.copy()
         value.type = runtime_type
+        value.parsekw = dict(value.parsekw)
         value.parsekw['type'] = runtime_type
         return value
     return Value(value, type=runtime_type, isflag=isinstance(value, bool))
@@ -1292,9 +1349,6 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         else:
             special_ns = {}
 
-        # We might remove code under this if using action casting proves to be
-        # stable.
-        RELY_ON_ACTION_SMARTCAST = True
         if has_subconfigs:
             # Subconfig selectors need special handling, but regular values
             # can use the standard Config setitem logic.
@@ -1339,14 +1393,8 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             # attributes can all be Value objects, but this gets messy when the
             # "default" constructor argument is used. We should refactor so
             # _data and _default only store the raw current values,
-            # post-casting.
-            if not RELY_ON_ACTION_SMARTCAST:
-                # Old way that we did smartcast. Hopefully the action class
-                # takes care of this.
-                template = self.__default__[key]
-                # print('template = {!r}'.format(template))
-                value = template.coerce(value)
-
+            # post-casting. Until then we trust the parser action to have
+            # already coerced the value.
             default_value = self.__default__[key].value
             # Preserve any data/default overrides that were already applied
             # before argparse defaults are merged in.
@@ -1361,28 +1409,11 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 self.load(config_fpath, cmdline=False,
                           _dont_call_post_init=True)
 
-        # Finally load explicit CLI values
+        # Finally load explicit CLI values. The parser action has already
+        # coerced the raw token; we just need to store it.
         for key in parser._explicitly_given:  # type: ignore
             if key not in special_ns:
-                value = ns[key]
-
-                if not RELY_ON_ACTION_SMARTCAST:
-                    # Old way that we did smartcast. Hopefully the action class
-                    # takes care of this.
-
-                    template = self.__default__[key]
-
-                    # print('value = {!r}'.format(value))
-                    # print('template = {!r}'.format(template))
-                    if not isinstance(template, Value):
-                        # smartcast non-valued params from commandline
-                        value = smartcast.smartcast(value)
-
-                # if value is not None:
-                self[key] = value
-
-        # We dont want this here right?
-        # self.__post_init__()
+                self[key] = ns[key]
 
         if special_options:
             import sys

@@ -74,12 +74,18 @@ __all__ = ['dataconf', 'DataConfig', 'MetaDataConfig', 'SubConfig']
 
 def dataconf(cls: Type[Any]) -> Type[Any]:
     """
-    Aims to be similar to the dataclass decorator
+    A dataclass-style decorator.
+
+    For classes that already inherit from :class:`DataConfig` the metaclass
+    has already done all the work and the decorator is a no-op. For classes
+    that do not, the decorator builds an equivalent ``DataConfig`` subclass
+    with the same name and module so the result behaves like a normal
+    DataConfig (including pickleability when the class lives at module
+    scope).
 
     Note:
-        It is currently recommended to extend from the :class:`DataConfig`
-        object instead of decorating with ``@dataconf``. These have slightly
-        different behaviors and the former is more well-tested.
+        Inheriting from :class:`DataConfig` directly is the preferred
+        pattern. The decorator is kept primarily for compatibility.
 
     Example:
         >>> from kwconf.dataconfig import *  # NOQA
@@ -91,9 +97,8 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
         >>>     channels = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
         >>>     time_sampling = kwconf.Value('soft2')
         >>> cls = ExampleDataConfig2
-        >>> print(f'cls={cls}')
         >>> self = cls()
-        >>> print(f'self={self}')
+        >>> assert self['time_dim'] == 3
 
     Example:
         >>> from kwconf.dataconfig import *  # NOQA
@@ -101,90 +106,45 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
         >>> @dataconf
         >>> class PathologicalConfig:
         >>>     default0 = kwconf.Value((256, 256), help='chip size')
-        >>>     default = kwconf.Value((256, 256), help='chip size')
         >>>     keys = [1, 2, 3]
         >>>     __default__ = {
         >>>         'argparse': 3.3,
         >>>         'keys': [4, 5],
         >>>     }
-        >>>     default = None
         >>>     time_sampling = kwconf.Value('soft2')
         >>>     def foobar(self):
         >>>         ...
-        >>> self = PathologicalConfig(1, 2, 3)
-        >>> print(f'self={self}')
-
-    # FIXME: xdoctest problem. Need to be able to simulate a module global scope
-    # Example:
-    #     >>> # Using inheritance and the decorator lets you pickle the object
-    #     >>> from kwconf.dataconfig import *  # NOQA
-    #     >>> import kwconf
-    #     >>> @dataconf
-    #     >>> class PathologicalConfig2(kwconf.DataConfig):
-    #     >>>     default0 = kwconf.Value((256, 256), help='chip size')
-    #     >>>     default2 = kwconf.Value((256, 256), help='chip size')
-    #     >>>     #keys = [1, 2, 3] : Too much
-    #     >>>     __default__3 = {
-    #     >>>         'argparse': 3.3,
-    #     >>>         'keys2': [4, 5],
-    #     >>>     }
-    #     >>>     default2 = None
-    #     >>>     time_sampling = kwconf.Value('soft2')
-    #     >>> config = PathologicalConfig2()
-    #     >>> import pickle
-    #     >>> serial = pickle.dumps(config)
-    #     >>> recon = pickle.loads(serial)
-    #     >>> assert 'locals' not in str(PathologicalConfig2)
-
+        >>> self = PathologicalConfig(1)
+        >>> assert self['default0'] == 1
     """
-    # if not dataclasses.is_dataclass(cls):
-    #     dcls = dataclasses.dataclass(cls)
-    # else:
-    #     dcls = cls
-
-    # fields = dataclasses.fields(cls)
-    # for field in fields:
-    #     field.type
-    #     field.name
-    #     field.default
-
     if getattr(cls, '__did_dataconfig_init__', False):
-        # The metaclass took care of this.
-        # TODO: let the metaclass take care of most everything.
+        # Already a DataConfig subclass; the metaclass handled everything.
         return cls
 
-    attr_default = {}
+    namespace: Dict[str, Any] = {
+        '__doc__': getattr(cls, '__doc__', None),
+        '__qualname__': cls.__qualname__,
+        '__module__': cls.__module__,
+        '__description__': getattr(cls, '__description__', None),
+        '__epilog__': getattr(cls, '__epilog__', None),
+        '__annotations__': dict(getattr(cls, '__annotations__', {}) or {}),
+    }
+    # Carry over the class-level fields. The metaclass turns them into
+    # ``__default__`` entries during class construction.
     for k, v in vars(cls).items():
-        if not k.startswith('_') and not isinstance(v, classmethod) and not isinstance(v, staticmethod):
-            if not callable(v) or (inspect.isclass(v) and issubclass(v, Config)):
-                attr_default[k] = v
-    default = attr_default.copy()
-    cls_default = getattr(cls, '__default__', None)
-    if cls_default is None:
-        cls_default = {}
-    default.update(cls_default)
+        if k.startswith('_'):
+            continue
+        if isinstance(v, (classmethod, staticmethod)):
+            namespace[k] = v
+            continue
+        if callable(v) and not (inspect.isclass(v) and issubclass(v, Config)):
+            namespace[k] = v
+            continue
+        namespace[k] = v
+    if '__default__' in vars(cls):
+        namespace['__default__'] = vars(cls)['__default__']
 
-    if issubclass(cls, DataConfig):
-        # Helps make the class pickleable. Pretty hacky though.
-        # TODO: Remove. This should no longer be necessary. Given the metaclass.
-        subconfig_type = cls
-        subconfig_type.__default__ = default
-        for k in attr_default:
-            delattr(subconfig_type, k)
-    else:
-        # dynamic subclass, this has issues with pickle. It would be nice if we
-        # could improve this. There must be a way that dataclasses does it that
-        # we could follow.
-        class SubConfig(DataConfig):
-            __doc__ = getattr(cls, '__doc__', None)
-            __name__ = getattr(cls, '__name__', None)
-            __default__ = default
-            __description__ = getattr(cls, '__description__', None)
-            __epilog__ = getattr(cls, '__epilog__', None)
-            __qualname__ = cls.__qualname__
-            __module__ = cls.__module__
-        subconfig_type = SubConfig
-    return subconfig_type
+    return MetaDataConfig(cls.__name__, (DataConfig,), namespace)
 
 
 class MetaDataConfig(MetaConfig):
@@ -397,64 +357,3 @@ class DataConfig(Config, metaclass=MetaDataConfig):
         return func
 
 
-def __example__() -> None:
-    """
-    Doctests are broken for DataConfigs, so putting them here.
-    """
-    import kwconf
-    dataclasses: Any
-    try:
-        import dataclasses
-    except ImportError:
-        dataclasses = None  # type: ignore
-
-    if dataclasses is None:
-        return
-
-    @dataclasses.dataclass
-    class ExampleDataConfig0:
-        x: int = 0
-        y: str = '3'
-
-    ### Different variants of the same basic configuration (varying amounts of metadata)
-    class ExampleDataConfig1:
-        chip_dims = (256, 256)
-        time_dim = 5
-        channels = 'red|green|blue'
-        time_sampling = 'soft2'
-
-    ExampleDataConfig1d = dataclasses.dataclass(ExampleDataConfig1)
-
-    @dataclasses.dataclass
-    class ExampleDataConfig2:
-        chip_dims = kwconf.Value((256, 256), help='chip size')
-        time_dim = kwconf.Value(3, help='number of time steps')
-        channels = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
-        time_sampling = kwconf.Value('soft2')
-
-    @dataclasses.dataclass
-    class ExampleDataConfig2d:
-        chip_dims = kwconf.Value((256, 256), help='chip size')
-        time_dim: Any = kwconf.Value(3, help='number of time steps')
-        channels: Any = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
-        time_sampling: Any = kwconf.Value('soft2')
-
-    class ExampleDataConfig3:
-        __default__ = {
-            'chip_dims': kwconf.Value((256, 256), help='chip size'),
-            'time_dim': kwconf.Value(3, type=int, help='number of time steps'),
-            'channels': kwconf.Value('*:(red|green|blue)', type=str, help='sensor / channel code'),
-            'time_sampling': kwconf.Value('soft2', type=str),
-        }
-
-    classes = [ExampleDataConfig0, ExampleDataConfig1, ExampleDataConfig1d,
-               ExampleDataConfig2, ExampleDataConfig2d, ExampleDataConfig3]
-    for cls in classes:
-        dcls = dataconf(cls)
-        self = dcls()
-        print(f'self={self}')
-
-    # cls = ExampleDataConfig2
-    # cls.__annotations__['channels'].__dict__
-    # cls.__annotations__['set_cover_algo'].__dict__
-    # # @kwconf.dataconfig
