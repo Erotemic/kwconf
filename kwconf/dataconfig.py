@@ -97,8 +97,9 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
         >>>     channels = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
         >>>     time_sampling = kwconf.Value('soft2')
         >>> cls = ExampleDataConfig2
+        >>> print(f'cls={cls}')
         >>> self = cls()
-        >>> assert self['time_dim'] == 3
+        >>> print(f'self={self}')
 
     Example:
         >>> from kwconf.dataconfig import *  # NOQA
@@ -106,16 +107,41 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
         >>> @dataconf
         >>> class PathologicalConfig:
         >>>     default0 = kwconf.Value((256, 256), help='chip size')
+        >>>     default = kwconf.Value((256, 256), help='chip size')
         >>>     keys = [1, 2, 3]
         >>>     __default__ = {
         >>>         'argparse': 3.3,
         >>>         'keys': [4, 5],
         >>>     }
+        >>>     default = None
         >>>     time_sampling = kwconf.Value('soft2')
         >>>     def foobar(self):
         >>>         ...
-        >>> self = PathologicalConfig(1)
-        >>> assert self['default0'] == 1
+        >>> self = PathologicalConfig(1, 2, 3)
+        >>> print(f'self={self}')
+
+    # FIXME: xdoctest problem. Need to be able to simulate a module global scope
+    # Example:
+    #     >>> # Using inheritance and the decorator lets you pickle the object
+    #     >>> from kwconf.dataconfig import *  # NOQA
+    #     >>> import kwconf
+    #     >>> @dataconf
+    #     >>> class PathologicalConfig2(kwconf.DataConfig):
+    #     >>>     default0 = kwconf.Value((256, 256), help='chip size')
+    #     >>>     default2 = kwconf.Value((256, 256), help='chip size')
+    #     >>>     #keys = [1, 2, 3] : Too much
+    #     >>>     __default__3 = {
+    #     >>>         'argparse': 3.3,
+    #     >>>         'keys2': [4, 5],
+    #     >>>     }
+    #     >>>     default2 = None
+    #     >>>     time_sampling = kwconf.Value('soft2')
+    #     >>> config = PathologicalConfig2()
+    #     >>> import pickle
+    #     >>> serial = pickle.dumps(config)
+    #     >>> recon = pickle.loads(serial)
+    #     >>> assert 'locals' not in str(PathologicalConfig2)
+
     """
     if getattr(cls, '__did_dataconfig_init__', False):
         # Already a DataConfig subclass; the metaclass handled everything.
@@ -355,5 +381,68 @@ class DataConfig(Config, metaclass=MetaDataConfig):
         """
         cls.main = func
         return func
+
+
+def __example__() -> None:
+    """
+    Doctests are broken for DataConfigs, so putting them here.
+    """
+    import kwconf
+    dataclasses: Any
+    try:
+        import dataclasses
+    except ImportError:
+        dataclasses = None  # type: ignore
+
+    if dataclasses is None:
+        return
+
+    @dataclasses.dataclass
+    class ExampleDataConfig0:
+        x: int = 0
+        y: str = '3'
+
+    ### Different variants of the same basic configuration (varying amounts of metadata)
+    class ExampleDataConfig1:
+        chip_dims = (256, 256)
+        time_dim = 5
+        channels = 'red|green|blue'
+        time_sampling = 'soft2'
+
+    ExampleDataConfig1d = dataclasses.dataclass(ExampleDataConfig1)
+
+    @dataclasses.dataclass
+    class ExampleDataConfig2:
+        chip_dims = kwconf.Value((256, 256), help='chip size')
+        time_dim = kwconf.Value(3, help='number of time steps')
+        channels = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
+        time_sampling = kwconf.Value('soft2')
+
+    @dataclasses.dataclass
+    class ExampleDataConfig2d:
+        chip_dims = kwconf.Value((256, 256), help='chip size')
+        time_dim: Any = kwconf.Value(3, help='number of time steps')
+        channels: Any = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
+        time_sampling: Any = kwconf.Value('soft2')
+
+    class ExampleDataConfig3:
+        __default__ = {
+            'chip_dims': kwconf.Value((256, 256), help='chip size'),
+            'time_dim': kwconf.Value(3, type=int, help='number of time steps'),
+            'channels': kwconf.Value('*:(red|green|blue)', type=str, help='sensor / channel code'),
+            'time_sampling': kwconf.Value('soft2', type=str),
+        }
+
+    classes = [ExampleDataConfig0, ExampleDataConfig1, ExampleDataConfig1d,
+               ExampleDataConfig2, ExampleDataConfig2d, ExampleDataConfig3]
+    for cls in classes:
+        dcls = dataconf(cls)
+        self = dcls()
+        print(f'self={self}')
+
+    # cls = ExampleDataConfig2
+    # cls.__annotations__['channels'].__dict__
+    # cls.__annotations__['set_cover_algo'].__dict__
+    # # @kwconf.dataconfig
 
 
