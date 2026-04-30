@@ -285,12 +285,13 @@ def coerce_argv(cmdline: Any) -> tuple[list[str], bool]:
     import sys
     if not cmdline:
         return [], False
+    argv: list[str]
     if cmdline is True:
-        argv: list[str] = sys.argv[1:]
+        argv = sys.argv[1:]
     elif isinstance(cmdline, str):
-        argv: list[str] = shlex.split(cmdline)
+        argv = shlex.split(cmdline)
     elif ub.iterable(cmdline):
-        argv: list[str] = list(cmdline)
+        argv = list(cmdline)
     else:
         raise TypeError(f'Unsupported argv={cmdline!r}')
     want_help: bool = any(a in {'-h', '--help'} for a in argv)

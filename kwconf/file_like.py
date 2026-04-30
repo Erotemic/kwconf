@@ -14,14 +14,15 @@ class FileLike:
         self._file: IO[Any]
         self._path: Optional[Union[str, os.PathLike]] = None
         self._file_obj: Optional[IO[Any]] = None
+        _input_type: str
         if isinstance(path_or_file, (str, os.PathLike)):
-            _input_type: str = 'path'
+            _input_type = 'path'
             if not exists(path_or_file):  # type: ignore
                 raise ValueError('Path {} does not exist'.format(path_or_file))
             self._path = path_or_file
         else:
             if hasattr(path_or_file, 'readable'):
-                _input_type: str = 'file'
+                _input_type = 'file'
                 if not path_or_file.readable():
                     raise ValueError('file must be readable')
                 self._file_obj = path_or_file

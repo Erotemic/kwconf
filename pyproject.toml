@@ -41,6 +41,13 @@ ignore-words-list = ["ANS", "doesnt", "cant"]
 ignore_missing_imports = true
 #ignore_errors = true
 
+# kwconf's Value(...) field specifier doesn't expose a top-level
+# ``default=`` keyword (the positional ``value`` parameter plays that
+# role), which mypy's dataclass_transform implementation requires to
+# treat the call as providing a default. The resulting "Attributes
+# without a default cannot follow attributes with one" / "alias must
+# be a string literal" diagnostics in test files are false positives.
+
 [tool.ty.rules]
 unused-type-ignore-comment = "ignore"
 unresolved-import = "ignore"

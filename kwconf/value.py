@@ -21,7 +21,7 @@ def normalize_option_str(s: str) -> str:
 def _yaml_safe_load(value: str) -> Any:
     """Parse a string as YAML, used as the callable for ``type='yaml'``."""
     try:
-        import yaml
+        import yaml  # type: ignore[import-untyped]
     except ImportError as exc:
         raise ImportError(
             "type='yaml' requires PyYAML. Install with `pip install pyyaml`."
@@ -376,7 +376,7 @@ class Flag(Value):
     """
     Exactly the same as a Value except isflag default to True
     """
-    def __init__(self, value: bool = False, **kwargs: Any) -> None:
+    def __init__(self, value: Any = False, **kwargs: Any) -> None:
         isflag = kwargs.get('isflag', True)
         assert isflag, 'Cannot disable isflag on a Flag value'
         kwargs['isflag'] = isflag
@@ -595,9 +595,11 @@ def _value_add_argument_kw(value: Any, _value: Optional[Value], self: Any, key: 
 
 
 def _resolve_alias(name: str, _value: Optional[Value], fuzzy_hyphens: int | bool) -> list[str]:
+    aliases: Optional[Sequence[str]]
+    short_aliases: Optional[Sequence[str]]
     if _value is None:
-        aliases: Optional[list[str]] = None
-        short_aliases: Optional[list[str]] = None
+        aliases = None
+        short_aliases = None
     else:
         aliases = _value.alias
         short_aliases = _value.short_alias

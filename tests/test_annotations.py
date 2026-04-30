@@ -1,3 +1,4 @@
+# mypy: disable-error-code="misc, literal-required, import-untyped"
 """
 Tests for annotation-driven Value enrichment on Config / DataConfig.
 
@@ -52,7 +53,7 @@ def test_literal_via_optional_still_populates_choices():
 
 def test_user_choices_win_over_literal():
     class C(kw.DataConfig):
-        mode: typing.Literal['a', 'b', 'c'] = kw.Value('a', choices=['a', 'b'])
+        mode: typing.Literal['a', 'b', 'c'] = kw.Value('a', choices=['a', 'b'])  # ty: ignore[invalid-assignment]
 
     template = C.__default__['mode']
     # user-provided choices should not be overridden by the Literal.

@@ -15,7 +15,7 @@ def test_modal_fuzzy_hyphens():
         common_option = kwconf.Flag(None, help='an option with an underscore')
 
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             self = cls.cli(argv=argv, data=kwargs)
             callnums[cls.__command__] += 1
             print(f'Called {cls.__command__} with: ' + str(self))
@@ -110,7 +110,7 @@ def test_modal_customize_command_classlevel():
         foo = kwconf.Value('spam', help='spam spam spam spam')
 
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     @MyModalCLI.register(command='command2', alias=['alias2', 'alias3'])
@@ -119,7 +119,7 @@ def test_modal_customize_command_classlevel():
         __alias__ = ['overwritten']  # wil not be used because alias is given in the decorator
 
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     with ub.CaptureStdout(suppress=True) as cap:
@@ -148,7 +148,7 @@ def test_modal_customize_command_instancelevel():
         __alias__ = 'alias1'
         foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     @modal.register(command='command2', alias=['alias2', 'alias3'])
@@ -156,7 +156,7 @@ def test_modal_customize_command_instancelevel():
         __alias__ = ['overwritten']
         bar = 'biz'
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     with ub.CaptureStdout(suppress=0) as cap:
@@ -192,7 +192,7 @@ def test_customized_modals():
     class Command1(kwconf.DataConfig):
         foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     modal1.register(Command1, command='command1')
@@ -238,7 +238,7 @@ def test_submodals():
         __command__ = 'command'
         foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     Modal3.register(Command, command='command4')
@@ -332,12 +332,12 @@ def test_modal_command_name_resolution():
     class Command1(kwconf.DataConfig):
         __command__ = 'command1'
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
     class Command2(kwconf.DataConfig):
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
     class Modal1(kwconf.ModalCLI):
@@ -378,7 +378,7 @@ def test_submodal_usage_improvement():
                     arg1 = 'foobar'
 
                     @classmethod
-                    def main(cls, argv=1, **kwargs):
+                    def main(cls, argv=None, **kwargs):
                         cls.cli(argv=argv, data=kwargs)
 
     assert Modal1().main(argv=['Modal2', 'Modal3', 'Command1', '--arg1=32']) == 0
@@ -425,7 +425,7 @@ def test_modal_value_declarative_registration():
         foo = 'spam'
 
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
     class MyModalCLI(kwconf.ModalCLI):
@@ -444,7 +444,7 @@ def test_modal_value_declarative_registration():
 def test_modal_value_command_override():
     class Command1(kwconf.DataConfig):
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
     class MyModalCLI(kwconf.ModalCLI):
@@ -463,7 +463,7 @@ def test_modal_value_command_override():
 def test_modal_value_alias_fuzzy_hyphens():
     class Command1(kwconf.DataConfig):
         @classmethod
-        def main(cls, argv=1, **kwargs):
+        def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
     class FuzzyModal(kwconf.ModalCLI):

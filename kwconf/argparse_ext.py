@@ -680,7 +680,7 @@ else:
     _ExtendedArgumentParserBase = ExtendedArgumentParser_PRE_GH_114180
 
 
-class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,valid-type]
+class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,valid-type]  # ty: ignore[unsupported-base]
     """
     Extends the compatible argument parser to add minor new features.
     Namely: allowing options in argv to interchangeably use "_" or "-".

@@ -80,7 +80,7 @@ from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Un
 from kwconf import _ubelt_repr_extension
 from collections.abc import Mapping as _ABCMapping
 from kwconf.file_like import FileLike
-from kwconf.value import Value
+from kwconf.value import Value, Flag
 from kwconf import diagnostics
 import typing
 
@@ -421,7 +421,10 @@ def _normalize_class_defaults(defaults, annotations=None):
 
 from abc import ABCMeta as _ABCMeta
 
+from typing import dataclass_transform as _dataclass_transform
 
+
+@_dataclass_transform(field_specifiers=(Value, Flag))
 class MetaConfig(_ABCMeta):
     """
     A metaclass for Config to help make usage between Config and DataConfig
@@ -1010,7 +1013,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             default (dict): new defaults
         """
         import copy
-        default = self._normalize_alias_dict(default)
+        default = dict(self._normalize_alias_dict(default))
 
         # The user might pass raw values in which case we should keep the
         # metadata from the existing wrapped Values and just update the .value
@@ -1636,7 +1639,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         if namespace is not None:
             raise NotImplementedError('namespaces are not handled in kwconf')
-        return cast("DataConfig", cls.cli(argv=args, strict=True))
+        return cls.cli(argv=args, strict=True)
 
     @classmethod
     def parse_known_args(cls,
@@ -1647,7 +1650,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         if namespace is not None:
             raise NotImplementedError('namespaces are not handled in kwconf')
-        return cast("DataConfig", cls.cli(argv=args, strict=False))
+        return cls.cli(argv=args, strict=False)
 
     @classmethod
     def _register_main(cls, func):
@@ -1761,7 +1764,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     @classmethod
     def _write_code(self,
-                    entries: Iterable[tuple[str, Dict[str, Any]]],
+                    entries: Iterable[tuple[str, Mapping[str, Any]]],
                     name: str = 'MyConfig',
                     style: str = 'dataconf',
                     description: Optional[str] = None) -> str:
@@ -1787,7 +1790,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             raise KeyError(style)
 
         for (key, value_kw) in entries:
-            _value_kw = value_kw.copy()
+            _value_kw = dict(value_kw)
 
             default = _value_kw.pop('default')
             value_args = [

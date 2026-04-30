@@ -1,3 +1,4 @@
+# mypy: disable-error-code="misc, literal-required, import-untyped"
 """
 Tests for ``Value(type='yaml')``.
 
@@ -6,6 +7,8 @@ behavior applies whether the string came from argv, a config file, or
 a kwarg in the constructor -- consistent with how other typed Values
 already coerce strings.
 """
+import typing
+
 import pytest
 
 
@@ -21,7 +24,7 @@ def test_yaml_type_parses_list_from_kwargs():
     import kwconf
 
     class C(kwconf.DataConfig):
-        items = kwconf.Value(None, type='yaml')
+        items: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C(items='[1, 2, 3]')
     assert cfg['items'] == [1, 2, 3]
@@ -32,7 +35,7 @@ def test_yaml_type_parses_list_from_cli():
     import kwconf
 
     class C(kwconf.DataConfig):
-        items = kwconf.Value(None, type='yaml')
+        items: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C.cli(argv=['--items=[1,2,3]'])
     assert cfg['items'] == [1, 2, 3]
@@ -43,7 +46,7 @@ def test_yaml_type_parses_dict_from_cli():
     import kwconf
 
     class C(kwconf.DataConfig):
-        opts = kwconf.Value(None, type='yaml')
+        opts: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C.cli(argv=['--opts={a: 1, b: 2}'])
     assert cfg['opts'] == {'a': 1, 'b': 2}
@@ -54,7 +57,7 @@ def test_yaml_type_parses_scalars():
     import kwconf
 
     class C(kwconf.DataConfig):
-        x = kwconf.Value(None, type='yaml')
+        x: typing.Any = kwconf.Value(None, type="yaml")
 
     assert C(x='1')['x'] == 1
     assert C(x='true')['x'] is True
@@ -67,7 +70,7 @@ def test_yaml_type_passthrough_non_string():
     import kwconf
 
     class C(kwconf.DataConfig):
-        x = kwconf.Value(None, type='yaml')
+        x: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C(x=[1, 2, 3])
     assert cfg['x'] == [1, 2, 3]

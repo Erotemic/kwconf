@@ -1,4 +1,6 @@
+# mypy: disable-error-code="misc, literal-required, import-untyped"
 import kwconf
+import typing
 import os
 import ubelt as ub
 
@@ -15,9 +17,9 @@ def test_json_dump():
     import json
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
     class MyConfig(kwconf.DataConfig):
-        option1 = 'a'
-        option2 = 'b'
-        option3 = 'c'
+        option1: typing.Any = 'a'
+        option2: str = 'b'
+        option3: str = 'c'
     config = MyConfig(option1=2, option2='foobar')
     fpath = dpath / 'test_dump_config.json'
     with open(fpath, 'w') as file:
@@ -30,9 +32,9 @@ def test_yaml_dump():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
     class MyConfig(kwconf.DataConfig):
-        option1 = 'a'
-        option2 = 'b'
-        option3 = 'c'
+        option1: typing.Any = 'a'
+        option2: str = 'b'
+        option3: str = 'c'
     config = MyConfig(option1=2, option2='foobar')
     fpath = dpath / 'test_dump_config.yaml'
     with open(fpath, 'w') as file:
@@ -45,9 +47,9 @@ def test_yaml_load():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
     class MyConfig(kwconf.DataConfig):
-        option1 = 'a'
-        option2 = 'b'
-        option3 = 'c'
+        option1: typing.Any = 'a'
+        option2: str = 'b'
+        option3: str = 'c'
     config = MyConfig(option1=3, option2='baz')
     fpath = dpath / 'test_load_config.yaml'
     with open(fpath, 'w') as file:
@@ -67,9 +69,9 @@ def test_yaml_load():
 def test_json_load():
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
     class MyConfig(kwconf.DataConfig):
-        option1 = 'a'
-        option2 = 'b'
-        option3 = 'c'
+        option1: typing.Any = 'a'
+        option2: str = 'b'
+        option3: str = 'c'
     config = MyConfig(option1=3, option2='baz')
     fpath = dpath / 'test_load_config.json'
     with open(fpath, 'w') as file:
@@ -90,9 +92,9 @@ def test_config_dumps_load_cli():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
     class MyConfig(kwconf.DataConfig):
-        option1 = 'a'
-        option2 = 'b'
-        option3 = 'c'
+        option1: typing.Any = 'a'
+        option2: str = 'b'
+        option3: str = 'c'
     fpath = dpath / 'test_dump_load_config.json'
     fpath.delete()
     assert not fpath.exists()
@@ -114,9 +116,9 @@ def test_config_load_from_json_text():
     Check that the config can load from raw text on the command line
     """
     class MyConfig(kwconf.DataConfig):
-        option1 = 'a'
-        option2 = 'b'
-        option3 = 'c'
+        option1: typing.Any = 'a'
+        option2: str = 'b'
+        option3: str = 'c'
     config = MyConfig(option1=3, option2='baz')
     config2 = MyConfig.cli(argv=['--config', config.dumps(mode='json')],
                            special_options=True)
@@ -129,9 +131,9 @@ def test_config_load_from_yaml_text():
     """
     mark_requires_yaml()
     class MyConfig(kwconf.DataConfig):
-        option1 = 'a'
-        option2 = 'b'
-        option3 = 'c'
+        option1: typing.Any = 'a'
+        option2: str = 'b'
+        option3: str = 'c'
     config = MyConfig(option1=3, option2='baz')
     config2 = MyConfig.cli(argv=['--config', config.dumps(mode='yaml')],
                            special_options=True)

@@ -1,3 +1,4 @@
+# mypy: disable-error-code="misc, literal-required, import-untyped"
 
 def test_post_init_not_called_twice():
     """

@@ -352,11 +352,11 @@ def test_subconfig_config_string_cases():
     ]
 
     for case in cases:
-        cfg = TrainLocal.cli(argv=case['argv'], allow_import=True,
+        cfg = TrainLocal.cli(argv=case['argv'], allow_import=True,  # ty: ignore[invalid-argument-type]
                              allow_subconfig_overrides=True,
                              special_options=True)
         assert cfg.model == 'resnet50'
-        assert isinstance(cfg.optim, case['optim'])
+        assert isinstance(cfg.optim, case['optim'])  # ty: ignore[invalid-argument-type]
         if isinstance(cfg.optim, SGDLocal):
             assert cfg.optim.momentum == pytest.approx(0.88)
         else:

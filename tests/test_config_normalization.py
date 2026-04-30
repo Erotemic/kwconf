@@ -22,8 +22,8 @@ def test_bool_defaults_become_flags():
             'enabled': True,
         }
 
-    assert BoolConfig.__default__['flag'].isflag is True
-    assert BoolConfig.__default__['enabled'].isflag is True
+    assert BoolConfig.__default__['flag'].isflag is True  # ty: ignore[unresolved-attribute]
+    assert BoolConfig.__default__['enabled'].isflag is True  # ty: ignore[unresolved-attribute]
 
     cfg = BoolConfig.cli(argv=['--flag'])
     assert cfg['flag'] is True
