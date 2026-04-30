@@ -21,6 +21,7 @@ and shows what to change.
 | `default` class attribute | accepted (deprecation warned) | accepted (deprecation warned) |
 | `normalize` method | accepted (deprecation warned) | accepted (deprecation warned) |
 | `cmdline=` kwarg style | dict form accepted | accepted (deprecated) |
+| `--config` / `--dump` / `--dumps` special CLI options | on by default | off by default (opt in via `__special_options__ = True` or per-call) |
 
 The rest of this document walks through each item.
 
@@ -175,6 +176,30 @@ class Path(kw.Value):
         return value
 ```
 
+## `--config` / `--dump` / `--dumps` are off by default
+
+scriptconfig added these "special options" to every CLI by default. kwconf
+makes them opt-in because they reserve names that often conflict with
+user-defined fields (a common scriptconfig footgun was a class with a
+``config`` field colliding with the special ``--config``).
+
+```python
+# scriptconfig: --config / --dump / --dumps are always present
+class MyConfig(scfg.DataConfig):
+    config = None  # silently shadowed by the special --config
+
+# kwconf: opt in either per-call:
+cfg = MyConfig.cli(argv=[...], special_options=True)
+# or at the class level:
+class MyConfig(kw.DataConfig):
+    __special_options__ = True
+    other = 'foo'
+```
+
+If your existing code expected ``--config <path>`` to work, add
+``special_options=True`` (or set ``__special_options__ = True`` on the
+class).
+
 ## `Value.cast` -> `Value.coerce`
 
 If you subclassed `Value` and overrode `cast`, rename the override to
@@ -240,4 +265,7 @@ items listed above. Please file an issue.
 6. Replace `Path` / `PathList` usage with `Value(type=str)` plus explicit
    path handling in `__post_init__`.
 7. If you subclassed `Value`, rename `cast` -> `coerce`.
-8. Run your test suite and review any deprecation warnings.
+8. If your CLI relied on the built-in `--config`, `--dump`, or `--dumps`
+   special options, opt in with `special_options=True` (per-call) or
+   `__special_options__ = True` on the class.
+9. Run your test suite and review any deprecation warnings.

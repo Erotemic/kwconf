@@ -96,6 +96,7 @@ def test_precedence_default_file_kwargs_cli(tmp_path):
         data=kw_overrides,
         argv=['--config', str(cfg_path), *cli_overrides],
         allow_subconfig_overrides=True,
+        special_options=True,
     )
     assert isinstance(cfg.optim, SGDConfig)
     assert cfg.optim.lr == pytest.approx(0.2)
@@ -351,7 +352,9 @@ def test_subconfig_config_string_cases():
     ]
 
     for case in cases:
-        cfg = TrainLocal.cli(argv=case['argv'], allow_import=True, allow_subconfig_overrides=True)
+        cfg = TrainLocal.cli(argv=case['argv'], allow_import=True,
+                             allow_subconfig_overrides=True,
+                             special_options=True)
         assert cfg.model == 'resnet50'
         assert isinstance(cfg.optim, case['optim'])
         if isinstance(cfg.optim, SGDLocal):

@@ -98,11 +98,14 @@ def test_config_dumps_load_cli():
     assert not fpath.exists()
     config = MyConfig(option1=3, option2='baz')
     try:
-        MyConfig.cli(argv=['--option1=dumped', '--dump', os.fspath(fpath)])
+        MyConfig.cli(
+            argv=['--option1=dumped', '--dump', os.fspath(fpath)],
+            special_options=True)
     except SystemExit:
         assert fpath.exists()
 
-    config = MyConfig.cli(argv=['--config', os.fspath(fpath)])
+    config = MyConfig.cli(argv=['--config', os.fspath(fpath)],
+                          special_options=True)
     assert config['option1'] == 'dumped'
 
 
@@ -115,7 +118,8 @@ def test_config_load_from_json_text():
         option2 = 'b'
         option3 = 'c'
     config = MyConfig(option1=3, option2='baz')
-    config2 = MyConfig.cli(argv=['--config', config.dumps(mode='json')])
+    config2 = MyConfig.cli(argv=['--config', config.dumps(mode='json')],
+                           special_options=True)
     assert dict(config2) == dict(config)
 
 
@@ -129,5 +133,6 @@ def test_config_load_from_yaml_text():
         option2 = 'b'
         option3 = 'c'
     config = MyConfig(option1=3, option2='baz')
-    config2 = MyConfig.cli(argv=['--config', config.dumps(mode='yaml')])
+    config2 = MyConfig.cli(argv=['--config', config.dumps(mode='yaml')],
+                           special_options=True)
     assert dict(config2) == dict(config)

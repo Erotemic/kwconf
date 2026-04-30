@@ -634,7 +634,9 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             special_options (bool | None, default=None):
                 adds special kwconf options, namely: --config, --dumps,
                 and --dump. If None, uses the class attribute __special_options__
-                if present, otherwise defaults to True.
+                if present, otherwise defaults to False. Opt in by setting
+                ``__special_options__ = True`` on the class or by passing
+                ``special_options=True`` explicitly.
 
             verbose (bool | str):
                 If true, then perform a rich print of the config after it is
@@ -956,7 +958,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 passed to :func:`DataConfig._read_argv`. Can contain:
                     * strict (bool): defaults to False
                     * argv (List[str]): defaults to None
-                    * special_options (bool): defaults to True
+                    * special_options (bool): defaults to False
                     * autocomplete (bool): defaults to False
                 Defaults to False.
                 NOTE: will be deprecated renamed to "argv" in the future.
@@ -980,7 +982,9 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             special_options (bool | None, default=None):
                 adds special kwconf options, namely: --config, --dumps,
                 and --dump. If None, uses the class attribute __special_options__
-                if present, otherwise defaults to True.
+                if present, otherwise defaults to False. Opt in by setting
+                ``__special_options__ = True`` on the class or by passing
+                ``special_options=True`` explicitly.
 
             allow_import (bool):
                 If True, allow module path selectors like
@@ -1041,7 +1045,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                   f'cmdline={cmdline}, strict={strict}, special_options={special_options}')
 
         if special_options is None:
-            special_options = getattr(self, '__special_options__', True)
+            special_options = getattr(self, '__special_options__', False)
 
         if default:
             self.update_defaults(default)
@@ -1287,7 +1291,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> assert isinstance(cfg['optim'], Sgd) and cfg['optim']['momentum'] == 0.8
         """
         if special_options is None:
-            special_options = getattr(self, '__special_options__', True)
+            special_options = getattr(self, '__special_options__', False)
 
         if isinstance(argv, str):
             import shlex
