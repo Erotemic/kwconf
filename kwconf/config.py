@@ -2229,23 +2229,6 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         """
         return argparse_mod.Namespace(**dict(self))
 
-    def to_omegaconf(self) -> Any:
-        """
-        Creates an omegaconfig version of this.
-
-        Returns:
-            omegaconf.OmegaConf:
-
-        Example:
-            >>> # xdoctest: +REQUIRES(module:omegaconf)
-            >>> import kwconf
-            >>> self = kwconf.DataConfig.demo()
-            >>> oconf = self.to_omegaconf()
-        """
-        from omegaconf import OmegaConf
-        oconf = OmegaConf.create(self.to_dict())
-        return oconf
-
     def argparse(self,
                  parser: Optional[argparse_mod.ArgumentParser] = None,
                  special_options: bool = False,
