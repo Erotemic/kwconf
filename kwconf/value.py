@@ -18,6 +18,41 @@ def normalize_option_str(s: str) -> str:
     return s.lstrip('-').replace('-', '_')
 
 
+def _yaml_safe_load(value: str) -> Any:
+    """Parse a string as YAML, used as the callable for ``type='yaml'``."""
+    try:
+        import yaml
+    except ImportError as exc:
+        raise ImportError(
+            "type='yaml' requires PyYAML. Install with `pip install pyyaml`."
+        ) from exc
+    return yaml.safe_load(value)
+
+
+# Registry of named string types accepted as ``Value(type=<name>)``.
+# Each parser takes a string and returns the parsed value. The same callable
+# is set as the argparse ``type`` so CLI tokens parse the same way.
+_NAMED_TYPE_PARSERS: dict[str, Callable[[str], Any]] = {
+    'yaml': _yaml_safe_load,
+}
+_NAMED_TYPE_PARSER_SET: set[Callable[[str], Any]] = set(_NAMED_TYPE_PARSERS.values())
+
+
+def _resolve_named_type(type_: Any) -> Any:
+    """If ``type_`` is a known named-type sentinel string, resolve to its
+    callable parser. Otherwise return ``type_`` unchanged."""
+    if isinstance(type_, str):
+        try:
+            return _NAMED_TYPE_PARSERS[type_]
+        except KeyError as exc:
+            raise TypeError(
+                f'Unknown named Value type {type_!r}. '
+                f'Known names: {sorted(_NAMED_TYPE_PARSERS)}. '
+                f'Use a callable for custom coercion.'
+            ) from exc
+    return type_
+
+
 __note__ = """
 TODO:
     After we remove 3.6 support, deprecate position and add the ispositional
@@ -91,7 +126,7 @@ class Value(ub.NiceRepr):
 
     def __init__(self,
                  value: Any = ub.NoParam,
-                 type: Optional[type] = None,
+                 type: Any = None,
                  help: Optional[str] = None,
                  choices: Sequence[Any] | None = None,
                  position: Optional[int] = None,
@@ -111,6 +146,8 @@ class Value(ub.NiceRepr):
             raise ValueError('Error: only one of default or value should be specified')
         if default_factory is not None and (default is not ub.NoParam or value is not ub.NoParam):
             raise ValueError('Error: default_factory is mutually exclusive with value/default')
+
+        type = _resolve_named_type(type)
 
         self.value = None
         self.type = type
@@ -181,8 +218,15 @@ class Value(ub.NiceRepr):
         NOT auto-split into lists -- a value like ``"a,b"`` stays the literal
         string. To get a list, declare ``Value(..., type=list)`` or use
         ``nargs='+'`` for CLI input.
+
+        Named-type sentinels like ``type='yaml'`` route strings through
+        the registered parser instead of smartcast. ``type='yaml'`` calls
+        ``yaml.safe_load`` so ``"[1,2,3]"`` becomes ``[1, 2, 3]`` and
+        ``"true"`` becomes ``True``.
         """
         if isinstance(value, str):
+            if self.type in _NAMED_TYPE_PARSER_SET:
+                return self.type(value)
             value = smartcast_mod.smartcast(value, self.type)
         return value
 
@@ -416,10 +460,15 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any
         argkw.pop('type', None)
 
     if isinstance(argkw.get('type', None), str):
+        # Named-type sentinels (e.g. 'yaml') should have been resolved to
+        # callables in ``Value.__init__``. Anything still a string here is
+        # either an unsupported sentinel or a value built via a code path
+        # that bypasses the resolver.
         raise TypeError(
-            f'Value type must be a callable or None, got the string '
-            f'{argkw["type"]!r}. The legacy smartcast string aliases '
-            f'(smartcast, smartcast:v1, smartcast:legacy) have been removed.'
+            f'Value type must be a callable or None at parser-build time, '
+            f'got the string {argkw["type"]!r}. Named-type sentinels are '
+            f'resolved in Value.__init__; if you reached this branch the '
+            f'string was set after construction.'
         )
 
     try:

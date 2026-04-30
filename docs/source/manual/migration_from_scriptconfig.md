@@ -134,6 +134,24 @@ The default un-typed inference (int, float, complex, bool, None) still
 runs for un-annotated string CLI input -- only the auto-list behavior is
 removed.
 
+If you want richer string parsing (lists, dicts, scalars), use the
+named YAML type:
+
+```python
+class C(kw.DataConfig):
+    items = kw.Value(None, type='yaml')
+
+C.cli(argv=['--items=[1,2,3]'])['items']    # [1, 2, 3]
+C.cli(argv=['--items={a: 1}'])['items']     # {'a': 1}
+C(items='auto')['items']                    # 'auto'
+C(items='1')['items']                       # 1  (yaml parses scalars)
+```
+
+``type='yaml'`` runs ``yaml.safe_load`` on string inputs. The same
+parsing happens whether the value comes from argv, a file, or kwargs --
+matching how ``type=int`` already coerces strings everywhere. Pass an
+already-parsed Python value to bypass it.
+
 ## `kwconf.Path` and `kwconf.PathList` are removed
 
 `Path` was a thin wrapper around `ub.expandpath`. `PathList` was a comma- or
