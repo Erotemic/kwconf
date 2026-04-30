@@ -76,9 +76,9 @@ import ubelt as ub
 import itertools as it
 import argparse as argparse_mod
 import types
-from typing import IO, Dict, Iterable, List, Optional, Tuple, Type, Union, cast
+from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Union, cast
 from kwconf import _ubelt_repr_extension
-from kwconf.dict_like import DictLike
+from collections.abc import Mapping as _ABCMapping
 from kwconf.file_like import FileLike
 from kwconf.value import Value
 from kwconf import diagnostics
@@ -338,7 +338,10 @@ def _normalize_class_defaults(defaults, annotations=None):
     return normalized
 
 
-class MetaConfig(type):
+from abc import ABCMeta as _ABCMeta
+
+
+class MetaConfig(_ABCMeta):
     """
     A metaclass for Config to help make usage between Config and DataConfig
     consistent.
@@ -432,7 +435,7 @@ class MetaConfig(type):
         return cls
 
 
-class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
+class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
     """
     Primary configuration base class for kwconf.
 
@@ -533,7 +536,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         self._has_subconfigs = False
         self._kwconf_post_init_done = False
         self._alias_map = None
-        cls_default = getattr(self, '__default__', getattr(self, 'default', None))
+        cls_default = getattr(self, '__default__', None)
         if cls_default:
             self._default.update(_materialize_default_items(cls_default))
         # Seed _data with raw values; wrap_subconfig_defaults may overwrite
@@ -759,21 +762,68 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         if getattr(self, '_has_subconfigs', False):
             from kwconf.subconfig import config_to_nested_dict
             return config_to_nested_dict(self, include_class=False)
-        return super().asdict()
+        return dict(self.items())
 
     def to_dict(self) -> Dict[str, Any]:
         return self.asdict()
 
-    def getitem(self, key: str) -> Any:
-        """
-        Dictionary-like method to get the value of a key.
+    def copy(self) -> Dict[str, Any]:
+        return dict(self.items())
 
-        Args:
-            key (str): the key
+    def __len__(self) -> int:
+        return len(self._data)
 
-        Returns:
-            Any : the associated value
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __contains__(self, key: object) -> bool:
+        # Check _data directly. The Mapping default uses __getitem__, which
+        # triggers alias-map construction and would cache an empty map if
+        # called before defaults are populated.
+        return key in self._data
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
         """
+        Update the config with key/value pairs from another mapping or
+        from an iterable of pairs, plus keyword arguments. Mirrors
+        ``dict.update``.
+        """
+        if len(args) > 1:
+            raise TypeError(
+                f'update expected at most 1 positional argument, got {len(args)}'
+            )
+        if args:
+            other = args[0]
+            if isinstance(other, _ABCMapping):
+                for k in other:
+                    self[k] = other[k]
+            else:
+                for k, v in other:
+                    self[k] = v
+        for k, v in kwargs.items():
+            self[k] = v
+
+    def __delitem__(self, key: str) -> None:
+        raise TypeError(
+            'cannot delete items from a kwconf.DataConfig'
+        )
+
+    def pop(self, *args: Any, **kwargs: Any) -> Any:
+        raise TypeError(
+            'pop is not supported on kwconf.DataConfig'
+        )
+
+    def popitem(self) -> Any:
+        raise TypeError(
+            'popitem is not supported on kwconf.DataConfig'
+        )
+
+    def clear(self) -> None:
+        raise TypeError(
+            'clear is not supported on kwconf.DataConfig'
+        )
+
+    def __getitem__(self, key: str) -> Any:
         if isinstance(key, str) and '.' in key and getattr(self, '_has_subconfigs', False):
             parts = key.split('.')
             node: Any = self
@@ -800,14 +850,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             value = value.value
         return value
 
-    def setitem(self, key: str, value: Any) -> None:
-        """
-        Dictionary-like method to set the value of a key.
-
-        Args:
-            key (str): the key
-            value (Any): the new value
-        """
+    def __setitem__(self, key: str, value: Any) -> None:
         if isinstance(key, str) and '.' in key and getattr(self, '_has_subconfigs', False):
             parts = key.split('.')
             parent_key, leaf = parts[:-1], parts[-1]
@@ -837,16 +880,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 # raw data.
                 self._data[key] = value
 
-    def delitem(self, key: str) -> None:
-        raise Exception('cannot delete items from a config')
-
-    def keys(self) -> Iterable[str]:
-        """
-        Dictionary-like keys method
-
-        Yields:
-            str:
-        """
+    def keys(self):
         return self._data.keys()
 
     def update_defaults(self, default: Mapping[str, Any]) -> None:
