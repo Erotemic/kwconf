@@ -1,11 +1,11 @@
 """
 Helpers for nested configuration nodes built from Config / DataConfig objects.
 
-The :class:`SubConfig` wrapper marks a nested :class:`Config` (or subclass)
+The :class:`SubConfig` wrapper marks a nested :class:`DataConfig` (or subclass)
 and optionally exposes a registry of valid choices or a permissive import
 mechanism for dynamically specified class paths.
 
-The rest of this module contains utilities that both :class:`Config` and
+The rest of this module contains utilities that both :class:`DataConfig` and
 :class:`DataConfig` can use to realize nested configuration trees from
 defaults, files, kwargs, and staged CLI parsing.
 
@@ -27,7 +27,7 @@ from collections.abc import Mapping
 from typing import Any
 import ubelt as ub
 
-from kwconf.config import Config
+from kwconf.config import DataConfig
 from kwconf.value import Value
 
 __all__ = [
@@ -147,12 +147,12 @@ def add_forbidden_selector_args(parser, cfg):
 
 class SubConfig(Value):
     """
-    Wrapper used to declare nested :class:`Config` / :class:`DataConfig` nodes.
+    Wrapper used to declare nested :class:`DataConfig` / :class:`DataConfig` nodes.
 
     Args:
-        default (Type[Config] | Config): a Config subclass or instance.
+        default (Type[DataConfig] | Config): a DataConfig subclass or instance.
         choices (dict | None): optional registry mapping selector keys to
-            Config subclasses.
+            DataConfig subclasses.
         allow_import (bool): if True, allow class-path selectors
             (``module.qualname.Class``) to be dynamically imported.
 
@@ -167,21 +167,21 @@ class SubConfig(Value):
 
     def __init__(self, default, *, choices=None, allow_import=None, help=None):
         if inspect.isclass(default):
-            if not issubclass(default, Config):
-                raise TypeError('SubConfig default must be a Config subclass or instance')
+            if not issubclass(default, DataConfig):
+                raise TypeError('SubConfig default must be a DataConfig subclass or instance')
             default_inst = default
-        elif isinstance(default, Config):
+        elif isinstance(default, DataConfig):
             default_inst = default
         else:
-            raise TypeError('SubConfig default must be a Config subclass or instance')
+            raise TypeError('SubConfig default must be a DataConfig subclass or instance')
 
         super().__init__(value=default_inst, help=help)
         self.allow_import = allow_import
         self.choices = dict(choices) if choices is not None else None
         if self.choices is not None:
             for key, cls in self.choices.items():
-                if not inspect.isclass(cls) or not issubclass(cls, Config):
-                    raise TypeError(f'SubConfig choices must map to Config subclasses. {key!r} -> {cls!r}')
+                if not inspect.isclass(cls) or not issubclass(cls, DataConfig):
+                    raise TypeError(f'SubConfig choices must map to DataConfig subclasses. {key!r} -> {cls!r}')
 
     def __nice__(self):
         default_cls = self.value if inspect.isclass(self.value) else self.value.__class__
@@ -232,16 +232,16 @@ def wrap_subconfig_defaults(cfg, _dont_call_post_init=False):
                 if v.help and not inner.help:
                     inner.parsekw['help'] = v.help
                 meta = inner
-            elif isinstance(inner, Config):
+            elif isinstance(inner, DataConfig):
                 meta = SubConfig(inner, help=v.help)
                 cfg._default[k] = meta
-            elif inspect.isclass(inner) and issubclass(inner, Config):
+            elif inspect.isclass(inner) and issubclass(inner, DataConfig):
                 meta = SubConfig(inner, help=v.help)
                 cfg._default[k] = meta
-        elif isinstance(v, Config):
+        elif isinstance(v, DataConfig):
             meta = SubConfig(v)
             cfg._default[k] = meta
-        elif inspect.isclass(v) and issubclass(v, Config):
+        elif inspect.isclass(v) and issubclass(v, DataConfig):
             meta = SubConfig(v)
             cfg._default[k] = meta
         if meta is not None:
@@ -268,7 +268,7 @@ def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
     if not getattr(cfg, '_has_subconfigs', False):
         return
     for key, meta in getattr(cfg, '_subconfig_meta', {}).items():
-        if not isinstance(cfg._data.get(key), Config):
+        if not isinstance(cfg._data.get(key), DataConfig):
             cfg._data[key] = meta.instantiate(_dont_call_post_init=_dont_call_post_init)
 
 
@@ -360,7 +360,7 @@ def coerce_data_updates(data, mode=None):
                     raise KeyError(mode)
     elif isinstance(data, Mapping):
         user_config = data
-    elif isinstance(data, Config):
+    elif isinstance(data, DataConfig):
         user_config = data.to_dict()
     else:
         raise TypeError(f'Expected path or dict, but got {type(data)}')
@@ -437,17 +437,17 @@ def _path_is_subconfig(cfg, parts):
     for idx, part in enumerate(parts):
         if part == '__class__':
             return False
-        if not isinstance(node, Config):
+        if not isinstance(node, DataConfig):
             return False
         if part in getattr(node, '_subconfig_meta', {}):
             if idx == len(parts) - 1:
                 return True
             child = node._data.get(part)
-            if isinstance(child, Config):
+            if isinstance(child, DataConfig):
                 node = child
             else:
                 return False
-        elif part in node._data and isinstance(node._data[part], Config):
+        elif part in node._data and isinstance(node._data[part], DataConfig):
             node = node._data[part]
         else:
             return False
@@ -542,15 +542,15 @@ def _ensure_parent_node(cfg, parts):
     """
     node = cfg
     for part in parts:
-        if not isinstance(node, Config):
+        if not isinstance(node, DataConfig):
             raise KeyError('.'.join(parts))
         if part in getattr(node, '_subconfig_meta', {}):
             child = node._data.get(part)
-            if not isinstance(child, Config):
+            if not isinstance(child, DataConfig):
                 child = node._subconfig_meta[part].instantiate(_dont_call_post_init=True)
                 node._data[part] = child
             node = child
-        elif part in node._data and isinstance(node._data[part], Config):
+        elif part in node._data and isinstance(node._data[part], DataConfig):
             node = node._data[part]
         else:
             raise KeyError('.'.join(parts))
@@ -559,7 +559,7 @@ def _ensure_parent_node(cfg, parts):
 
 def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
     """
-    Resolve a selector spec into a Config subclass.
+    Resolve a selector spec into a DataConfig subclass.
 
     Precedence:
         1. SubConfig registry choices (if provided)
@@ -576,12 +576,12 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
     """
     if meta.choices and spec in meta.choices:
         return meta.choices[spec]
-    if inspect.isclass(spec) and issubclass(spec, Config):
+    if inspect.isclass(spec) and issubclass(spec, DataConfig):
         return spec
     if isinstance(spec, str):
         if localns is not None and spec.isidentifier():
             candidate = localns.get(spec)
-            if inspect.isclass(candidate) and issubclass(candidate, Config):
+            if inspect.isclass(candidate) and issubclass(candidate, DataConfig):
                 return candidate
         if not (meta.allow_import or allow_import):
             raise ValueError(f'Importing {spec!r} not allowed for this SubConfig')
@@ -596,7 +596,7 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
         if not hasattr(mod, clsname):
             raise ValueError(f'Module {modname!r} has no attribute {clsname!r}')
         cls = getattr(mod, clsname)
-        if not inspect.isclass(cls) or not issubclass(cls, Config):
+        if not inspect.isclass(cls) or not issubclass(cls, DataConfig):
             raise TypeError(f'Specified class {cls!r} is not a Config/DataConfig')
         return cls
     raise ValueError(f'Unknown selector spec {spec!r}')
@@ -637,7 +637,7 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
                 parent = _ensure_parent_node(cfg, parent_parts)
             except KeyError:
                 continue
-            if not isinstance(parent, Config):
+            if not isinstance(parent, DataConfig):
                 continue
             meta = getattr(parent, '_subconfig_meta', {}).get(leaf, None)
             if meta is None:
@@ -695,7 +695,7 @@ def apply_dot_updates(cfg, updates, *, allow_import=True, localns=None, stacklev
             parent = _ensure_parent_node(cfg, parts[:-1])
         except KeyError:
             continue
-        if isinstance(parent, Config) and parts[-1] in getattr(parent, '_subconfig_meta', {}):
+        if isinstance(parent, DataConfig) and parts[-1] in getattr(parent, '_subconfig_meta', {}):
             if key not in selectors:
                 sugar[key] = value
                 leaf_updates.pop(key, None)
@@ -770,9 +770,9 @@ def flatten_defaults(cfg, prefix=(), include_class_options=False):
                 class_key = '.'.join(prefix + (key, '__class__'))
                 flat[selector_key] = Value(None, help=f'{key} implementation selector')
                 flat[class_key] = Value(None, help=f'{key} implementation selector')
-            if isinstance(value, Config):
+            if isinstance(value, DataConfig):
                 flat.update(flatten_defaults(value, prefix + (key,), include_class_options))
-        elif isinstance(value, Config):
+        elif isinstance(value, DataConfig):
             flat.update(flatten_defaults(value, prefix + (key,), include_class_options))
         else:
             meta = cfg._default.get(key)
@@ -786,7 +786,7 @@ def flatten_defaults(cfg, prefix=(), include_class_options=False):
 
 def flat_config_from_tree(cfg, include_class_options=False):
     """
-    Build a temporary Config instance to parse realized leaf arguments.
+    Build a temporary DataConfig instance to parse realized leaf arguments.
 
     Example:
         >>> import kwconf
@@ -801,7 +801,7 @@ def flat_config_from_tree(cfg, include_class_options=False):
     """
     defaults = flatten_defaults(cfg, include_class_options=include_class_options)
     name = f'_Flat_{cfg.__class__.__name__}'
-    FlatCls = type(name, (Config,), {'__default__': defaults})
+    FlatCls = type(name, (DataConfig,), {'__default__': defaults})
     return FlatCls(_dont_call_post_init=True)
 
 
@@ -900,13 +900,13 @@ def finalize_post_init(cfg):
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> finalize_post_init(cfg)
     """
-    if isinstance(cfg, Config):
+    if isinstance(cfg, DataConfig):
         if not getattr(cfg, '_kwconf_post_init_done', False):
             cfg.__post_init__()
             cfg._kwconf_post_init_done = True
-    if isinstance(cfg, Config):
+    if isinstance(cfg, DataConfig):
         for value in cfg._data.values():
-            if isinstance(value, Config):
+            if isinstance(value, DataConfig):
                 finalize_post_init(value)
 
 
@@ -943,7 +943,7 @@ def find_subconfig_paths(cfg):
             next_prefix = prefix + [key]
             if key in getattr(node, '_subconfig_meta', {}):
                 paths.append('.'.join(next_prefix))
-            if isinstance(value, Config):
+            if isinstance(value, DataConfig):
                 stack.append((next_prefix, value))
     return paths
 
@@ -972,7 +972,7 @@ def config_to_nested_dict(cfg, include_class=True):
     meta_map = getattr(cfg, '_subconfig_meta', {})
     for key, value in cfg._data.items():
         meta = meta_map.get(key)
-        if isinstance(value, Config):
+        if isinstance(value, DataConfig):
             child = config_to_nested_dict(value, include_class=include_class)
             selector = None
             if meta is not None and meta.choices:

@@ -12,7 +12,7 @@ import kwconf as kw
 
 
 def test_literal_string_populates_choices_and_type():
-    class C(kw.Config):
+    class C(kw.DataConfig):
         mode: typing.Literal['fast', 'slow', 'auto'] = 'auto'
 
     template = C.__default__['mode']
@@ -28,7 +28,7 @@ def test_literal_string_populates_choices_and_type():
 
 
 def test_literal_int_populates_choices_and_type():
-    class C(kw.Config):
+    class C(kw.DataConfig):
         level: typing.Literal[1, 2, 3] = 1
 
     template = C.__default__['level']
@@ -41,7 +41,7 @@ def test_literal_int_populates_choices_and_type():
 
 
 def test_literal_via_optional_still_populates_choices():
-    class C(kw.Config):
+    class C(kw.DataConfig):
         mode: typing.Optional[typing.Literal['x', 'y']] = None
 
     template = C.__default__['mode']
@@ -51,7 +51,7 @@ def test_literal_via_optional_still_populates_choices():
 
 
 def test_user_choices_win_over_literal():
-    class C(kw.Config):
+    class C(kw.DataConfig):
         mode: typing.Literal['a', 'b', 'c'] = kw.Value('a', choices=['a', 'b'])
 
     template = C.__default__['mode']
@@ -61,7 +61,7 @@ def test_user_choices_win_over_literal():
 
 def test_literal_mixed_types_skips_type_inference():
     """Heterogeneous Literal members can't be coerced to one runtime type."""
-    class C(kw.Config):
+    class C(kw.DataConfig):
         thing: typing.Literal['x', 1] = 'x'
 
     template = C.__default__['thing']

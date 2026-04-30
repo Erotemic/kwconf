@@ -1,7 +1,7 @@
 def test_typed_list_cli_with_nargs():
     import kwconf as kw
 
-    class ExampleConfig(kw.Config):
+    class ExampleConfig(kw.DataConfig):
         tags: list = kw.Value(default_factory=list, nargs='*', type=list)
 
     cfg = ExampleConfig.cli(argv=['--tags', 'spam', 'eggs'])
@@ -16,7 +16,7 @@ def test_comma_strings_stay_strings():
     """
     import kwconf as kw
 
-    class ExampleConfig(kw.Config):
+    class ExampleConfig(kw.DataConfig):
         plain_text: str = ''
         untyped = kw.Value('default')
 

@@ -13,18 +13,17 @@ Preferred usage:
     import kwconf as kw
 
 
-    class MyConfig(kw.Config):
+    class MyConfig(kw.DataConfig):
         x: int = 1
         y: str = 'foo'
         tags: list[str] = kw.Value(default_factory=list)
 
 
-    config = MyConfig.cli(argv=False, data={'x': 3})
+    config = MyConfig.cli(argv=['--x=3'])
     assert config.x == 3
 
 `Value(...)` remains the place for CLI metadata such as help text, aliases,
-choices, flags, and positional behavior. `DataConfig` is still available during
-the transition, but `Config` is the future-facing entry point.
+choices, flags, and positional behavior.
 """
 
 __autogen__ = """
@@ -45,10 +44,10 @@ __submodules__ = {
 
 from . import diagnostics  # NOQA
 from .modal import (ModalCLI, ModalValue)
-from .config import (Config, define,)
+from .config import (DataConfig, define,)
 from .value import (Value, Flag)
-from .dataconfig import (DataConfig, dataconf,)
+from .dataconfig import (dataconf,)
 from .subconfig import (SubConfig,)
 
-__all__ = ['Config', 'DataConfig', 'Value', 'Flag',
+__all__ = ['DataConfig', 'Value', 'Flag',
            'dataconf', 'define', 'ModalCLI', 'ModalValue', 'SubConfig']

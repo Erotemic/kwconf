@@ -11,11 +11,13 @@ and shows what to change.
 | What | Before (`scriptconfig`) | After (`kwconf`) |
 |---|---|---|
 | Import name | `import scriptconfig as scfg` | `import kwconf as kw` |
-| Primary base class | `scfg.DataConfig` | `kw.Config` (DataConfig still works) |
+| Primary base class | `scfg.DataConfig` | `kw.DataConfig` |
 | Coerce method on Value | `Value.cast(v)` | `Value.coerce(v)` |
 | Comma-separated CLI strings | auto-split into a list | stay a literal string |
 | `type='smartcast'` aliases | three string variants | removed -- pass a callable |
 | `kwconf.Path` / `kwconf.PathList` | available | removed -- use `Value(type=str)` and explicit globbing |
+| `kwconf.Config` class | base class for DataConfig | removed -- only `DataConfig` is exposed |
+| `Config(data=, default=, cmdline=)` ctor | available | removed -- use `DataConfig.cli(...)` or `MyConfig(**kwargs).load(...)` |
 | `default` class attribute | accepted (deprecation warned) | accepted (deprecation warned) |
 | `normalize` method | accepted (deprecation warned) | accepted (deprecation warned) |
 | `cmdline=` kwarg style | dict form accepted | accepted (deprecated) |
@@ -35,20 +37,38 @@ import kwconf as kw
 The two libraries are not pin-compatible at runtime: there is no
 `scriptconfig` shim. Update your imports directly.
 
-## Prefer `Config` for new code
+## `Config` is gone; only `DataConfig` is exposed
 
-`DataConfig` works exactly as before -- you can keep your existing code on
-it. New code should target `kw.Config` ([ADR-0002](ADRs.md)). The differences
-are small:
+`scriptconfig` exposed two base classes (`Config` and `DataConfig`) with
+overlapping responsibilities. `kwconf` consolidates them into a single
+public class: `DataConfig`. The implementation, the metaclass, and all the
+``cli`` / ``load`` / ``argparse`` / ``dump`` machinery now live on this one
+class.
 
-| | `Config` | `DataConfig` |
-|---|---|---|
-| Schema declaration | typed class attrs | typed class attrs |
-| Construction | `MyConfig(data=..., default=...)` | `MyConfig(*args, **kwargs)` |
-| Setattr behavior | strict | permissive |
+```python
+# scriptconfig
+class MyConfig(scfg.Config):
+    x = 1
 
-If you depend on dataclass-style positional/keyword construction
-(`MyConfig(x=1, y=2)`), keep `DataConfig`. Otherwise prefer `Config`.
+cfg = MyConfig(data={'x': 2}, cmdline=False)
+
+# kwconf
+class MyConfig(kw.DataConfig):
+    x = 1
+
+cfg = MyConfig(x=2)                         # dataclass-style kwargs
+# or
+cfg = MyConfig().load({'x': 2})             # explicit load
+# or
+cfg = MyConfig.cli(data={'x': 2}, argv=False)
+```
+
+The ``Config(data=..., default=..., cmdline=...)`` constructor signature is
+gone with the class. To populate a config from a file/dict/argv, use one of:
+
+* ``MyConfig(**kwargs)`` for direct keyword construction;
+* ``MyConfig().load(data=..., cmdline=...)`` after construction;
+* ``MyConfig.cli(data=..., argv=...)`` for the CLI-aware path.
 
 ## Comma-splitting is gone
 
@@ -209,11 +229,15 @@ items listed above. Please file an issue.
 ## Quick checklist
 
 1. `import scriptconfig as scfg` -> `import kwconf as kw`.
-2. Find any `--key=a,b,c` CLI invocations and either:
+2. Replace any `scfg.Config` (or `kw.Config`) base class with `kw.DataConfig`.
+3. Replace any `MyConfig(data=..., default=..., cmdline=...)` construction
+   with one of the patterns in the section above (kwargs / `.load(...)` /
+   `.cli(...)`).
+4. Find any `--key=a,b,c` CLI invocations and either:
    * declare the field with `nargs='+'` and switch to space-separated input, or
    * keep the comma form and split in `__post_init__`.
-3. Replace any `type='smartcast*'` strings with concrete callables.
-4. Replace `Path` / `PathList` usage with `Value(type=str)` plus explicit
+5. Replace any `type='smartcast*'` strings with concrete callables.
+6. Replace `Path` / `PathList` usage with `Value(type=str)` plus explicit
    path handling in `__post_init__`.
-5. If you subclassed `Value`, rename `cast` -> `coerce`.
-6. Run your test suite and review any deprecation warnings.
+7. If you subclassed `Value`, rename `cast` -> `coerce`.
+8. Run your test suite and review any deprecation warnings.

@@ -3,8 +3,8 @@ Write simple configs and update from CLI, kwargs, json, and yaml.
 
 ``kwconf`` provides a simple way to make configurable scripts that combine
 config files, command-line arguments, and Python keyword arguments. A
-config is defined by subclassing :class:`Config` and declaring fields as
-typed class variables. The instance behaves like a dict (it supports
+config is defined by subclassing :class:`DataConfig` and declaring fields
+as typed class variables. The instance behaves like a dict (it supports
 ``config['x']``) and like a namespace (``config.x``).
 
 The future-facing schema style uses typed class variables. Use
@@ -14,7 +14,7 @@ The future-facing schema style uses typed class variables. Use
 Example:
     >>> import kwconf as kw
     >>> # The simplest config: typed fields with raw defaults.
-    >>> class ExampleConfig(kw.Config):
+    >>> class ExampleConfig(kw.DataConfig):
     ...     num: int = 1
     ...     mode: str = 'bar'
     ...     tags: list = kw.Value(default_factory=list, help='free-form tags')
@@ -52,7 +52,7 @@ Note:
 Example:
     >>> # Comma strings stay strings; lists are explicit.
     >>> import kwconf as kw
-    >>> class ListConfig(kw.Config):
+    >>> class ListConfig(kw.DataConfig):
     ...     plain: str = ''
     ...     tags: list = kw.Value(default_factory=list, nargs='+')
     >>> config = ListConfig.cli(argv=['--plain=a,b,c', '--tags', 'x', 'y'])
@@ -61,11 +61,10 @@ Example:
     >>> # Lists are gathered from space-separated tokens via nargs:
     >>> assert config['tags'] == ['x', 'y']
 
-See Also:
-    :class:`kwconf.DataConfig` -- a thin compatibility wrapper that adds
-    a dataclass-style ``__init__(*args, **kwargs)``. The ``__default__``
-    dict form remains supported on both classes for compatibility with
-    existing code; new code should generally prefer typed class variables.
+Note:
+    The ``__default__`` dict form remains supported on ``DataConfig`` for
+    compatibility with existing code, but new code should prefer typed
+    class variables.
 """
 from __future__ import annotations
 
@@ -89,12 +88,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 # from kwconf.util.util_class import class_or_instancemethod
 
-__all__ = ['Config', 'define']
+__all__ = ['DataConfig', 'define']
 
 
 def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
     """
-    Alternate method for defining a custom Config type
+    Alternate method for defining a custom :class:`DataConfig` type from a
+    dict of defaults.
 
     Example:
         >>> from kwconf.config import define, Value
@@ -108,7 +108,7 @@ def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
     from textwrap import dedent
     if name is None:
         hashid = str(uuid.uuid4()).replace('-', '_')
-        name = 'Config_{}'.format(hashid)
+        name = 'DataConfig_{}'.format(hashid)
     vals: Dict[str, Any] = {'default': default}
     code = dedent(
         '''
@@ -118,7 +118,7 @@ def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
         '''.strip('\n').format(name=name))
     exec(code, vals)
     cls = vals[name]
-    return cast(Type["Config"], cls)
+    return cast(Type["DataConfig"], cls)
 
 
 def _runtime_type_from_annotation(annotation: Any) -> type | None:
@@ -223,7 +223,7 @@ def _collect_declared_config_attrs(namespace: Dict[str, Any]) -> Dict[str, Any]:
             continue
         if isinstance(v, classmethod) or isinstance(v, staticmethod):
             continue
-        if callable(v) and not (inspect.isclass(v) and issubclass(v, Config)):
+        if callable(v) and not (inspect.isclass(v) and issubclass(v, DataConfig)):
             continue
         attr_default[k] = _maybe_apply_annotation_to_value(k, v, annotations)
     return attr_default
@@ -241,13 +241,13 @@ def _materialize_default_items(defaults: Mapping[str, Any]) -> Dict[str, Any]:
 
 def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any]:
     """
-    Normalize a ``data`` argument (None, dict, Config, file/path/string) into
-    a plain dict ready for Config.load.
+    Normalize a ``data`` argument (None, dict, DataConfig, file/path/string) into
+    a plain dict ready for DataConfig.load.
 
     Supports:
 
       * ``None`` -> ``{}``
-      * a :class:`Config` instance -> ``data.asdict()``
+      * a :class:`DataConfig` instance -> ``data.asdict()``
       * a :class:`dict` -> returned as-is
       * a file path (str / os.PathLike) or readable file -> parsed by
         ``mode`` (auto-detected from file extension; defaults to yaml).
@@ -255,7 +255,7 @@ def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any
     """
     if data is None:
         return {}
-    if isinstance(data, Config):
+    if isinstance(data, DataConfig):
         return data.asdict()
     if isinstance(data, dict):
         return data
@@ -283,7 +283,7 @@ def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any
                 import json
                 return json.load(file)
             raise KeyError(mode)
-    raise TypeError(f'Expected path, dict, or Config; got {type(data)!r}')
+    raise TypeError(f'Expected path, dict, or DataConfig; got {type(data)!r}')
 
 
 def _normalize_class_defaults(defaults, annotations=None):
@@ -316,14 +316,14 @@ def _normalize_class_defaults(defaults, annotations=None):
                 if value.help and not inner.help:
                     inner.parsekw['help'] = value.help
                 normalized_value = inner
-            elif isinstance(inner, Config) or (
-                inspect.isclass(inner) and issubclass(inner, Config)
+            elif isinstance(inner, DataConfig) or (
+                inspect.isclass(inner) and issubclass(inner, DataConfig)
             ):
                 normalized_value = SubConfig(inner, help=value.help)
             else:
                 normalized_value = value
-        elif isinstance(value, Config) or (
-            inspect.isclass(value) and issubclass(value, Config)
+        elif isinstance(value, DataConfig) or (
+            inspect.isclass(value) and issubclass(value, DataConfig)
         ):
             normalized_value = SubConfig(value)
         else:
@@ -363,10 +363,10 @@ class MetaConfig(type):
         if diagnostics.DEBUG_META_CONFIG:
             print(f'MetaConfig.__new__ called: {mcls=} {name=} {bases=} {namespace=} {args=} {kwargs=}')
 
-        # Skip class-attr collection only on Config itself (the root); all
-        # subclasses (including DataConfig and user classes) participate.
+        # Skip class-attr collection on DataConfig itself (the root); all
+        # subclasses (user classes) participate.
         is_root_config = (
-            name == 'Config' and namespace.get('__module__') == __name__
+            name == 'DataConfig' and namespace.get('__module__') == __name__
         )
 
         if 'default' in namespace and '__default__' not in namespace:
@@ -443,41 +443,47 @@ class MetaConfig(type):
         if diagnostics.DEBUG_META_CONFIG:
             print('FINAL namespace = {}'.format(ub.urepr(namespace, nl=2)))
         cls = super().__new__(mcls, name, bases, namespace, *args, **kwargs)  # type: ignore
+
+        # Modify the __init__ docstring to surface the valid keys to help().
+        if getattr(cls, '__init__', None) is not None and cls.__init__.__doc__ == '__autogenerateme__':
+            valid_keys = list(cls.__default__.keys())
+            cls.__init__.__doc__ = ub.codeblock(
+                f'''
+                Valid options: {valid_keys}
+
+                Args:
+                    *args: positional arguments mapped onto declared fields.
+                    **kwargs: keyword arguments for any declared field.
+                ''')
         return cls
 
 
-class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
+class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
     """
     Primary configuration base class for kwconf.
 
     The preferred kwconf schema style uses typed class variables and optional
     :class:`kwconf.Value` metadata wrappers. The older ``__default__``
-    dictionary style remains available for compatibility, but new kwconf code
-    should generally prefer declarative class attributes.
+    dictionary style remains available for compatibility.
 
-    You may also implement ``__post_init__`` (function with that takes no args
-    and has no return) to postprocess your results after initialization.
+    You may also implement ``__post_init__`` (function that takes no args and
+    has no return) to postprocess values after initialization.
 
-    When creating an instance of the class the defaults variable is used
-    to make a dictionary-like object. You can override defaults by
-    specifying the ``data`` keyword argument to either a file path or
-    another dictionary. You can also specify ``cmdline=True`` to allow
-    the contents of ``sys.argv`` to influence the values of the new
-    object.
+    Construction is dataclass-like: positional args map onto declared fields
+    in declaration order, and any field can also be passed as a keyword. To
+    populate from a file, dict, or argv, use the :meth:`cli` or :meth:`load`
+    methods after construction.
 
-    An instance of the config class behaves like a dictionary, except that
-    you cannot set keys that do not already exist (as specified in the
-    defaults dict).
+    An instance behaves like both a dictionary (``config['key']``) and a
+    namespace (``config.key``). New keys cannot be added by default; opt in
+    with ``__allow_newattr__ = True`` on the class.
 
-    Key Methods:
+    Key methods:
 
-        * dump - dump a json representation to a file
-
-        * dumps - dump a json representation to a string
-
-        * argparse - create an :class:`argparse.ArgumentParser` object that is defined by the defaults of this config.
-
-        * load - rewrite the values based on a filepath, dictionary, or command line contents.
+        * :meth:`cli` - construct a CLI-aware instance from argv.
+        * :meth:`load` - update the instance from a file, dict, or argv.
+        * :meth:`argparse` - build an :class:`argparse.ArgumentParser`.
+        * :meth:`dump`, :meth:`dumps` - serialize to yaml/json.
 
     Attributes:
         _data : this protected variable holds the instance level raw state of
@@ -489,62 +495,61 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         epilog (str): A class attribute that if specified will add an epilog
             section to the help text.
 
-    SeeAlso:
-        :class:`kwconf.DataConfig`
-
     Example:
         >>> import kwconf as kw
-        >>> class MyConfig(kw.Config):
+        >>> class MyConfig(kw.DataConfig):
         ...     option1: tuple = kw.Value((1, 2, 3))
         ...     option2: str = 'bar'
         ...     option3: list = kw.Value(default_factory=list)
         >>> config1 = MyConfig()
-        >>> config2 = MyConfig(default=dict(option2='baz'))
+        >>> config2 = MyConfig(option2='baz')
+        >>> assert config2.option2 == 'baz'
     """
     # Note: class definitions are allowed to use raw literals; the metaclass
     # normalizes them to Value/SubConfig instances at creation time.
     __default__: Dict[str, Any] = {}
+    __description__: Optional[str] = None
+    __epilog__: Optional[str] = None
     # __allow_newattr__ = False
 
-    def __init__(self,
-                 data: Optional[Union[Dict[str, Any], str]] = None,
-                 default: Optional[Dict[str, Any]] = None,
-                 cmdline: Union[bool, List[str], str, Dict[str, Any]] = False,
-                 _dont_call_post_init: bool = False) -> None:
-        """
-        Args:
-            data (object): filepath, dict, or None
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        "__autogenerateme__"
+        # Internal flag used by the cli/load lifecycle to defer __post_init__.
+        _dont_call_post_init = kwargs.pop('_dont_call_post_init', False)
 
-            default (dict | None): overrides the class defaults
-
-            cmdline (bool | List[str] | str | dict)
-                If False, then no command line information is used.
-                If True, then sys.argv is parsed and used.
-                If a list of strings that used instead of sys.argv.
-                If a string, then that is parsed using shlex and used instead
-                    of sys.argv.
-                If a dictionary grants fine grained controls over the args
-                passed to :func:`Config._read_argv`. Can contain:
-                    * strict (bool): defaults to False
-                    * argv (List[str]): defaults to None
-                    * special_options (bool): defaults to True
-                    * autocomplete (bool): defaults to False
-                Defaults to False.
-
-        Note:
-            Avoid setting ``cmdline`` parameter here.  Instead prefer
-            to use the ``cli`` classmethod to create a command line
-            aware config instance..
-        """
+        # Shared per-instance state setup (builds _default, seeds _data,
+        # and instantiates SubConfig nodes).
         self._init_state(_dont_call_post_init=_dont_call_post_init)
-        self.load(data, cmdline=cmdline, default=default,
-                  _dont_call_post_init=_dont_call_post_init)
+
+        argkeys = list(self._default.keys())[0:len(args)]
+        new_values = ub.dzip(argkeys, args)
+        kwargs = self._normalize_alias_dict(kwargs)
+        new_values.update(kwargs)
+        unknown_args: Dict[str, Any] = ub.dict_diff(new_values, self._default)  # type: ignore[arg-type]
+        if unknown_args:
+            raise ValueError((
+                "Unknown Arguments: {}. Expected arguments are: {}"
+            ).format(unknown_args, list(self._default)))
+        for key, value in new_values.items():
+            template = self._default.get(key)
+            if isinstance(template, Value) and not isinstance(value, Value):
+                new_template = template.copy()
+                new_template.value = value
+                self._default[key] = new_template
+            else:
+                self._default[key] = value
+            self[key] = value
+
+        self._enable_setattr = True
+        if not _dont_call_post_init:
+            self.__post_init__()
+            self._kwconf_post_init_done = True
 
     def _init_state(self, _dont_call_post_init: bool = False) -> None:
         """
         Initialize per-instance attribute storage from the class-level defaults.
 
-        Shared between :class:`Config` and :class:`DataConfig` constructors.
+        Shared between :class:`DataConfig` and :class:`DataConfig` constructors.
         Builds ``self._default`` (a fresh per-instance copy), populates
         ``self._data`` with raw values, and instantiates any SubConfig nodes.
         """
@@ -582,7 +587,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
-    ) -> Config:
+    ) -> DataConfig:
         """
         Create a command-line aware config instance.
 
@@ -707,17 +712,17 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         return self
 
     @classmethod
-    def demo(cls) -> "Config":
+    def demo(cls) -> "DataConfig":
         """
         Create an example config class for test cases
 
         CommandLine:
-            xdoctest -m kwconf.config Config.demo
-            xdoctest -m kwconf.config Config.demo --cli --option1 fo
+            xdoctest -m kwconf.config DataConfig.demo
+            xdoctest -m kwconf.config DataConfig.demo --cli --option1 fo
 
         Example:
             >>> from kwconf.config import *
-            >>> self = Config.demo()
+            >>> self = DataConfig.demo()
             >>> print('self = {}'.format(self))
             self = <DemoConfig({...'option1': ...}...)...>...
             >>> self.argparse().print_help()
@@ -753,7 +758,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             dict
 
         Example:
-            >>> self = Config.demo()
+            >>> self = DataConfig.demo()
             >>> self.__json__()
             >>> self['option1'] = {1, 2, 3}
             >>> self['option2'] = {(1, 2): 'fds'}
@@ -819,7 +824,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             parts = key.split('.')
             node: Any = self
             for part in parts:
-                if not isinstance(node, Config):
+                if not isinstance(node, DataConfig):
                     raise KeyError(key)
                 try:
                     value = node._data[part]
@@ -929,7 +934,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
-    ) -> Config:
+    ) -> DataConfig:
         """
         Updates the configuration from a given data source.
 
@@ -948,7 +953,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                     of sys.argv.
                 DO NOT USE dictionary form. It is deprecated.
                 If a dictionary grants fine grained controls over the args
-                passed to :func:`Config._read_argv`. Can contain:
+                passed to :func:`DataConfig._read_argv`. Can contain:
                     * strict (bool): defaults to False
                     * argv (List[str]): defaults to None
                     * special_options (bool): defaults to True
@@ -1032,7 +1037,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> assert 'arg2' not in config2
         """
         if diagnostics.DEBUG_CONFIG:
-            print(f'[kwconf.config.Config] Call {self.__class__.__name__}.load',
+            print(f'[kwconf.config.DataConfig] Call {self.__class__.__name__}.load',
                   f'cmdline={cmdline}, strict={strict}, special_options={special_options}')
 
         if special_options is None:
@@ -1066,7 +1071,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             if unknown_keys:
                 if strict:
                     if diagnostics.DEBUG_CONFIG:
-                        print(f'[kwconf.config.Config] Error: data={data}')
+                        print(f'[kwconf.config.DataConfig] Error: data={data}')
 
                     raise KeyError(f'Unknown data options {unknown_keys}')
                 else:
@@ -1351,7 +1356,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
         if has_subconfigs:
             # Subconfig selectors need special handling, but regular values
-            # can use the standard Config setitem logic.
+            # can use the standard DataConfig setitem logic.
             from kwconf import subconfig as _subcfg_mod
             explicit = getattr(parser, '_explicitly_given', set())
             subconfig_paths = set(_subcfg_mod.find_subconfig_paths(self))
@@ -1487,18 +1492,17 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         return stream.getvalue()
 
     def __getattr__(self, key: str) -> Any:
-        # Handle aliasing of old "default" and new "__default__"
-        if key == 'default' and hasattr(self, '__default__'):
-            return self.__default__
-        elif key == '__default__' and hasattr(self, 'default'):
-            return self.default
+        # Note: attributes that mirror the public API will be suppressed.
+        # It is generally better to use the dictionary interface instead,
+        # but we want this to be data-classy, so...
         if key.startswith('_'):
+            # config vars must not start with '_'. That is only for us.
             raise AttributeError(key)
         if key in self:
             try:
                 return self[key]
-            except KeyError as ex:
-                raise AttributeError(key) from ex
+            except KeyError:
+                raise AttributeError(key)
         raise AttributeError(key)
 
     def __dir__(self) -> List[str]:
@@ -1506,25 +1510,62 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         return initial + list(self.keys())
 
     def __setattr__(self, key: str, value: Any) -> None:
+        """
+        Forwards setattrs in the configuration to the dictionary interface,
+        otherwise passes it through.
+        """
         if key.startswith('_'):
+            # Currently we do not allow leading underscores to be config
+            # values to give us some flexibility for API changes.
             self.__dict__[key] = value
             return
-        if '_data' in self.__dict__ and key in self:
+        # The user can opt into adding new keys on the fly:
+        can_setattr = getattr(self, '__allow_newattr__', False)
+        # Internal: after object initialization allow setattr on existing keys.
+        can_setattr |= (getattr(self, '_enable_setattr', False) and key in self)
+        if can_setattr:
             try:
                 self[key] = value
-                return
-            except KeyError as ex:
-                raise AttributeError(key) from ex
-        if getattr(self, '__allow_newattr__', False) and '_data' in self.__dict__:
-            self[key] = value
-            return
-        self.__dict__[key] = value
+            except KeyError:
+                raise AttributeError(key)
+        else:
+            self.__dict__[key] = value
+
+    @classmethod
+    def parse_args(cls,
+                   args: Optional[List[str]] = None,
+                   namespace: Optional[Any] = None) -> "DataConfig":
+        """
+        Mimics :meth:`argparse.ArgumentParser.parse_args`.
+        """
+        if namespace is not None:
+            raise NotImplementedError('namespaces are not handled in kwconf')
+        return cast("DataConfig", cls.cli(argv=args, strict=True))
+
+    @classmethod
+    def parse_known_args(cls,
+                         args: Sequence[str] | None = None,
+                         namespace: Any = None) -> "DataConfig":
+        """
+        Mimics :meth:`argparse.ArgumentParser.parse_known_args`.
+        """
+        if namespace is not None:
+            raise NotImplementedError('namespaces are not handled in kwconf')
+        return cast("DataConfig", cls.cli(argv=args, strict=False))
+
+    @classmethod
+    def _register_main(cls, func):
+        """
+        Register a function as the main method for this config CLI.
+        """
+        cls.main = func
+        return func
 
     @property
     def _description(self) -> Optional[str]:
         if hasattr(self, 'description'):
             ub.schedule_deprecation(
-                'kwconf', 'description', 'attribute of Config classes',
+                'kwconf', 'description', 'attribute of DataConfig classes',
                 migration='Use __description__ or the docstring instead',
                 deprecate='0.7.11', error='0.10.0', remove='1.0.0')
 
@@ -1543,7 +1584,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
     def _epilog(self) -> Optional[str]:
         if hasattr(self, 'epilog'):
             ub.schedule_deprecation(
-                'kwconf', 'epilog', 'attribute of Config classes',
+                'kwconf', 'epilog', 'attribute of DataConfig classes',
                 migration='Use __epilog__ instead',
                 deprecate='0.7.11', error='0.10.0', remove='1.0.0')
 
@@ -1556,7 +1597,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
     def _prog(self) -> Optional[str]:
         if hasattr(self, 'prog'):
             ub.schedule_deprecation(
-                'kwconf', 'prog', 'attribute of Config classes',
+                'kwconf', 'prog', 'attribute of DataConfig classes',
                 migration='Use __prog__ instead',
                 deprecate='0.7.11', error='0.10.0', remove='1.0.0')
         # Should probably use __command__ instead? And will need to fixup?
@@ -1592,7 +1633,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             config style?
 
         CommandLine:
-            xdoctest -m kwconf.config Config.port_to_dataconf
+            xdoctest -m kwconf.config DataConfig.port_to_dataconf
 
         Example:
             >>> import kwconf
@@ -1689,7 +1730,7 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             str : The code that roughly implements the config class.
 
         CommandLine:
-            xdoctest -m kwconf.config Config.port_from_click
+            xdoctest -m kwconf.config DataConfig.port_from_click
 
         Example:
             >>> # xdoctest: +REQUIRES(module:click)
@@ -1822,12 +1863,12 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             Config: a subclass of the Config or DataConfig class.
 
         SeeAlso:
-            :func:`Config.port_from_argparse` - like this function, but returns
+            :func:`DataConfig.port_from_argparse` - like this function, but returns
                 the text that could be executed to define the new class
                 statically.  In constrat this creates the clas dynamically.
 
         CommandLine:
-            xdoctest -m kwconf.config Config.cls_from_argparse
+            xdoctest -m kwconf.config DataConfig.cls_from_argparse
 
         Example:
             >>> import kwconf
@@ -1973,13 +2014,13 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 flags).
 
         SeeAlso:
-            :meth:`Config.argparse` - creates a real argparse object
+            :meth:`DataConfig.argparse` - creates a real argparse object
 
         Returns:
             str: code to construct a similar argparse object
 
         CommandLine:
-            xdoctest -m kwconf.config Config.port_to_argparse
+            xdoctest -m kwconf.config DataConfig.port_to_argparse
 
         Example:
             >>> import kwconf
@@ -2228,8 +2269,8 @@ class Config(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             argparse.ArgumentParser : a new or updated argument parser
 
         CommandLine:
-            xdoctest -m kwconf.config Config.argparse:0
-            xdoctest -m kwconf.config Config.argparse:1
+            xdoctest -m kwconf.config DataConfig.argparse:0
+            xdoctest -m kwconf.config DataConfig.argparse:1
 
         TODO:
             A good CLI spec for lists might be
