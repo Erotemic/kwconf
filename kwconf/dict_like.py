@@ -122,24 +122,6 @@ class DictLike:
         for k, v in other.items():
             self[k] = v
 
-    def iteritems(self) -> Iterator[tuple[Any, Any]]:
-        import ubelt as ub
-        ub.schedule_deprecation(
-            'kwconf', 'iteritems', 'use items instead')
-        return ((key, self[key]) for key in self.keys())
-
-    def itervalues(self) -> Iterator[Any]:
-        import ubelt as ub
-        ub.schedule_deprecation(
-            'kwconf', 'itervalues', 'use items instead')
-        return (self[key] for key in self.keys())
-
-    def iterkeys(self) -> Iterator[Any]:
-        import ubelt as ub
-        ub.schedule_deprecation(
-            'kwconf', 'iterkeys', 'use items instead')
-        return (key for key in self.keys())
-
     def get(self, key: Any, default: Any = None) -> Any:
         try:
             return self[key]
