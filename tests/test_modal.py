@@ -1,4 +1,3 @@
-# mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 import ubelt as ub
 import kwconf
 from collections import defaultdict
@@ -161,8 +160,9 @@ def test_modal_customize_command_instancelevel():
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         modal.main(argv=['--help'], _noexit=True)
+    assert cap.text is not None
     assert 'command1' in cap.text
     assert 'command2' in cap.text
     assert 'alias2' in cap.text
@@ -200,18 +200,20 @@ def test_customized_modals():
     modal1.register(Command1, command='command1')
     modal2.register(Command1, command='action1')
 
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         try:
             modal1.main(argv=['--help'])
         except SystemExit:
             ...
         else:
             raise AssertionError('should have exited')
+    assert cap.text is not None
     assert 'command1' in cap.text
     assert 'action1' not in cap.text
 
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         modal2.main(argv=['--help'], _noexit=True)
+    assert cap.text is not None
     assert 'command1' not in cap.text
     assert 'action1' in cap.text
 
@@ -250,20 +252,25 @@ def test_submodals():
     Modal1.register(Command, command='command1')
     Modal1.register(Command, command='command2')
 
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         Modal1.main(argv=['--help'], _noexit=True)
+    assert cap.text is not None
     assert 'modal2' in cap.text
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         Modal1.main(argv=['modal2', '--help'], _noexit=True)
+    assert cap.text is not None
     assert 'modal3' in cap.text
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         Modal1.main(argv=['command1', '--help'], _noexit=True)
+    assert cap.text is not None
     assert 'foo' in cap.text
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         Modal1.main(argv=['modal2', 'modal3', '--help'], _noexit=True)
+    assert cap.text is not None
     assert 'command4' in cap.text
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         Modal1.main(argv=['modal2', 'command3', '--help'], _noexit=True)
+    assert cap.text is not None
     assert 'foo' in cap.text
 
     assert Modal1.main(argv=['command1']) == 0
@@ -311,16 +318,19 @@ def test_modal_version():
             class Modal3(kwconf.ModalCLI):
                 __version__ = '3.3.3'
 
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         Modal1.main(argv=['--version'])
+    assert cap.text is not None
     assert '1.1.1' in cap.text
 
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         Modal1.main(argv=['Modal2', '--version'])
+    assert cap.text is not None
     assert '2.2.2' in cap.text
 
-    with ub.CaptureStdout(suppress=0) as cap:
+    with ub.CaptureStdout(suppress=False) as cap:
         Modal1.main(argv=['Modal2', 'Modal3', '--version'])
+    assert cap.text is not None
     assert '3.3.3' in cap.text
 
 
@@ -437,6 +447,7 @@ def test_modal_value_declarative_registration():
     with ub.CaptureStdout(suppress=True) as cap:
         MyModalCLI.main(argv=['--help'], _noexit=True)
 
+    assert cap.text is not None
     assert 'my_cmd' in cap.text
     assert 'alias_cmd' in cap.text
     assert MyModalCLI.main(argv=['my_cmd']) == 0
@@ -455,6 +466,7 @@ def test_modal_value_command_override():
     with ub.CaptureStdout(suppress=True) as cap:
         MyModalCLI.main(argv=['--help'], _noexit=True)
 
+    assert cap.text is not None
     assert 'real_name' in cap.text
     assert 'configured_name' not in cap.text
     assert 'rn' in cap.text
