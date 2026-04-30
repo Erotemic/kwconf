@@ -388,6 +388,7 @@ def _normalize_class_defaults(defaults, annotations=None):
     annotations = annotations or {}
     from kwconf.subconfig import SubConfig
     for key, value in defaults.items():
+        normalized_value: Any
         if isinstance(value, SubConfig):
             normalized_value = value
         elif isinstance(value, Value):
@@ -1457,7 +1458,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             # Subconfig selectors need special handling, but regular values
             # can use the standard DataConfig setitem logic.
             from kwconf import subconfig as _subcfg_mod
-            explicit = getattr(parser, '_explicitly_given', set())
+            explicit: set[str] = getattr(parser, '_explicitly_given', set())
             subconfig_paths = set(_subcfg_mod.find_subconfig_paths(self))
             if explicit:
                 selector_keys = {
@@ -1657,7 +1658,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         Register a function as the main method for this config CLI.
         """
-        cls.main = func
+        cls.main = func  # type: ignore[attr-defined]
         return func
 
     @property
@@ -2025,7 +2026,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         # Dynamically create the class (
         # note, cls.__class__ should be MetaConfig)
-        DynamicClass = cast(type, cls.__class__(name, bases, attributes))  # type: ignore[call-overload]
+        DynamicClass = cls.__class__(name, bases, attributes)  # type: ignore[call-overload]
         return DynamicClass
 
     @classmethod

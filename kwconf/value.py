@@ -330,13 +330,13 @@ class Value(ub.NiceRepr):
             if short_prefix_pat.match(s)
         ]
 
-        alias = ub.oset(normalize_option_str(s)
-                        for s in long_option_strings)
-        alias = list(alias - {key})
+        alias_set = ub.oset(normalize_option_str(s)
+                            for s in long_option_strings)
+        alias: list[str] = list(alias_set - {key})
 
-        short_alias = ub.oset(normalize_option_str(s)
-                              for s in short_option_strings)
-        short_alias = list(short_alias - {key})
+        short_alias_set = ub.oset(normalize_option_str(s)
+                                  for s in short_option_strings)
+        short_alias: list[str] = list(short_alias_set - {key})
 
         real_value_kw = {
             'default': action.default,

@@ -39,6 +39,7 @@ ignore-words-list = ["ANS", "doesnt", "cant"]
 
 [tool.mypy]
 ignore_missing_imports = true
+check_untyped_defs = true
 #ignore_errors = true
 
 # kwconf's Value(...) field specifier doesn't expose a top-level

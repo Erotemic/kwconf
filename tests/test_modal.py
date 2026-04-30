@@ -1,3 +1,4 @@
+# mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 import ubelt as ub
 import kwconf
 from collections import defaultdict
@@ -124,6 +125,7 @@ def test_modal_customize_command_classlevel():
 
     with ub.CaptureStdout(suppress=True) as cap:
         MyModalCLI.main(argv=['--help'], _noexit=True)
+    assert cap.text is not None
     assert 'command1' in cap.text
     assert 'command2' in cap.text
     assert 'alias2' in cap.text

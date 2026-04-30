@@ -1,4 +1,4 @@
-# mypy: disable-error-code="misc, literal-required, import-untyped"
+# mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 """
 Test that class attributes are correctly initialized.
 """

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, IO
 import ubelt as ub
 
 from kwconf.config import DataConfig
@@ -165,7 +165,11 @@ class SubConfig(Value):
         >>> assert isinstance(inst, Inner)
     """
 
-    def __init__(self, default, *, choices=None, allow_import=None, help=None):
+    def __init__(self, default: Any, *,
+                 choices: Mapping[str, type] | None = None,
+                 allow_import: bool | None = None,
+                 help: str | None = None) -> None:
+        default_inst: Any
         if inspect.isclass(default):
             if not issubclass(default, DataConfig):
                 raise TypeError('SubConfig default must be a DataConfig subclass or instance')
@@ -197,7 +201,7 @@ class SubConfig(Value):
         else:
             instance = copy.deepcopy(self.value)
             if _dont_call_post_init and hasattr(instance, '_enable_setattr'):
-                instance._enable_setattr = True
+                instance._enable_setattr = True  # type: ignore[attr-defined]
         return instance
 
 
@@ -342,8 +346,8 @@ def coerce_data_updates(data, mode=None):
             except Exception:
                 import yaml  # type: ignore[import-untyped]
                 import io
-                file = io.StringIO(data)
-                user_config = yaml.load(file, Loader=yaml.SafeLoader)
+                stream: IO[Any] = io.StringIO(data)
+                user_config = yaml.load(stream, Loader=yaml.SafeLoader)
         else:
             if mode is None and isinstance(data, (str, os.PathLike)):
                 if str(data).lower().endswith('.json'):
@@ -936,8 +940,8 @@ def find_subconfig_paths(cfg):
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> assert 'inner' in find_subconfig_paths(cfg)
     """
-    paths = []
-    stack = [([], cfg)]
+    paths: list[str] = []
+    stack: list[tuple[list[str], DataConfig]] = [([], cfg)]
     while stack:
         prefix, node = stack.pop()
         for key, value in node._data.items():

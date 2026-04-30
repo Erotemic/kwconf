@@ -1,3 +1,4 @@
+# mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 def test_typed_list_cli_with_nargs():
     import kwconf as kw
 

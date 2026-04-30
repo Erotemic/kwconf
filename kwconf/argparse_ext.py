@@ -443,7 +443,7 @@ class CompatArgumentParser(argparse.ArgumentParser):
         self.exit_on_error = kwargs.pop('exit_on_error', True)
         super().__init__(*args, **kwargs)
 
-    def parse_known_args(self,  # type: ignore[override]
+    def parse_known_args(self,  # type: ignore[override]  # ty: ignore[invalid-method-override]
                          args: Optional[Sequence[str]] = None,
                          namespace: Optional[argparse.Namespace] = None) -> Tuple[argparse.Namespace, List[str]]:
         """

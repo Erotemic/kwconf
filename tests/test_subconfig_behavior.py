@@ -1,3 +1,4 @@
+# mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 import textwrap
 
 import pytest
