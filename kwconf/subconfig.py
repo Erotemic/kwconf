@@ -175,7 +175,7 @@ class SubConfig(Value):
         else:
             raise TypeError('SubConfig default must be a DataConfig subclass or instance')
 
-        super().__init__(value=default_inst, help=help)
+        super().__init__(default=default_inst, help=help)
         self.allow_import = allow_import
         self.choices = dict(choices) if choices is not None else None
         if self.choices is not None:

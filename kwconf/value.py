@@ -125,7 +125,7 @@ class Value(ub.NiceRepr):
     """
 
     def __init__(self,
-                 value: Any = ub.NoParam,
+                 default: Any = ub.NoParam,
                  type: Any = None,
                  help: Optional[str] = None,
                  choices: Sequence[Any] | None = None,
@@ -139,14 +139,11 @@ class Value(ub.NiceRepr):
                  mutex_group: Optional[str] = None,
                  tags: Optional[Any] = None,
                  *,
-                 default: Any = ub.NoParam,
                  default_factory: Callable[[], Any] | None = None,
                  validate: Optional[Union[bool, str]] = None) -> None:
 
-        if default is not ub.NoParam and value is not ub.NoParam:
-            raise ValueError('Error: only one of default or value should be specified')
-        if default_factory is not None and (default is not ub.NoParam or value is not ub.NoParam):
-            raise ValueError('Error: default_factory is mutually exclusive with value/default')
+        if default_factory is not None and default is not ub.NoParam:
+            raise ValueError('Error: default_factory is mutually exclusive with default')
 
         type = _resolve_named_type(type)
 
@@ -181,8 +178,6 @@ class Value(ub.NiceRepr):
             initial = default_factory()
         elif default is not ub.NoParam:
             initial = default
-        elif value is not ub.NoParam:
-            initial = value
         else:
             initial = None
         self.update(initial)
@@ -344,7 +339,7 @@ class Value(ub.NiceRepr):
         short_alias = list(short_alias - {key})
 
         real_value_kw = {
-            'value': action.default,
+            'default': action.default,
             'type': action.type,
             'alias': alias,
             'short_alias': short_alias,
@@ -376,11 +371,11 @@ class Flag(Value):
     """
     Exactly the same as a Value except isflag default to True
     """
-    def __init__(self, value: Any = False, **kwargs: Any) -> None:
+    def __init__(self, default: Any = False, **kwargs: Any) -> None:
         isflag = kwargs.get('isflag', True)
         assert isflag, 'Cannot disable isflag on a Flag value'
         kwargs['isflag'] = isflag
-        super().__init__(value=value, **kwargs)
+        super().__init__(default=default, **kwargs)
 
 
 def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
