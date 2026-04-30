@@ -1540,6 +1540,16 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     @property
     def _description(self) -> Optional[str]:
+        """
+        The argparse ``description`` for this config's CLI -- the prose
+        block printed near the top of ``--help`` between the usage line
+        and the argument table.
+
+        Resolved in order: the class attribute ``__description__`` if set,
+        otherwise the class docstring, otherwise a generic kwconf-versioned
+        fallback. The result is run through :func:`ubelt.codeblock` so that
+        triple-quoted indented strings render cleanly.
+        """
         description = getattr(self, '__description__', None)
         if description is None:
             description = self.__class__.__doc__
@@ -1552,6 +1562,16 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     @property
     def _epilog(self) -> Optional[str]:
+        """
+        The argparse ``epilog`` for this config's CLI -- the prose block
+        printed at the bottom of ``--help``, after the argument table.
+        Typically used for examples or "see also" notes.
+
+        Pulled from the class attribute ``__epilog__`` if set, otherwise
+        ``None`` (argparse omits the epilog entirely). The result is run
+        through :func:`ubelt.codeblock` so that triple-quoted indented
+        strings render cleanly.
+        """
         epilog = getattr(self, '__epilog__', None)
         if epilog is not None:
             epilog = ub.codeblock(epilog)
@@ -1559,6 +1579,16 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     @property
     def _prog(self) -> Optional[str]:
+        """
+        The argparse ``prog`` for this config's CLI -- the program name
+        shown in the usage line (e.g. ``usage: <prog> [-h] ...``).
+
+        Pulled from the class attribute ``__prog__`` if set, otherwise the
+        config class's own name. Note that argparse will fall back to
+        ``sys.argv[0]`` if ``prog`` is ``None``; we explicitly use the
+        class name so help output is stable regardless of how the script
+        was invoked.
+        """
         prog = getattr(self, '__prog__', None)
         if prog is None:
             prog = self.__class__.__name__
