@@ -140,7 +140,8 @@ class Value(ub.NiceRepr):
                  tags: Optional[Any] = None,
                  *,
                  default: Any = ub.NoParam,
-                 default_factory: Callable[[], Any] | None = None) -> None:
+                 default_factory: Callable[[], Any] | None = None,
+                 validate: Optional[Union[bool, str]] = None) -> None:
 
         if default is not ub.NoParam and value is not ub.NoParam:
             raise ValueError('Error: only one of default or value should be specified')
@@ -166,6 +167,15 @@ class Value(ub.NiceRepr):
         self.short_alias = short_alias
         self.tags = tags
         self.default_factory = default_factory
+        # ``validate`` opts this Value into post-coerce annotation
+        # validation. ``None`` means "inherit from the owning class's
+        # ``__validate__`` attribute"; ``False`` disables validation
+        # for this field even if the class enables it.
+        self.validate: Optional[Union[bool, str]] = validate
+        # Populated by the metaclass when the Value is attached to a
+        # class with a matching annotation. ``None`` means no annotation
+        # was associated, so validation is a no-op.
+        self._annotation: Any = None
 
         if default_factory is not None:
             initial = default_factory()

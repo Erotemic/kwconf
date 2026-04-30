@@ -166,6 +166,65 @@ def _choices_from_annotation(annotation: Any) -> tuple | None:
     return None
 
 
+def _value_matches_annotation(value: Any, annotation: Any) -> bool:
+    """
+    Return True if ``value`` is consistent with ``annotation``.
+
+    Supports plain runtime types (int, str, bool, None), ``Literal[...]``,
+    unions (``X | Y``, ``Optional[X]``, ``Union[...]``), and parameterized
+    collections (``list[T]``, ``tuple[T, ...]``, ``dict[K, V]``, ``set[T]``)
+    with a one-level element-type check. Annotations the helper cannot
+    reason about (custom generics, callables, ``TypeVar``, etc.) return
+    True so we under-validate rather than misvalidate.
+    """
+    if annotation is None or annotation is Any or isinstance(annotation, str):
+        return True
+    if annotation is type(None):
+        return value is None
+    origin = typing.get_origin(annotation)
+    if origin is typing.Literal:
+        return value in typing.get_args(annotation)
+    if origin in {Union, types.UnionType}:
+        return any(_value_matches_annotation(value, arg)
+                   for arg in typing.get_args(annotation))
+    if origin in {list, set, frozenset}:
+        if not isinstance(value, origin):
+            return False
+        (elem_t,) = typing.get_args(annotation) or (Any,)
+        return all(_value_matches_annotation(v, elem_t) for v in value)
+    if origin is tuple:
+        if not isinstance(value, tuple):
+            return False
+        args = typing.get_args(annotation)
+        if len(args) == 2 and args[1] is Ellipsis:
+            return all(_value_matches_annotation(v, args[0]) for v in value)
+        if len(args) != len(value):
+            return False
+        return all(_value_matches_annotation(v, t) for v, t in zip(value, args))
+    if origin is dict:
+        if not isinstance(value, dict):
+            return False
+        args = typing.get_args(annotation) or (Any, Any)
+        kt, vt = args
+        return all(_value_matches_annotation(k, kt) and _value_matches_annotation(v, vt)
+                   for k, v in value.items())
+    if origin is not None:
+        # Some other parameterized generic; check the origin only.
+        try:
+            return isinstance(value, origin)
+        except TypeError:
+            return True
+    if isinstance(annotation, type):
+        return isinstance(value, annotation)
+    return True
+
+
+def _format_annotation(annotation: Any) -> str:
+    if hasattr(annotation, '__name__'):
+        return cast(str, annotation.__name__)
+    return str(annotation)
+
+
 def _maybe_apply_annotation_to_value(key, value, annotations):
     """
     Enrich a class-attribute default with information derived from its type
@@ -187,7 +246,25 @@ def _maybe_apply_annotation_to_value(key, value, annotations):
     runtime_type = _runtime_type_from_annotation(annotation)
     choices = _choices_from_annotation(annotation)
 
+    # Stash the annotation on existing Value templates so post-coerce
+    # validation can consult it later. Done unconditionally (any usable
+    # annotation, not just ones we could derive a runtime type from)
+    # because validation handles unions/Literal natively.
+    if annotation is not None and not isinstance(annotation, str):
+        if isinstance(value, Value):
+            value._annotation = annotation
+        else:
+            # Will get attached after Value-wrapping below if applicable.
+            pass
+
     if runtime_type is None and choices is None:
+        if annotation is not None and not isinstance(annotation, str) \
+                and not isinstance(value, Value):
+            # Annotation is something we don't infer type/choices from
+            # (e.g. ``int | None``) but we still want to remember it for
+            # validation. Wrap into a Value so we have somewhere to stash.
+            value = Value(value, isflag=isinstance(value, bool))
+            value._annotation = annotation
         return value
 
     # Apply choices from Literal[...] when the user hasn't already set them.
@@ -200,19 +277,23 @@ def _maybe_apply_annotation_to_value(key, value, annotations):
         else:
             value = Value(value, choices=list(choices),
                           isflag=isinstance(value, bool))
+        if isinstance(value, Value):
+            value._annotation = annotation
 
     if runtime_type is None:
         return value
 
     if isinstance(value, Value):
-        if value.type is not None:
-            return value
-        value = value.copy()
-        value.type = runtime_type
-        value.parsekw = dict(value.parsekw)
-        value.parsekw['type'] = runtime_type
+        if value.type is None:
+            value = value.copy()
+            value.type = runtime_type
+            value.parsekw = dict(value.parsekw)
+            value.parsekw['type'] = runtime_type
+        value._annotation = annotation
         return value
-    return Value(value, type=runtime_type, isflag=isinstance(value, bool))
+    new_value = Value(value, type=runtime_type, isflag=isinstance(value, bool))
+    new_value._annotation = annotation
+    return new_value
 
 
 def _collect_declared_config_attrs(namespace: Dict[str, Any]) -> Dict[str, Any]:
@@ -874,11 +955,49 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             if template is not None and isinstance(template, Value):
                 # If the new value is raw data, and we have a underlying Value
                 # object update it.
-                self._data[key] = template.coerce(value)
+                coerced = template.coerce(value)
+                self._validate_assignment(key, coerced, template)
+                self._data[key] = coerced
             else:
                 # If we don't have an underlying Value object simply set the
                 # raw data.
                 self._data[key] = value
+
+    def _validate_assignment(
+        self, key: str, value: Any, template: "Value"
+    ) -> None:
+        """
+        Run optional annotation-based validation on an assignment.
+
+        Mode is resolved from ``template.validate`` first, falling back to
+        the class-level ``__validate__`` attribute (default ``False``).
+
+        Modes:
+          * ``False`` / ``None`` (default) -- no validation.
+          * ``'warn'`` -- emit a ``UserWarning`` on mismatch.
+          * ``'error'`` / ``True`` -- raise ``TypeError`` on mismatch.
+
+        Validation is skipped when the template has no associated
+        annotation (e.g. fields declared without a class-level type hint).
+        """
+        annotation = getattr(template, '_annotation', None)
+        if annotation is None:
+            return
+        mode = template.validate
+        if mode is None:
+            mode = getattr(self, '__validate__', False)
+        if not mode:
+            return
+        if _value_matches_annotation(value, annotation):
+            return
+        msg = (
+            f'{type(self).__name__}.{key}: value {value!r} does not match '
+            f'annotation {_format_annotation(annotation)}'
+        )
+        if mode == 'warn':
+            warnings.warn(msg, UserWarning, stacklevel=3)
+        else:
+            raise TypeError(msg)
 
     def keys(self):
         return self._data.keys()

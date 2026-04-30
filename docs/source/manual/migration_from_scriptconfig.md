@@ -240,6 +240,29 @@ class MyValue(kw.Value):
 
 Direct callers (`template.cast(value)`) similarly become `template.coerce(value)`.
 
+## Optional annotation-based validation
+
+Set ``__validate__ = 'error'`` (or ``'warn'``) on a class to have kwconf
+check assignments against the field's type annotation after coercion.
+Off by default, since most callers don't want runtime type policing.
+
+```python
+import typing
+
+class C(kw.DataConfig):
+    __validate__ = 'error'
+    mode: typing.Literal['fast', 'slow'] = 'fast'
+    count: int | None = None
+
+C(mode='wrong')  # TypeError
+C(count=[1, 2])  # TypeError
+```
+
+Per-field opt-out is available with ``Value(..., validate=False)``.
+Annotations the validator can't reason about (custom generics, callables,
+etc.) are silently skipped -- the goal is to under-validate rather than
+misvalidate.
+
 ## Removed lifecycle / metadata helpers
 
 The deprecated non-dunder forms are gone. Rename them on your classes:
