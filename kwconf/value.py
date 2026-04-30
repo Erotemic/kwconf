@@ -586,7 +586,7 @@ def _maker_smart_parse_action(self):
                 # the template (if it exists) or try using a smartcast.
                 def _smart_type(value):
                     key = self.dest
-                    template = kwconf_object.default[key]
+                    template = kwconf_object.__default__[key]
                     value = template.coerce(value)
                     return value
 

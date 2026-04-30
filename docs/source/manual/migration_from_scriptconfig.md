@@ -18,8 +18,9 @@ and shows what to change.
 | `kwconf.Path` / `kwconf.PathList`                     | available                     | removed -- use `Value(type=str)` and explicit globbing                 |
 | `kwconf.Config` class                                 | base class for DataConfig     | removed -- only `DataConfig` is exposed                                |
 | `Config(data=, default=, cmdline=)` ctor              | available                     | removed -- use `DataConfig.cli(...)` or `MyConfig(**kwargs).load(...)` |
-| `default` class attribute                             | accepted (deprecation warned) | accepted (deprecation warned)                                          |
-| `normalize` method                                    | accepted (deprecation warned) | accepted (deprecation warned)                                          |
+| `default` class attribute                             | accepted (deprecation warned) | removed -- use `__default__`                                           |
+| `normalize` method                                    | accepted (deprecation warned) | removed -- use `__post_init__`                                         |
+| `description` / `epilog` / `prog` class attributes    | accepted (deprecation warned) | removed -- use `__description__` / `__epilog__` / `__prog__`           |
 | `cmdline=` kwarg on `load()` / `cli()`                | available                     | removed -- use `argv=`                                                 |
 | `--config` / `--dump` / `--dumps` special CLI options | on by default                 | off by default (opt in via `__special_options__ = True` or per-call)   |
 
@@ -221,15 +222,17 @@ class MyValue(kw.Value):
 
 Direct callers (`template.cast(value)`) similarly become `template.coerce(value)`.
 
-## Lifecycle helpers (still supported, still warned)
+## Removed lifecycle / metadata helpers
 
-These have been deprecated since scriptconfig but still work:
+The deprecated non-dunder forms are gone. Rename them on your classes:
 
-* `default` class attribute -> use `__default__`.
-* `normalize` method -> use `__post_init__`.
+* `default` class attribute -> `__default__`.
+* `normalize` method -> `__post_init__`.
+* `description` / `epilog` / `prog` class attributes ->
+  `__description__` / `__epilog__` / `__prog__`.
 
-Each of these emits a deprecation warning under `kwconf` exactly as it did
-in late `scriptconfig`. Migrate when convenient.
+Unlike late `scriptconfig`, there is no deprecation warning -- the old
+names are simply not consulted.
 
 ## `cmdline=` is removed
 

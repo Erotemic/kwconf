@@ -448,9 +448,6 @@ class ModalCLI(metaclass=MetaModalCLI):
 
         def _wrapper(cli_cls):
             # Note: the order or registration is how it will appear in the CLI help
-            # Hack for older kwconf
-            # if not hasattr(cli_cls, 'default'):
-            #     cli_cls.default = cli_cls.__default__
             if isinstance(cls_or_self, type):
                 # Called as a class method
                 metadata = cls_or_self._init_subconfig_metadata(cli_cls)

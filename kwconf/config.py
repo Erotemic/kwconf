@@ -369,15 +369,6 @@ class MetaConfig(type):
             name == 'DataConfig' and namespace.get('__module__') == __name__
         )
 
-        if 'default' in namespace and '__default__' not in namespace:
-            # Ensure the user updates to the newer "__default__" paradigm
-            namespace['__default__'] = namespace['default']
-            ub.schedule_deprecation(
-                'kwconf', 'default', f'class attribute of {name}',
-                migration='Use __default__ instead',
-                deprecate='0.7.6', error='0.10.0', remove='1.0.0',
-            )
-
         if not is_root_config:
             attr_default = _collect_declared_config_attrs(namespace)
             if attr_default:
@@ -421,24 +412,7 @@ class MetaConfig(type):
 
                 this_default = _normalize_class_defaults(
                     this_default, namespace.get('__annotations__', {}))
-            namespace['__default__'] = namespace['default'] = this_default
-
-        if '__default__' in namespace and 'default' not in namespace:
-            # Backport to the older non-dunder __default__
-            namespace['default'] = namespace['__default__']
-
-        if 'normalize' in namespace and '__post_init__' not in namespace:
-            # Ensure the newer __post_init__ is specified
-            namespace['__post_init__'] = namespace['normalize']
-            ub.schedule_deprecation(
-                'kwconf', 'normalize', f'class attribute of {name}',
-                migration='Use __post_init__ instead',
-                deprecate='0.7.6', error='0.10.0', remove='1.0.0',
-            )
-
-        if '__post_init__' in namespace and 'normalize' not in namespace:
-            # Backport to the older non-dunder normalize
-            namespace['normalize'] = namespace['__post_init__']
+            namespace['__default__'] = this_default
 
         if diagnostics.DEBUG_META_CONFIG:
             print('FINAL namespace = {}'.format(ub.urepr(namespace, nl=2)))
@@ -1532,14 +1506,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
     @property
     def _description(self) -> Optional[str]:
-        if hasattr(self, 'description'):
-            ub.schedule_deprecation(
-                'kwconf', 'description', 'attribute of DataConfig classes',
-                migration='Use __description__ or the docstring instead',
-                deprecate='0.7.11', error='0.10.0', remove='1.0.0')
-
-        description = getattr(self, '__description__',
-                              getattr(self, 'description', None))
+        description = getattr(self, '__description__', None)
         if description is None:
             description = self.__class__.__doc__
         if description is None:
@@ -1551,26 +1518,14 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
     @property
     def _epilog(self) -> Optional[str]:
-        if hasattr(self, 'epilog'):
-            ub.schedule_deprecation(
-                'kwconf', 'epilog', 'attribute of DataConfig classes',
-                migration='Use __epilog__ instead',
-                deprecate='0.7.11', error='0.10.0', remove='1.0.0')
-
-        epilog = getattr(self, '__epilog__', getattr(self, 'epilog', None))
+        epilog = getattr(self, '__epilog__', None)
         if epilog is not None:
             epilog = ub.codeblock(epilog)
         return epilog
 
     @property
     def _prog(self) -> Optional[str]:
-        if hasattr(self, 'prog'):
-            ub.schedule_deprecation(
-                'kwconf', 'prog', 'attribute of DataConfig classes',
-                migration='Use __prog__ instead',
-                deprecate='0.7.11', error='0.10.0', remove='1.0.0')
-        # Should probably use __command__ instead? And will need to fixup?
-        prog = getattr(self, '__prog__', getattr(self, 'prog', None))
+        prog = getattr(self, '__prog__', None)
         if prog is None:
             prog = self.__class__.__name__
         return prog

@@ -50,91 +50,34 @@ def test_class_inst_default_attr():
         assert default_ids['self._default'] != default_ids['self.__default__']
 
 
-def test_class_inst_normalize_attr():
+def test_class_inst_post_init_attr():
     """
-    The normalize and __post_init__ methods should function equivalently
+    The __post_init__ method runs after construction.
     """
     import kwconf
     import ubelt as ub
-    import pytest
 
     test_state = ub.ddict(lambda: 0)
-
-    config_classes = []
 
     common_default = {
         'opt1': kwconf.Value(None, alias=['option1']),
         'opt2': kwconf.Value(None, alias=['option2', 'old_name']),
     }
 
-    with pytest.warns(Warning):
-        @config_classes.append
-        class Config1A(kwconf.DataConfig):
-            __default__ = common_default
-            def normalize(self):
-                test_state[self.__class__.__name__ + '.normalize'] += 1
-                self['opt1'] = 'normalized'
-
-    @config_classes.append
-    class Config1B(kwconf.DataConfig):
+    class Config1(kwconf.DataConfig):
         __default__ = common_default
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
 
-    @config_classes.append
-    class Config1C(kwconf.DataConfig):
-        __default__ = common_default
-
-        def __post_init__(self):
-            test_state[self.__class__.__name__ + '.__post_init__'] += 1
-            self['opt1'] = 'post-initialized'
-
-        def normalize(self):
-            test_state[self.__class__.__name__ + '.normalize'] += 1
-            self['opt1'] = 'normalized'
-
-    with pytest.warns(Warning):
-        @config_classes.append
-        class DataConfig2A(kwconf.DataConfig):
-            __default__ = common_default
-            def normalize(self):
-                test_state[self.__class__.__name__ + '.normalize'] += 1
-                self['opt1'] = 'normalized'
-
-    @config_classes.append
-    class DataConfig2B(kwconf.DataConfig):
+    class DataConfig2(kwconf.DataConfig):
         __default__ = common_default
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
 
-    @config_classes.append
-    class DataConfig2C(kwconf.DataConfig):
-        __default__ = common_default
-
-        def __post_init__(self):
-            test_state[self.__class__.__name__ + '.__post_init__'] += 1
-            self['opt1'] = 'post-initialized'
-
-        def normalize(self):
-            test_state[self.__class__.__name__ + '.normalize'] += 1
-            self['opt1'] = 'normalized'
-
-    instances = {}
-    for cls in config_classes:
-        instances[cls.__name__] = cls()
-
-    assert len(instances) == len(test_state) == 6
-    assert all(v == 1 for v in test_state.values()), (
-        'Only normalize or __post_init__ should be called, depending on '
-        'which one is defined.'
-    )
-
-    # post-init should be used over normalize when available
-    assert instances['Config1A']['opt1'] == 'normalized'
-    assert instances['Config1B']['opt1'] == 'post-initialized'
-    assert instances['Config1C']['opt1'] == 'post-initialized'
-    assert instances['DataConfig2A']['opt1'] == 'normalized'
-    assert instances['DataConfig2B']['opt1'] == 'post-initialized'
-    assert instances['DataConfig2C']['opt1'] == 'post-initialized'
+    instances = {cls.__name__: cls() for cls in [Config1, DataConfig2]}
+    assert len(instances) == len(test_state) == 2
+    assert all(v == 1 for v in test_state.values())
+    assert instances['Config1']['opt1'] == 'post-initialized'
+    assert instances['DataConfig2']['opt1'] == 'post-initialized'
