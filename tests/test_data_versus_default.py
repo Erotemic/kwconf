@@ -62,8 +62,8 @@ def test_data_vs_default(config, test_name):
     assert config['num'] == 2
     assert config['mode'] == 'foo'
 
-    # Test that cmdline will overload a default
-    config = config.load(cmdline='--num=3', default={'num': 4})
+    # Test that argv will overload a default
+    config = config.load(argv='--num=3', default={'num': 4})
     assert config['num'] == 3
     # But the new default should persist
     config = config.load()

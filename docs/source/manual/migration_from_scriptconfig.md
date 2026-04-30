@@ -8,20 +8,20 @@ and shows what to change.
 
 ## TL;DR
 
-| What | Before (`scriptconfig`) | After (`kwconf`) |
-|---|---|---|
-| Import name | `import scriptconfig as scfg` | `import kwconf as kw` |
-| Primary base class | `scfg.DataConfig` | `kw.DataConfig` |
-| Coerce method on Value | `Value.cast(v)` | `Value.coerce(v)` |
-| Comma-separated CLI strings | auto-split into a list | stay a literal string |
-| `type='smartcast'` aliases | three string variants | removed -- pass a callable |
-| `kwconf.Path` / `kwconf.PathList` | available | removed -- use `Value(type=str)` and explicit globbing |
-| `kwconf.Config` class | base class for DataConfig | removed -- only `DataConfig` is exposed |
-| `Config(data=, default=, cmdline=)` ctor | available | removed -- use `DataConfig.cli(...)` or `MyConfig(**kwargs).load(...)` |
-| `default` class attribute | accepted (deprecation warned) | accepted (deprecation warned) |
-| `normalize` method | accepted (deprecation warned) | accepted (deprecation warned) |
-| `cmdline=` kwarg style | dict form accepted | accepted (deprecated) |
-| `--config` / `--dump` / `--dumps` special CLI options | on by default | off by default (opt in via `__special_options__ = True` or per-call) |
+| What                                                  | Before (`scriptconfig`)       | After (`kwconf`)                                                       |
+| ----------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------- |
+| Import name                                           | `import scriptconfig as scfg` | `import kwconf as kw`                                                  |
+| Primary base class                                    | `scfg.DataConfig`             | `kw.DataConfig`                                                        |
+| Coerce method on Value                                | `Value.cast(v)`               | `Value.coerce(v)`                                                      |
+| Comma-separated CLI strings                           | auto-split into a list        | stay a literal string                                                  |
+| `type='smartcast'` aliases                            | three string variants         | removed -- pass a callable                                             |
+| `kwconf.Path` / `kwconf.PathList`                     | available                     | removed -- use `Value(type=str)` and explicit globbing                 |
+| `kwconf.Config` class                                 | base class for DataConfig     | removed -- only `DataConfig` is exposed                                |
+| `Config(data=, default=, cmdline=)` ctor              | available                     | removed -- use `DataConfig.cli(...)` or `MyConfig(**kwargs).load(...)` |
+| `default` class attribute                             | accepted (deprecation warned) | accepted (deprecation warned)                                          |
+| `normalize` method                                    | accepted (deprecation warned) | accepted (deprecation warned)                                          |
+| `cmdline=` kwarg on `load()` / `cli()`                | available                     | removed -- use `argv=`                                                 |
+| `--config` / `--dump` / `--dumps` special CLI options | on by default                 | off by default (opt in via `__special_options__ = True` or per-call)   |
 
 The rest of this document walks through each item.
 
@@ -68,7 +68,7 @@ The ``Config(data=..., default=..., cmdline=...)`` constructor signature is
 gone with the class. To populate a config from a file/dict/argv, use one of:
 
 * ``MyConfig(**kwargs)`` for direct keyword construction;
-* ``MyConfig().load(data=..., cmdline=...)`` after construction;
+* ``MyConfig().load(data=..., argv=...)`` after construction;
 * ``MyConfig.cli(data=..., argv=...)`` for the CLI-aware path.
 
 ## Comma-splitting is gone
@@ -227,11 +227,18 @@ These have been deprecated since scriptconfig but still work:
 
 * `default` class attribute -> use `__default__`.
 * `normalize` method -> use `__post_init__`.
-* `cmdline=` parameter as a dict -> pass `strict`, `argv`, `autocomplete`,
-  `special_options` directly to `cli()` / `load()`.
 
 Each of these emits a deprecation warning under `kwconf` exactly as it did
 in late `scriptconfig`. Migrate when convenient.
+
+## `cmdline=` is removed
+
+The `cmdline=` parameter on `load()` and `cli()` has been removed entirely;
+pass `argv=` instead. The accepted shapes are unchanged: `True` to parse
+`sys.argv`, a list of strings, a single string (split with `shlex`), or
+`False` to skip CLI parsing. The dict-form (which scriptconfig accepted as
+a deprecated way of forwarding parser kwargs) is gone -- pass `strict`,
+`autocomplete`, and `special_options` directly.
 
 ## Things that did NOT change
 

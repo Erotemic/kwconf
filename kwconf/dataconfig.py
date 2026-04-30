@@ -14,7 +14,7 @@ Example:
     >>>      ignore = ['baz', 'biz']
     >>> config = ExampleConfig()
     >>> kwargs = {'num': 2}
-    >>> config.load(kwargs, cmdline=False)
+    >>> config.load(kwargs, argv=False)
     >>> assert config['num'] == 2
     >>> # CLI parsing is available through the cli classmethod.
     >>> config = ExampleConfig.cli(argv=['--num=4', '--mode', 'fiz'])

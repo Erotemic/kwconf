@@ -157,7 +157,7 @@ def test_dump_and_load_roundtrip(tmp_path):
         cfg.dump(stream=file)
 
     cfg2 = Outer()
-    cfg2.load(out_path, cmdline=False)
+    cfg2.load(out_path, argv=False)
     assert isinstance(cfg2['inner'], ChoiceB)
     assert cfg2['inner'].x == 10
     assert cfg2['root'] == 3
@@ -203,7 +203,7 @@ def test_subconfig_stacklevel_localns_resolution():
     def wrapper_load():
         cfg = TrainLocal()
         cfg.load(
-            cmdline=['--optim=LocalOpt'],
+            argv=['--optim=LocalOpt'],
             allow_subconfig_overrides=True,
             stacklevel=1,
         )

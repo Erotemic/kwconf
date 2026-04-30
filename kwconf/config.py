@@ -578,10 +578,8 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         default: Mapping[str, Any] | None = None,
         argv: Sequence[str] | str | bool | None = None,
         strict: bool = True,
-        cmdline: bool = True,
         autocomplete: bool | str = "auto",
         special_options: bool | None = None,
-        transition_helpers: bool = True,
         verbose: bool | str = False,
         allow_import: bool = True,
         allow_subconfig_overrides: bool = True,
@@ -590,9 +588,6 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
     ) -> DataConfig:
         """
         Create a command-line aware config instance.
-
-        Calls the original "load" way of creating non-dataclass config objects.
-        This may be refactored in the future.
 
         Args:
             data (dict | str | None):
@@ -605,18 +600,11 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 copied and can be updated by argv or data if it is specified.
                 Generally prefer to pass directly to data instead.
 
-            cmdline (bool):
-                Defaults to True, which creates and uses an argparse object to
-                interact with the command line. If set to False, then the
-                argument parser is bypassed (useful for invoking a CLI
-                programmatically with kwargs and ignoring sys.argv).
-                NOTE: this will be deprecated in favor of "argv" in the future.
-
-            argv (List[str] | None | bool):
-                if specified as a list or string, ignore sys.argv and parse
-                this instead. Otherwise,
-                if True, then parse ``sys.argv``.
-                if False, then ignore ``sys.argv``.
+            argv (list[str] | str | bool | None):
+                Source of CLI arguments. ``None`` parses ``sys.argv``. A list
+                or shell-like string is parsed directly. ``True`` is a synonym
+                for ``None`` (parse ``sys.argv``). ``False`` skips CLI parsing
+                entirely.
 
             strict (bool):
                 if True use ``parse_args`` otherwise use ``parse_known_args``.
@@ -624,12 +612,6 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
 
             autocomplete (bool | str):
                 if True try to enable argcomplete.
-
-            transition_helpers (bool):
-                if True, we perform special munging to help transition to new
-                versions (e.g. cmdline->argv transition). This will cause
-                issues if your config has a key named "cmdline", otherwise it
-                is safe to keep on.
 
             special_options (bool | None, default=None):
                 adds special kwconf options, namely: --config, --dumps,
@@ -678,19 +660,15 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             >>> config = MyConfig.cli(argv=False, data=dict(verbose=1), verbose='auto')
         """
         if diagnostics.DEBUG_CONFIG:
-            print(f'[kwconf] Call {cls.__name__}.cli')
-            print(f'argv={argv}, cmdline={cmdline}')
-        if transition_helpers and isinstance(data, dict):
-            argv = data.pop('cmdline', argv)  # helper for cmdline->argv transition  # type: ignore
-        cmdline_value: Union[bool, List[str], str, Dict[str, Any]] = cmdline
-        if cmdline and argv is not None:
-            cmdline_value = argv  # type: ignore
+            print(f'[kwconf] Call {cls.__name__}.cli argv={argv!r}')
+        if argv is None:
+            argv = True  # parse sys.argv by default
         if default is None:
             default = {}
         # Note: hack to avoid calling __post_init__ twice
         self = cls(_dont_call_post_init=True)
         next_stacklevel = None if stacklevel is None else stacklevel + 1
-        self.load(data, cmdline=cmdline_value, default=default, strict=strict,
+        self.load(data, argv=argv, default=default, strict=strict,
                   autocomplete=autocomplete, special_options=special_options,
                   allow_import=allow_import,
                   allow_subconfig_overrides=allow_subconfig_overrides,
@@ -729,7 +707,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
             self = <DemoConfig({...'option1': ...}...)...>...
             >>> self.argparse().print_help()
             >>> # xdoc: +REQUIRES(--cli)
-            >>> self.load(cmdline=True)
+            >>> self.load(argv=True)
             >>> print(ub.urepr(self, nl=1))
         """
         import kwconf
@@ -925,7 +903,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
     def load(
         self,
         data: Mapping[str, Any] | str | None = None,
-        cmdline: bool | Sequence[str] | str | Mapping[str, Any] = False,
+        argv: bool | Sequence[str] | str = False,
         mode: str | None = None,
         default: Mapping[str, Any] | None = None,
         strict: bool = False,
@@ -940,28 +918,20 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         """
         Updates the configuration from a given data source.
 
-        Any option can be overwritten via the command line if ``cmdline`` is
+        Any option can be overwritten via the command line if ``argv`` is
         truthy.
 
         Args:
             data (PathLike | dict):
                 Either a path to a yaml / json file or a config dict
 
-            cmdline (bool | List[str] | str | dict)
+            argv (bool | List[str] | str):
                 If False, then no command line information is used.
                 If True, then sys.argv is parsed and used.
-                If a list of strings that used instead of sys.argv.
+                If a list of strings, that is used instead of sys.argv.
                 If a string, then that is parsed using shlex and used instead
-                    of sys.argv.
-                DO NOT USE dictionary form. It is deprecated.
-                If a dictionary grants fine grained controls over the args
-                passed to :func:`DataConfig._read_argv`. Can contain:
-                    * strict (bool): defaults to False
-                    * argv (List[str]): defaults to None
-                    * special_options (bool): defaults to False
-                    * autocomplete (bool): defaults to False
+                of sys.argv.
                 Defaults to False.
-                NOTE: will be deprecated renamed to "argv" in the future.
 
             mode (str | None):
                 Either json or yaml.
@@ -1007,10 +977,10 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 disable caller introspection.
 
         Note:
-            if cmdline=True, this will create an argument parser.
+            if argv=True, this will create an argument parser.
 
         Example:
-            >>> # Test load works correctly in cmdline True and False mode
+            >>> # Test load works correctly in argv True and False mode
             >>> import kwconf
             >>> class MyConfig(kwconf.DataConfig):
             >>>     __default__ = {
@@ -1042,7 +1012,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         """
         if diagnostics.DEBUG_CONFIG:
             print(f'[kwconf.config.DataConfig] Call {self.__class__.__name__}.load',
-                  f'cmdline={cmdline}, strict={strict}, special_options={special_options}')
+                  f'argv={argv}, strict={strict}, special_options={special_options}')
 
         if special_options is None:
             special_options = getattr(self, '__special_options__', False)
@@ -1088,7 +1058,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         pending_updates = None
         if getattr(self, '_has_subconfigs', False):
             _subcfg_mod.ensure_subconfigs_instantiated(self, _dont_call_post_init=_dont_call_post_init)
-            if cmdline:
+            if argv:
                 pending_updates = _subcfg_mod.coerce_data_updates(user_config)
             else:
                 _subcfg_mod.apply_dot_updates(
@@ -1101,12 +1071,12 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         else:
             self.update(user_config)
 
-        if isinstance(cmdline, str):
+        if isinstance(argv, str):
             # allow specification using the actual command line arg string
             import shlex
-            cmdline = shlex.split(os.path.expandvars(cmdline))
+            argv = shlex.split(os.path.expandvars(argv))
 
-        if cmdline or ub.iterable(cmdline):
+        if argv or ub.iterable(argv):
             next_stacklevel = None if stacklevel is None else stacklevel + 1
             read_argv_kwargs: Dict[str, Any] = {
                 'special_options': special_options,
@@ -1119,13 +1089,8 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
                 'localns': localns,
                 'stacklevel': next_stacklevel,
             }
-            if isinstance(cmdline, dict):
-                ub.schedule_deprecation('kwconf', 'cmdline', 'parameter as a dictionary',
-                                        migration='The API should expose any special params explicitly',
-                                        deprecate='0.7.15', error='0.10.0', remove='1.0.0')
-                read_argv_kwargs.update(cmdline)  # type: ignore
-            elif ub.iterable(cmdline) or isinstance(cmdline, str):
-                read_argv_kwargs['argv'] = cmdline
+            if ub.iterable(argv):
+                read_argv_kwargs['argv'] = argv
             self._read_argv(**read_argv_kwargs)
 
         if not _dont_call_post_init:
@@ -1415,7 +1380,7 @@ class DataConfig(ub.NiceRepr, DictLike, metaclass=MetaConfig):
         if special_options:
             config_fpath = special_ns['config']
             if config_fpath is not None:
-                self.load(config_fpath, cmdline=False,
+                self.load(config_fpath, argv=False,
                           _dont_call_post_init=True)
 
         # Finally load explicit CLI values. The parser action has already
