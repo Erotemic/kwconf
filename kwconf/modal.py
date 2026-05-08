@@ -772,8 +772,6 @@ class ModalCLI(metaclass=MetaModalCLI):
                 ret = 0
             return ret
 
-    run = main  # alias for backwards compatibility, TODO: deprecate and remove
-
 
 def _dump_parser(parser, indent=0):
     import argparse

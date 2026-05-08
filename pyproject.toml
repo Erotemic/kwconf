@@ -1,74 +1,147 @@
 [build-system]
-requires = [ "setuptools>=41.0.1",]
 build-backend = "setuptools.build_meta"
+requires = [
+  "setuptools>=41.0.1",
+]
+
+[project]
+name = "kwconf"
+description = "The kwconf module"
+license.text = "Apache 2"
+authors = [ { name = "Kitware Inc., Jon Crall", email = "kitware@kitware.com, jon.crall@kitware.com" } ]
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Utilities",
+]
+dynamic = [
+  "version",
+]
+urls.Homepage = "https://github.com/Erotemic/kwconf"
+
+[tool.setuptools]
+include-package-data = true
+dynamic.readme.file = [
+  "README.rst",
+]
+dynamic.readme.content-type = "text/x-rst"
+dynamic.version.attr = "kwconf.__version__"
+package-data."*" = [
+  "requirements/*.txt",
+]
+packages.find.where = [
+  ".",
+]
+packages.find.include = [
+  "kwconf*",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 80
+format.indent-style = "space"
+format.quote-style = "single"
+format.line-ending = "auto"
+format.skip-magic-trailing-comma = false
+format.docstring-code-format = false
+lint.select = [
+  "E",
+  "F",
+  "I",
+]
+lint.ignore = [
+  "E402",
+  "E501",
+]
+
+[tool.codespell]
+skip = [
+  "./docs/build",
+  "./scriptconfig.egg-info",
+]
+count = true
+quiet-level = 3
+ignore-words-list = [
+  "ANS",
+  "doesnt",
+  "cant",
+]
+
+[tool.mypy]
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.ty]
+rules.unused-type-ignore-comment = "ignore"
+rules.unresolved-import = "ignore"
+
+[tool.pytest]
+ini_options.addopts = "-p no:doctest --xdoctest --xdoctest-style=google --ignore-glob=setup.py --ignore-glob=dev --ignore-glob=docs"
+ini_options.norecursedirs = ".git ignore build __pycache__ dev _skbuild docs"
+ini_options.filterwarnings = [
+  "default",
+  "ignore:.*No cfgstr given in Cacher constructor or call.*:Warning",
+  "ignore:.*Define the __nice__ method for.*:Warning",
+  "ignore:.*private pytest class or function.*:Warning",
+]
+
+[tool.coverage]
+run.branch = true
+report.exclude_lines = [
+  ".*  # nocover",
+  ".*  # pragma: no cover",
+  ".*if six.PY2:",
+  "^ *pass *$",
+  "^ *raise",
+  "def __repr__",
+  "if __name__ == .__main__.:",
+  "if _debug:",
+  "if 0:",
+  "if trace is not None",
+  "pragma: no cover",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "verbose = .*",
+]
+report.omit = [
+  "*/setup.py",
+  "kwconf/__main__.py",
+]
 
 [tool.xcookie]
-tags = [ "kitware", "gitlab", "github", "purepy",]
+tags = [
+  "kitware",
+  "gitlab",
+  "github",
+  "purepy",
+]
 mod_name = "kwconf"
 repo_name = "kwconf"
 pkg_name = "kwconf"
 rel_mod_parent_dpath = "."
-os = [ "linux", "osx", "win",]
+os = [
+  "linux",
+  "osx",
+  "win",
+]
 min_python = "3.10"
 version = "0.0.1"
-url = "None"
+url = "https://github.com/Erotemic/kwconf"
 author = "Kitware Inc., Jon Crall"
 author_email = "kitware@kitware.com, jon.crall@kitware.com"
 description = "The kwconf module"
 license = "Apache 2"
 dev_status = "planning"
-use_setup_py = true
-
-[tool.pytest.ini_options]
-addopts = "-p no:doctest --xdoctest --xdoctest-style=google --ignore-glob=setup.py --ignore-glob=dev --ignore-glob=docs"
-norecursedirs = ".git ignore build __pycache__ dev _skbuild docs"
-filterwarnings = [ "default", "ignore:.*No cfgstr given in Cacher constructor or call.*:Warning", "ignore:.*Define the __nice__ method for.*:Warning", "ignore:.*private pytest class or function.*:Warning",]
-
-[tool.coverage.run]
-branch = true
-
-[tool.coverage.report]
-exclude_lines = [ "pragma: no cover", ".*  # pragma: no cover", ".*  # nocover", "def __repr__", "raise AssertionError", "raise NotImplementedError", "if 0:", "if trace is not None", "verbose = .*", "^ *raise", "^ *pass *$", "if _debug:", "if __name__ == .__main__.:", ".*if six.PY2:",]
-omit = [ "kwconf/__main__.py", "*/setup.py",]
-
-[tool.codespell]
-skip = ['./docs/build', './scriptconfig.egg-info']
-count = true
-quiet-level = 3
-ignore-words-list = ["ANS", "doesnt", "cant"]
-
-[tool.mypy]
-ignore_missing_imports = true
-check_untyped_defs = true
-#ignore_errors = true
-
-# kwconf's Value(...) field specifier doesn't expose a top-level
-# ``default=`` keyword (the positional ``value`` parameter plays that
-# role), which mypy's dataclass_transform implementation requires to
-# treat the call as providing a default. The resulting "Attributes
-# without a default cannot follow attributes with one" / "alias must
-# be a string literal" diagnostics in test files are false positives.
-
-[tool.ty.rules]
-unused-type-ignore-comment = "ignore"
-unresolved-import = "ignore"
-
-[tool.ruff]
-line-length = 80
-target-version = "py310"
-
-[tool.ruff.lint]
-# Enable Flake8 (E, F) and isort (I) rules.
-select = ["E", "F", "I"]
-# Ignore specific rules, for example, E501 (line too long) as it's handled by the formatter.
-ignore = [
-    "E501",  # line too long
-    "E402",  # Module level import not at top of file
-]
-
-[tool.ruff.format]
-quote-style = "single"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
-docstring-code-format = false
+remote_host = "github.com"
+remote_group = "Erotemic"
+use_pyproject_requirements = true
+use_setup_py = false
+ci_gpg_secret_transport = "direct_ci"
+enable_gpg = true

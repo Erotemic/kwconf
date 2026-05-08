@@ -92,9 +92,9 @@ stages:
   - 'echo "Installing helpers: update pip"'
   - python -m pip install pip uv -U
   - 'echo "Installing helpers: setuptools"'
-  - python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
+  - python -m uv pip install --resolution=highest setuptools>=0.8 setuptools_scm wheel build -U
   - 'echo "Installing helpers: tomli and pkginfo"'
-  - python -m uv pip install tomli pkginfo packaging
+  - python -m uv pip install --resolution=highest tomli pkginfo packaging
   - |-
     export WHEEL_FPATH=$(python -c "if 1:
         import pathlib
@@ -168,9 +168,9 @@ stages:
   - 'echo "Installing helpers: update pip"'
   - python -m pip install pip uv -U
   - 'echo "Installing helpers: setuptools"'
-  - python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
+  - python -m uv pip install --resolution=highest setuptools>=0.8 setuptools_scm wheel build -U
   - 'echo "Installing helpers: tomli and pkginfo"'
-  - python -m uv pip install tomli pkginfo packaging
+  - python -m uv pip install --resolution=highest tomli pkginfo packaging
   - |-
     export WHEEL_FPATH=$(python -c "if 1:
         import pathlib
@@ -244,9 +244,9 @@ stages:
   - 'echo "Installing helpers: update pip"'
   - python -m pip install pip uv -U
   - 'echo "Installing helpers: setuptools"'
-  - python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
+  - python -m uv pip install --resolution=highest setuptools>=0.8 setuptools_scm wheel build -U
   - 'echo "Installing helpers: tomli and pkginfo"'
-  - python -m uv pip install tomli pkginfo packaging
+  - python -m uv pip install --resolution=highest tomli pkginfo packaging
   - |-
     export WHEEL_FPATH=$(python -c "if 1:
         import pathlib
@@ -320,9 +320,9 @@ stages:
   - 'echo "Installing helpers: update pip"'
   - python -m pip install pip uv -U
   - 'echo "Installing helpers: setuptools"'
-  - python -m uv pip install setuptools>=0.8 setuptools_scm wheel build -U
+  - python -m uv pip install --resolution=highest setuptools>=0.8 setuptools_scm wheel build -U
   - 'echo "Installing helpers: tomli and pkginfo"'
-  - python -m uv pip install tomli pkginfo packaging
+  - python -m uv pip install --resolution=highest tomli pkginfo packaging
   - |-
     export WHEEL_FPATH=$(python -c "if 1:
         import pathlib
@@ -509,7 +509,7 @@ lint:
   - python -m uv pip install -r requirements/linting.txt
   - ./run_linter.sh
   - python -m pip install ty
-  - pip install -r requirements/runtime.txt
+  - pip install --prefer-binary -e ".[tests]"
   - ty check ./kwconf
   allow_failure: true
 gpgsign/wheels:
@@ -535,17 +535,16 @@ gpgsign/wheels:
   - export GPG_EXECUTABLE=gpg
   - export GPG_KEYID=$(cat dev/public_gpg_key)
   - echo "GPG_KEYID = $GPG_KEYID"
-    # Decrypt and import GPG Keys / trust
-    # note the variable pointed to by VARNAME_CI_SECRET is a protected variables only available on main and release branch
-  - source dev/secrets_configuration.sh
-  - CI_SECRET=${!VARNAME_CI_SECRET}
   - $GPG_EXECUTABLE --version
   - openssl version
   - $GPG_EXECUTABLE --list-keys
-    # note CI_KITWARE_SECRET is a protected variables only available on main and release branch
-  - CIS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:CIS -d -a -in dev/ci_public_gpg_key.pgp.enc | $GPG_EXECUTABLE --import
-  - CIS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:CIS -d -a -in dev/gpg_owner_trust.enc | $GPG_EXECUTABLE --import-ownertrust
-  - CIS=$CI_SECRET openssl enc -aes-256-cbc -pbkdf2 -md SHA512 -pass env:CIS -d -a -in dev/ci_secret_gpg_subkeys.pgp.enc | $GPG_EXECUTABLE --import
+  - echo "Importing GPG keys from CI secrets"
+  - printf '%s' "$GPG_PUBLIC_KEY_B64" | base64 -d | $GPG_EXECUTABLE --import
+  - printf '%s' "$GPG_OWNER_TRUST_B64" | base64 -d | $GPG_EXECUTABLE --import-ownertrust
+  - printf '%s' "$GPG_SECRET_SIGNING_SUBKEY_B64" | base64 -d | $GPG_EXECUTABLE --import
+  - "IMPORTED_FPR=$($GPG_EXECUTABLE --list-keys --with-colons \"$GPG_KEYID\" | awk -F: '/^fpr/ { print $10; exit }')"
+  - '[[ "$IMPORTED_FPR" == "$GPG_KEYID" ]] || { echo "ERROR: fingerprint mismatch: $IMPORTED_FPR != $GPG_KEYID"; exit 1; }'
+  - 'echo "GPG fingerprint verified: $IMPORTED_FPR"'
   - GPG_SIGN_CMD="$GPG_EXECUTABLE --batch --yes --detach-sign --armor --local-user $GPG_KEYID"
   - |-
     WHEEL_PATHS=(dist/*.whl dist/*.tar.gz)
@@ -607,7 +606,6 @@ deploy/wheels:
     # do sed twice to handle the case of https clone with and without a read token
     URL_HOST=$(git remote get-url origin | sed -e 's|https\?://.*@||g' | sed -e 's|https\?://||g' | sed -e 's|git@||g' | sed -e 's|:|/|g')
     source dev/secrets_configuration.sh
-    CI_SECRET=${!VARNAME_CI_SECRET}
     PUSH_TOKEN=${!VARNAME_PUSH_TOKEN}
     echo "URL_HOST = $URL_HOST"
     # A git config user name and email is required. Set if needed.
