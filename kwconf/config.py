@@ -817,7 +817,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         BUILTIN_VECTOR_TYPES = (set, frozenset, list, tuple)
 
         # The walker method should be more efficient.
-        walker = ub.IndexableWalker(data, list_cls=BUILTIN_VECTOR_TYPES)
+        walker = cast(Any, ub.IndexableWalker(data, list_cls=BUILTIN_VECTOR_TYPES))
         for path, item in walker:
             if item is None or isinstance(item, BUILTIN_SCALAR_TYPES):
                 ...

@@ -8,7 +8,10 @@ requires = [
 name = "kwconf"
 description = "The kwconf module"
 license.text = "Apache 2"
-authors = [ { name = "Kitware Inc., Jon Crall", email = "kitware@kitware.com, jon.crall@kitware.com" } ]
+authors = [
+  { name = "Kitware Inc.", email = "kitware@kitware.com" },
+  { name = "Jon Crall", email = "jon.crall@kitware.com" },
+]
 requires-python = ">=3.10"
 classifiers = [
   "Development Status :: 1 - Planning",
@@ -23,6 +26,9 @@ classifiers = [
 ]
 dynamic = [
   "version",
+  "readme",
+  "dependencies",
+  "optional-dependencies",
 ]
 urls.Homepage = "https://github.com/Erotemic/kwconf"
 
@@ -42,6 +48,19 @@ packages.find.where = [
 packages.find.include = [
   "kwconf*",
 ]
+
+
+[tool.setuptools.dynamic.dependencies]
+file = [
+  "requirements/runtime.txt",
+]
+
+[tool.setuptools.dynamic.optional-dependencies]
+tests = { file = ["requirements/tests.txt"] }
+optional = { file = ["requirements/optional.txt"] }
+docs = { file = ["requirements/docs.txt"] }
+linting = { file = ["requirements/linting.txt"] }
+all = { file = ["requirements/runtime.txt", "requirements/tests.txt", "requirements/optional.txt", "requirements/docs.txt", "requirements/linting.txt"] }
 
 [tool.ruff]
 target-version = "py310"

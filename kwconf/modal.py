@@ -613,21 +613,22 @@ class ModalCLI(metaclass=MetaModalCLI):
     build_parser = argparse
 
     def _handle_autocomplete(self, parser, autocomplete='auto'):
-        argcomplete: Any = None
+        _argcomplete: Any = None
         if autocomplete:
             try:
-                import argcomplete  # type: ignore[no-redef]
+                import importlib
+                _argcomplete = importlib.import_module('argcomplete')
                 # Need to run: "$(register-python-argcomplete xdev)"
                 # or activate-global-python-argcomplete --dest=-
                 # activate-global-python-argcomplete --dest ~/.bash_completion.d
                 # To enable this.
             except ImportError:
-                argcomplete = None
+                _argcomplete = None
                 if autocomplete != 'auto':
                     raise
 
-        if argcomplete is not None:
-            argcomplete.autocomplete(parser)
+        if _argcomplete is not None:
+            _argcomplete.autocomplete(parser)
 
     @class_or_instancemethod  # type: ignore
     def main(self,
@@ -771,6 +772,10 @@ class ModalCLI(metaclass=MetaModalCLI):
             if ret is None:
                 ret = 0
             return ret
+
+    # Backwards-compatible alias used in examples and by callers who prefer
+    # verb-oriented invocation on ModalCLI instances.
+    run = main
 
 
 def _dump_parser(parser, indent=0):

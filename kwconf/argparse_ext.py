@@ -328,8 +328,8 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
 
 
 class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
-        _RawDescriptionHelpFormatter,  # type: ignore[misc,valid-type]
-        _ArgumentDefaultsHelpFormatter):  # type: ignore[misc,valid-type]
+        _RawDescriptionHelpFormatter,  # type: ignore[misc,valid-type]  # ty: ignore[unsupported-base]
+        _ArgumentDefaultsHelpFormatter):  # type: ignore[misc,valid-type]  # ty: ignore[unsupported-base]
 
     group_name_formatter: type = str  # revert rich-argparse title change
 
@@ -680,7 +680,7 @@ else:
     _ExtendedArgumentParserBase = ExtendedArgumentParser_PRE_GH_114180
 
 
-class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,valid-type]  # ty: ignore[unsupported-base]
+class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,valid-type]
     """
     Extends the compatible argument parser to add minor new features.
     Namely: allowing options in argv to interchangeably use "_" or "-".
