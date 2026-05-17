@@ -23,7 +23,7 @@ def test_yaml_type_parses_list_from_kwargs():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         items: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C(items='[1, 2, 3]')
@@ -34,7 +34,7 @@ def test_yaml_type_parses_list_from_cli():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         items: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C.cli(argv=['--items=[1,2,3]'])
@@ -45,7 +45,7 @@ def test_yaml_type_parses_dict_from_cli():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         opts: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C.cli(argv=['--opts={a: 1, b: 2}'])
@@ -56,7 +56,7 @@ def test_yaml_type_parses_scalars():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         x: typing.Any = kwconf.Value(None, type="yaml")
 
     assert C(x='1')['x'] == 1
@@ -69,7 +69,7 @@ def test_yaml_type_passthrough_non_string():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         x: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C(x=[1, 2, 3])

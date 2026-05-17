@@ -1,0 +1,19 @@
+profile: debug
+dataset:
+  __class__: folder
+  root: data/images
+  channels: [red, green, blue]
+model:
+  __class__: unet
+  depth: 4
+  width: 32
+optim:
+  __class__: sgd
+  lr: 0.02
+  momentum: 0.8
+trainer:
+  max_steps: 25
+  accumulate_grad_batches: 2
+logging:
+  level: INFO
+  run_name: yaml-demo

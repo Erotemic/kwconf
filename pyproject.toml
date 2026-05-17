@@ -164,3 +164,4 @@ use_pyproject_requirements = true
 use_setup_py = false
 ci_gpg_secret_transport = "direct_ci"
 enable_gpg = true
+ci_pypy_versions = []

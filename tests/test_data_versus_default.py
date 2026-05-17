@@ -11,7 +11,7 @@ import pytest
 def generate_dataconfig_instance_variants():
     # In its simplest incarnation, the config class specifies default values.
     # For each configuration parameter.
-    class ExampleConfig1(kwconf.DataConfig):
+    class ExampleConfig1(kwconf.Config):
         num = 1
         mode = 'bar'
         ignore = ['baz', 'biz']
@@ -20,7 +20,7 @@ def generate_dataconfig_instance_variants():
     config = ExampleConfig1()
     yield config, 'dataconfig'
 
-    class ExampleConfig2(kwconf.DataConfig):
+    class ExampleConfig2(kwconf.Config):
         num: int = 1
         mode: str = 'bar'
         ignore: list = kwconf.Value(default_factory=lambda: ['baz', 'biz'])

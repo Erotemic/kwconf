@@ -13,7 +13,7 @@ Example
 
     >>> import kwconf
     >>> #
-    >>> class DoFooCLI(kwconf.DataConfig):
+    >>> class DoFooCLI(kwconf.Config):
     >>>     __command__ = 'do_foo'
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
@@ -22,7 +22,7 @@ Example
     >>>         self = cls.cli(argv=argv, data=kwargs)
     >>>         print('Called Foo with: ' + str(self))
     >>> #
-    >>> class DoBarCLI(kwconf.DataConfig):
+    >>> class DoBarCLI(kwconf.Config):
     >>>     __command__ = 'do_bar'
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
@@ -83,7 +83,7 @@ class ModalValue(ub.NiceRepr):
 
     Example:
         >>> import kwconf
-        >>> class Child(kwconf.DataConfig):
+        >>> class Child(kwconf.Config):
         ...     @classmethod
         ...     def main(cls, argv=1, **kwargs):
         ...         ...
@@ -160,7 +160,7 @@ class MetaModalCLI(type):
 
 class ModalCLI(metaclass=MetaModalCLI):
     """
-    Contains multiple kwconf.DataConfig items with corresponding `main`
+    Contains multiple kwconf.Config items with corresponding `main`
     functions.
 
     CommandLine:
@@ -172,7 +172,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> self = ModalCLI(description='A modal CLI')
         >>> #
         >>> @self.register
-        >>> class Command1Config(kwconf.DataConfig):
+        >>> class Command1Config(kwconf.Config):
         >>>     __command__ = 'command1'
         >>>     __default__ = {
         >>>         'foo': 'spam'
@@ -183,7 +183,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> @self.register
-        >>> class Command2Config(kwconf.DataConfig):
+        >>> class Command2Config(kwconf.Config):
         >>>     __command__ = 'command2'
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
@@ -219,7 +219,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> import kwconf
         >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     #
-        >>>     class Command1(kwconf.DataConfig):
+        >>>     class Command1(kwconf.Config):
         >>>         __command__ = 'command1'
         >>>         foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>         @classmethod
@@ -227,7 +227,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>             config = cls.cli(argv=argv, data=kwargs)
         >>>             print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>>     #
-        >>>     class Command2(kwconf.DataConfig):
+        >>>     class Command2(kwconf.Config):
         >>>         __command__ = 'command2'
         >>>         foo = 'eggs'
         >>>         baz = 'biz'
@@ -246,7 +246,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>     ...
         >>> #
         >>> @MyModalCLI.register(command='command1')
-        >>> class Command1(kwconf.DataConfig):
+        >>> class Command1(kwconf.Config):
         >>>     foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>     @classmethod
         >>>     def main(cls, argv=1, **kwargs):
@@ -254,7 +254,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> @MyModalCLI.register(command='command2')
-        >>> class Command2(kwconf.DataConfig):
+        >>> class Command2(kwconf.Config):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
@@ -269,14 +269,14 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> # Key/value modal CLI (uses names as commands)
         >>> import kwconf
         >>> #
-        >>> class Command1(kwconf.DataConfig):
+        >>> class Command1(kwconf.Config):
         >>>     foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>     @classmethod
         >>>     def main(cls, argv=1, **kwargs):
         >>>         config = cls.cli(argv=argv, data=kwargs)
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
-        >>> class Command2(kwconf.DataConfig):
+        >>> class Command2(kwconf.Config):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
@@ -439,7 +439,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         Add a sub-CLI to this modal CLI
 
         Args:
-            cli_cls (kwconf.DataConfig | None):
+            cli_cls (kwconf.Config | None):
                 A CLI-aware config object to register as a sub CLI.
                 If None, then this is called as a wrapped closure
 

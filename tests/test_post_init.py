@@ -22,17 +22,17 @@ def test_post_init_not_called_twice():
             self._post_init_count  = 0
         self._post_init_count += 1
 
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         __default__ = default
         __post_init__ = postinit
 
-    class MyDataConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         __default__ = default
         __post_init__ = postinit
 
     # Single initialization worked correctly in 0.7.10
     print('-- CONFIG 1 ---')
-    config1 = MyDataConfig()
+    config1 = MyConfig()
     assert config1._post_init_count == 1
 
     print('-- CONFIG 2 ---')
@@ -42,7 +42,7 @@ def test_post_init_not_called_twice():
     # However, in 0.7.10 calling cli caused a double call to __post_init__
     # Because it initializes the object and then calls load.
     print('-- CONFIG 3 ---')
-    config3 = MyDataConfig.cli(argv=[])
+    config3 = MyConfig.cli(argv=[])
     assert config3._post_init_count == 1
 
     print('-- CONFIG 4 ---')

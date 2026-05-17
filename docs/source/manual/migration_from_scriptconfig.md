@@ -11,13 +11,13 @@ and shows what to change.
 | What                                                  | Before (`scriptconfig`)       | After (`kwconf`)                                                       |
 | ----------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------- |
 | Import name                                           | `import scriptconfig as scfg` | `import kwconf as kw`                                                  |
-| Primary base class                                    | `scfg.DataConfig`             | `kw.DataConfig`                                                        |
+| Primary base class                                    | `scfg.Config` / `scfg.DataConfig` | `kw.Config`                                           |
 | Coerce method on Value                                | `Value.cast(v)`               | `Value.coerce(v)`                                                      |
 | Comma-separated CLI strings                           | auto-split into a list        | stay a literal string                                                  |
 | `type='smartcast'` aliases                            | three string variants         | removed -- pass a callable                                             |
 | `kwconf.Path` / `kwconf.PathList`                     | available                     | removed -- use `Value(type=str)` and explicit globbing                 |
-| `kwconf.Config` class                                 | base class for DataConfig     | removed -- only `DataConfig` is exposed                                |
-| `Config(data=, default=, cmdline=)` ctor              | available                     | removed -- use `DataConfig.cli(...)` or `MyConfig(**kwargs).load(...)` |
+| `kwconf.DataConfig` class                             | alternate kwconf base name | removed -- only `Config` is exposed                    |
+| `Config(data=, default=, cmdline=)` ctor              | available                  | removed -- use `Config.cli(...)` or `MyConfig(**kwargs).load(...)` |
 | `default` class attribute                             | accepted (deprecation warned) | removed -- use `__default__`                                           |
 | `normalize` method                                    | accepted (deprecation warned) | removed -- use `__post_init__`                                         |
 | `description` / `epilog` / `prog` class attributes    | accepted (deprecation warned) | removed -- use `__description__` / `__epilog__` / `__prog__`           |
@@ -39,11 +39,11 @@ import kwconf as kw
 The two libraries are not pin-compatible at runtime: there is no
 `scriptconfig` shim. Update your imports directly.
 
-## `Config` is gone; only `DataConfig` is exposed
+## `Config` is the only kwconf base class
 
-`scriptconfig` exposed two base classes (`Config` and `DataConfig`) with
+`scriptconfig` exposed both `Config` and `DataConfig` with
 overlapping responsibilities. `kwconf` consolidates them into a single
-public class: `DataConfig`. The implementation, the metaclass, and all the
+public class: `Config`. The implementation, the metaclass, and all the
 ``cli`` / ``load`` / ``argparse`` / ``dump`` machinery now live on this one
 class.
 
@@ -55,7 +55,7 @@ class MyConfig(scfg.Config):
 cfg = MyConfig(data={'x': 2}, cmdline=False)
 
 # kwconf
-class MyConfig(kw.DataConfig):
+class MyConfig(kw.Config):
     x = 1
 
 cfg = MyConfig(x=2)                         # dataclass-style kwargs
@@ -65,8 +65,8 @@ cfg = MyConfig().load({'x': 2})             # explicit load
 cfg = MyConfig.cli(data={'x': 2}, argv=False)
 ```
 
-The ``Config(data=..., default=..., cmdline=...)`` constructor signature is
-gone with the class. To populate a config from a file/dict/argv, use one of:
+The old ``Config(data=..., default=..., cmdline=...)`` constructor signature is
+gone. The kwconf ``Config`` constructor is dataclass-style. To populate a config from a file/dict/argv, use one of:
 
 * ``MyConfig(**kwargs)`` for direct keyword construction;
 * ``MyConfig().load(data=..., argv=...)`` after construction;
@@ -138,7 +138,7 @@ If you want richer string parsing (lists, dicts, scalars), use the
 named YAML type:
 
 ```python
-class C(kw.DataConfig):
+class C(kw.Config):
     items = kw.Value(None, type='yaml')
 
 C.cli(argv=['--items=[1,2,3]'])['items']    # [1, 2, 3]
@@ -160,7 +160,7 @@ keeping them in the public surface is no longer worthwhile.
 
 ```python
 # before
-class C(scfg.DataConfig):
+class C(scfg.Config):
     out = scfg.Path(help='output dir')
     inputs = scfg.PathList(help='input glob')
 
@@ -204,13 +204,13 @@ user-defined fields (a common scriptconfig footgun was a class with a
 
 ```python
 # scriptconfig: --config / --dump / --dumps are always present
-class MyConfig(scfg.DataConfig):
+class MyConfig(scfg.Config):
     config = None  # silently shadowed by the special --config
 
 # kwconf: opt in either per-call:
 cfg = MyConfig.cli(argv=[...], special_options=True)
 # or at the class level:
-class MyConfig(kw.DataConfig):
+class MyConfig(kw.Config):
     __special_options__ = True
     other = 'foo'
 ```
@@ -249,7 +249,7 @@ Off by default, since most callers don't want runtime type policing.
 ```python
 import typing
 
-class C(kw.DataConfig):
+class C(kw.Config):
     __validate__ = 'error'
     mode: typing.Literal['fast', 'slow'] = 'fast'
     count: int | None = None
@@ -305,7 +305,7 @@ items listed above. Please file an issue.
 ## Quick checklist
 
 1. `import scriptconfig as scfg` -> `import kwconf as kw`.
-2. Replace any `scfg.Config` (or `kw.Config`) base class with `kw.DataConfig`.
+2. Replace any `scfg.Config`, `scfg.DataConfig`, or `kw.DataConfig` base class with `kw.Config`.
 3. Replace any `MyConfig(data=..., default=..., cmdline=...)` construction
    with one of the patterns in the section above (kwargs / `.load(...)` /
    `.cli(...)`).

@@ -6,10 +6,10 @@ def test_inheritence():
     Test that a inheriting from a dataconfig unions existing config options
     with new ones.
     """
-    from kwconf import DataConfig
+    from kwconf import Config
     import ubelt as ub
 
-    class Config1(DataConfig):
+    class Config1(Config):
         arg1 = 1
         arg2 = 2
         arg3 = 3
@@ -68,18 +68,18 @@ def test_inheritence():
 
 def test_multiple_inheritence():
     """
-    Ensure that a class can inherit from multiple DataConfigs and become the
+    Ensure that a class can inherit from multiple Configs and become the
     union of them.
     """
-    from kwconf import DataConfig
+    from kwconf import Config
 
-    class Fooable(DataConfig):
+    class Fooable(Config):
         foo_arg1 = 1
         foo_arg2 = 2
         foobarg1 = 3
         foobarg2 = 4
 
-    class Barable(DataConfig):
+    class Barable(Config):
         bar_arg1 = 'a'
         bar_arg2 = 'b'
         foobarg1 = 'c'
@@ -113,9 +113,9 @@ def test_multiple_inheritence_diamond():
     """
     Test that diamond inheritence diagrams union options correctly.
     """
-    from kwconf import DataConfig
+    from kwconf import Config
 
-    class Base(DataConfig):
+    class Base(Config):
         base_arg1 = 'B1'
         base_arg2 = 'B2'
         base_arg3 = 'B3'

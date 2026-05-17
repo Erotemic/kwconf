@@ -24,10 +24,10 @@ def test_port_kwconf_from_argparse():
                         help='specified looooooooooooooooooooooonggg help ')
     parser.add_argument('--flag4', action='store_true', help='specified help')
 
-    text = kwconf.DataConfig.port_from_argparse(parser)
+    text = kwconf.Config.port_from_argparse(parser)
 
     # Structural assertions: each argparse field becomes a kwconf.Value.
-    assert 'class MyConfig(kwconf.DataConfig):' in text
+    assert 'class MyConfig(kwconf.Config):' in text
     assert "flag1 = kwconf.Value(None, isflag='counter'" in text
     assert 'flag2 = kwconf.Value(False, isflag=True' in text
     assert "flag3 = kwconf.Value(None, isflag='counter'" in text
@@ -44,7 +44,7 @@ def test_port_kwconf_from_argparse():
 
 
 def test_port_argparse_from_kwconf():
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         param1 = kwconf.Value(None, type=str, help='help text')
 
     argparse_text = MyConfig().port_to_argparse()
@@ -60,7 +60,7 @@ def test_port_argparse_from_kwconf():
 
 
 def test_port_argparse_from_kwconf_with_unwrapped_values():
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         option1 = kwconf.Value('default1', help='option1 help')
         option2 = kwconf.Value('default2', help='option2 help')
         option3 = kwconf.Value('default3', help='option3 help')
@@ -91,7 +91,7 @@ def test_port_argparse_from_kwconf_with_unwrapped_values():
 
 
 def test_port_argparse_with_optin_fancy_features():
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         my_flag = kwconf.Value(False, isflag=True)
         my_counter = kwconf.Value(0, isflag='counter')
         my_option = kwconf.Value('default')

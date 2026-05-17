@@ -4,7 +4,7 @@
 def test_counter_flags():
     import kwconf
 
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         flag0 = kwconf.Value(False, short_alias=['e'], isflag=True)
         flag1 = kwconf.Value(0, short_alias=['f'], isflag='counter')
 
@@ -70,7 +70,7 @@ def port_argparse_counter_to_kwconf():
     parser.add_argument('--flag4', action='store_true', help='specified help')
 
     import kwconf
-    text = kwconf.DataConfig.port_argparse(parser)
+    text = kwconf.Config.port_argparse(parser)
     print(text)
     import ubelt as ub
 
@@ -81,7 +81,7 @@ def port_argparse_counter_to_kwconf():
         import ubelt as ub
         import kwconf
 
-        class MyConfig(kwconf.DataConfig):
+        class MyConfig(kwconf.Config):
             """ + tq + """
             $
             """ + tq + """
