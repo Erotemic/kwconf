@@ -76,15 +76,12 @@ import warnings
 import ubelt as ub
 import itertools as it
 import argparse as argparse_mod
-import types
 from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Union, cast
 from kwconf import _ubelt_repr_extension
 from collections.abc import Mapping as _ABCMapping
 from kwconf.file_like import FileLike
 from kwconf.value import Value, Flag
 from kwconf import diagnostics
-import typing
-
 from collections.abc import Mapping, Sequence
 from typing import Any
 # from kwconf.util.util_class import class_or_instancemethod
@@ -123,190 +120,13 @@ def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
 
 
 
-def _annotation_eval_context(namespace: Mapping[str, Any] | None = None):
-    """Build globals / locals useful for resolving class annotations."""
-    namespace = namespace or {}
-    module_globals: Dict[str, Any] = {}
-    module_name = namespace.get('__module__')
-    if isinstance(module_name, str):
-        module = sys.modules.get(module_name)
-        if module is not None:
-            module_globals.update(getattr(module, '__dict__', {}))
-    module_globals.setdefault('typing', typing)
-    module_globals.setdefault('Any', Any)
-    localns = dict(namespace)
-    return module_globals, localns
-
-
-def _resolve_annotation(annotation: Any,
-                        namespace: Mapping[str, Any] | None = None) -> Any:
-    """
-    Best-effort conversion of deferred / string annotations into values.
-
-    Python 3.14 stores class-body annotations behind ``__annotate__`` by
-    default, while ``from __future__ import annotations`` stores them as
-    strings.  kwconf needs real ``typing`` objects in its metaclass so it can
-    populate ``Value.type``, argparse ``choices``, and validation metadata.
-    """
-    if isinstance(annotation, str):
-        globalns, localns = _annotation_eval_context(namespace)
-        try:
-            return eval(annotation, globalns, localns)
-        except Exception:
-            return annotation
-    if hasattr(annotation, '__forward_arg__') and hasattr(annotation, 'evaluate'):
-        globalns, localns = _annotation_eval_context(namespace)
-        try:
-            return annotation.evaluate(globals=globalns, locals=localns)
-        except Exception:
-            return annotation
-    return annotation
-
-
-def _resolve_annotations(annotations: Mapping[str, Any],
-                         namespace: Mapping[str, Any] | None = None):
-    return {
-        key: _resolve_annotation(annotation, namespace)
-        for key, annotation in annotations.items()
-    }
-
-
-def _get_class_namespace_annotations(namespace: Mapping[str, Any]) -> Dict[str, Any]:
-    """
-    Return class-body annotations during metaclass construction.
-
-    On Python <= 3.13 this usually comes from ``__annotations__``.  On Python
-    3.14+, non-future annotations may instead be available through the
-    compiler-generated ``__annotate__`` function.  Use ``annotationlib`` when it
-    exists, matching Python's documented metaclass recipe for deferred
-    annotations.
-    """
-    annotations = namespace.get('__annotations__', None)
-    if annotations:
-        return _resolve_annotations(annotations, namespace)
-
-    try:
-        import annotationlib  # type: ignore[import-not-found]
-    except Exception:
-        return {}
-
-    annotate = annotationlib.get_annotate_from_class_namespace(namespace)
-    if annotate is None:
-        return {}
-    try:
-        annotations = annotationlib.call_annotate_function(
-            annotate, annotationlib.Format.FORWARDREF)
-    except Exception:
-        try:
-            annotations = annotationlib.call_annotate_function(
-                annotate, annotationlib.Format.STRING)
-        except Exception:
-            return {}
-    return _resolve_annotations(annotations, namespace)
-
-def _runtime_type_from_annotation(annotation: Any) -> type | None:
-    if annotation is None or annotation is Any or isinstance(annotation, str):
-        return None
-    origin = typing.get_origin(annotation)
-    if origin is typing.Literal:
-        # ``Literal['a', 'b']`` -> infer the type of the choices.
-        choice_types = {type(arg) for arg in typing.get_args(annotation)}
-        if len(choice_types) == 1:
-            (only_type,) = choice_types
-            return only_type
-        return None
-    if origin in {Union, types.UnionType}:
-        args = [arg for arg in typing.get_args(annotation) if arg is not type(None)]
-        for arg in args:
-            runtime_type = _runtime_type_from_annotation(arg)
-            if runtime_type is not None:
-                return runtime_type
-        return None
-    if origin is not None:
-        return cast(type | None, origin)
-    if isinstance(annotation, type):
-        return annotation
-    return None
-
-
-def _choices_from_annotation(annotation: Any) -> tuple | None:
-    """
-    Return the choices implied by ``annotation`` if it is (or wraps via
-    ``Optional``/``Union``) a :data:`typing.Literal`, otherwise None.
-    """
-    if annotation is None or isinstance(annotation, str):
-        return None
-    origin = typing.get_origin(annotation)
-    if origin is typing.Literal:
-        return typing.get_args(annotation)
-    if origin in {Union, types.UnionType}:
-        for arg in typing.get_args(annotation):
-            if arg is type(None):
-                continue
-            ch = _choices_from_annotation(arg)
-            if ch is not None:
-                return ch
-    return None
-
-
-def _value_matches_annotation(value: Any, annotation: Any) -> bool:
-    """
-    Return True if ``value`` is consistent with ``annotation``.
-
-    Supports plain runtime types (int, str, bool, None), ``Literal[...]``,
-    unions (``X | Y``, ``Optional[X]``, ``Union[...]``), and parameterized
-    collections (``list[T]``, ``tuple[T, ...]``, ``dict[K, V]``, ``set[T]``)
-    with a one-level element-type check. Annotations the helper cannot
-    reason about (custom generics, callables, ``TypeVar``, etc.) return
-    True so we under-validate rather than misvalidate.
-    """
-    if annotation is None or annotation is Any or isinstance(annotation, str):
-        return True
-    if annotation is type(None):
-        return value is None
-    origin = typing.get_origin(annotation)
-    if origin is typing.Literal:
-        return value in typing.get_args(annotation)
-    if origin in {Union, types.UnionType}:
-        return any(_value_matches_annotation(value, arg)
-                   for arg in typing.get_args(annotation))
-    if origin in {list, set, frozenset}:
-        if not isinstance(value, origin):
-            return False
-        (elem_t,) = typing.get_args(annotation) or (Any,)
-        return all(_value_matches_annotation(v, elem_t) for v in value)
-    if origin is tuple:
-        if not isinstance(value, tuple):
-            return False
-        args = typing.get_args(annotation)
-        if len(args) == 2 and args[1] is Ellipsis:
-            return all(_value_matches_annotation(v, args[0]) for v in value)
-        if len(args) != len(value):
-            return False
-        return all(_value_matches_annotation(v, t) for v, t in zip(value, args))
-    if origin is dict:
-        if not isinstance(value, dict):
-            return False
-        args = typing.get_args(annotation) or (Any, Any)
-        kt, vt = args
-        return all(_value_matches_annotation(k, kt) and _value_matches_annotation(v, vt)
-                   for k, v in value.items())
-    if origin is not None:
-        # Some other parameterized generic; check the origin only.
-        try:
-            return isinstance(value, origin)
-        except TypeError:
-            return True
-    if isinstance(annotation, type):
-        return isinstance(value, annotation)
-    return True
-
-
-def _format_annotation(annotation: Any) -> str:
-    if hasattr(annotation, '__name__'):
-        return cast(str, annotation.__name__)
-    return str(annotation)
-
+from kwconf.annotations import (
+    choices_from_annotation as _choices_from_annotation,
+    format_annotation as _format_annotation,
+    get_class_namespace_annotations as _get_class_namespace_annotations,
+    runtime_type_from_annotation as _runtime_type_from_annotation,
+    value_matches_annotation as _value_matches_annotation,
+)
 
 def _maybe_apply_annotation_to_value(key, value, annotations):
     """
@@ -1614,7 +1434,6 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 self[key] = ns[key]
 
         if special_options:
-            import sys
             dump_fpath = special_ns['dump']
             do_dumps = special_ns['dumps']
             if dump_fpath or do_dumps:
