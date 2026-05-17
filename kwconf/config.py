@@ -506,7 +506,14 @@ def _normalize_class_defaults(defaults, annotations=None):
 
 from abc import ABCMeta as _ABCMeta
 
-from typing import dataclass_transform as _dataclass_transform
+try:
+    from typing import dataclass_transform as _dataclass_transform
+except ImportError:  # pragma: no cover - Python < 3.11 compatibility
+    def _dataclass_transform(*args, **kwargs):
+        """Fallback no-op for Python versions without typing.dataclass_transform."""
+        def decorator(cls):
+            return cls
+        return decorator
 
 
 @_dataclass_transform(field_specifiers=(Value, Flag))
