@@ -38,7 +38,6 @@ Welcome to kwconf's documentation!
    :caption: API reference
    :maxdepth: 5
 
-   auto/kwconf
    auto/modules
 
 
