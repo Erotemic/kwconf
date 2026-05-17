@@ -71,6 +71,7 @@ from __future__ import annotations
 import copy
 import inspect
 import os
+import sys
 import warnings
 import ubelt as ub
 import itertools as it
@@ -120,6 +121,88 @@ def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
     cls = vals[name]
     return cast(Type["DataConfig"], cls)
 
+
+
+def _annotation_eval_context(namespace: Mapping[str, Any] | None = None):
+    """Build globals / locals useful for resolving class annotations."""
+    namespace = namespace or {}
+    module_globals: Dict[str, Any] = {}
+    module_name = namespace.get('__module__')
+    if isinstance(module_name, str):
+        module = sys.modules.get(module_name)
+        if module is not None:
+            module_globals.update(getattr(module, '__dict__', {}))
+    module_globals.setdefault('typing', typing)
+    module_globals.setdefault('Any', Any)
+    localns = dict(namespace)
+    return module_globals, localns
+
+
+def _resolve_annotation(annotation: Any,
+                        namespace: Mapping[str, Any] | None = None) -> Any:
+    """
+    Best-effort conversion of deferred / string annotations into values.
+
+    Python 3.14 stores class-body annotations behind ``__annotate__`` by
+    default, while ``from __future__ import annotations`` stores them as
+    strings.  kwconf needs real ``typing`` objects in its metaclass so it can
+    populate ``Value.type``, argparse ``choices``, and validation metadata.
+    """
+    if isinstance(annotation, str):
+        globalns, localns = _annotation_eval_context(namespace)
+        try:
+            return eval(annotation, globalns, localns)
+        except Exception:
+            return annotation
+    if hasattr(annotation, '__forward_arg__') and hasattr(annotation, 'evaluate'):
+        globalns, localns = _annotation_eval_context(namespace)
+        try:
+            return annotation.evaluate(globals=globalns, locals=localns)
+        except Exception:
+            return annotation
+    return annotation
+
+
+def _resolve_annotations(annotations: Mapping[str, Any],
+                         namespace: Mapping[str, Any] | None = None):
+    return {
+        key: _resolve_annotation(annotation, namespace)
+        for key, annotation in annotations.items()
+    }
+
+
+def _get_class_namespace_annotations(namespace: Mapping[str, Any]) -> Dict[str, Any]:
+    """
+    Return class-body annotations during metaclass construction.
+
+    On Python <= 3.13 this usually comes from ``__annotations__``.  On Python
+    3.14+, non-future annotations may instead be available through the
+    compiler-generated ``__annotate__`` function.  Use ``annotationlib`` when it
+    exists, matching Python's documented metaclass recipe for deferred
+    annotations.
+    """
+    annotations = namespace.get('__annotations__', None)
+    if annotations:
+        return _resolve_annotations(annotations, namespace)
+
+    try:
+        import annotationlib  # type: ignore[import-not-found]
+    except Exception:
+        return {}
+
+    annotate = annotationlib.get_annotate_from_class_namespace(namespace)
+    if annotate is None:
+        return {}
+    try:
+        annotations = annotationlib.call_annotate_function(
+            annotate, annotationlib.Format.FORWARDREF)
+    except Exception:
+        try:
+            annotations = annotationlib.call_annotate_function(
+                annotate, annotationlib.Format.STRING)
+        except Exception:
+            return {}
+    return _resolve_annotations(annotations, namespace)
 
 def _runtime_type_from_annotation(annotation: Any) -> type | None:
     if annotation is None or annotation is Any or isinstance(annotation, str):
@@ -296,8 +379,9 @@ def _maybe_apply_annotation_to_value(key, value, annotations):
     return new_value
 
 
-def _collect_declared_config_attrs(namespace: Dict[str, Any]) -> Dict[str, Any]:
-    annotations = namespace.get('__annotations__', {})
+def _collect_declared_config_attrs(namespace: Dict[str, Any],
+                                   annotations: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    annotations = annotations or {}
     attr_default = {}
     for k, v in namespace.items():
         if k.startswith('_') or k == 'default':
@@ -457,8 +541,10 @@ class MetaConfig(_ABCMeta):
             name == 'DataConfig' and namespace.get('__module__') == __name__
         )
 
+        annotations = _get_class_namespace_annotations(namespace)
+
         if not is_root_config:
-            attr_default = _collect_declared_config_attrs(namespace)
+            attr_default = _collect_declared_config_attrs(namespace, annotations)
             if attr_default:
                 for key in attr_default:
                     namespace.pop(key, None)
@@ -499,7 +585,7 @@ class MetaConfig(_ABCMeta):
                             '''), UserWarning)
 
                 this_default = _normalize_class_defaults(
-                    this_default, namespace.get('__annotations__', {}))
+                    this_default, annotations)
             namespace['__default__'] = this_default
 
         if diagnostics.DEBUG_META_CONFIG:

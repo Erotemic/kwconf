@@ -69,3 +69,28 @@ def test_literal_mixed_types_skips_type_inference():
     assert list(template.parsekw['choices']) == ['x', 1]
     # No single type can be inferred -- leave Value.type alone.
     assert template.type is None
+
+
+
+def test_future_annotations_populate_choices_and_type():
+    """Stringified annotations should be resolved during class creation."""
+    ns = {}
+    exec(
+        """
+from __future__ import annotations
+import typing
+import kwconf as kw
+
+class C(kw.DataConfig):
+    mode: typing.Literal['fast', 'slow', 'auto'] = 'auto'
+    nums: list[int] = kw.Value(default_factory=list)
+""",
+        ns,
+    )
+    C = ns['C']
+    mode_template = C.__default__['mode']
+    assert mode_template.type is str
+    assert list(mode_template.parsekw['choices']) == ['fast', 'slow', 'auto']
+    nums_template = C.__default__['nums']
+    assert nums_template.type is list
+    assert getattr(nums_template, '_annotation', None) == list[int]
