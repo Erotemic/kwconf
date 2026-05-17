@@ -40,7 +40,6 @@ __submodules__ = {
     'value': None,
     'cli': None,
     'dataconfig': None,
-    'coercion': None,
     'annotations': None,
 }
 
