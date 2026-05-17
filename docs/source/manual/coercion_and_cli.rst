@@ -44,7 +44,7 @@ enabled.
 
     import typing
 
-    class C(kw.DataConfig):
+    class C(kw.Config):
         mode: typing.Literal['fast', 'safe'] = 'fast'
 
     assert list(C.__default__['mode'].parsekw['choices']) == ['fast', 'safe']
@@ -67,7 +67,7 @@ useful:
 
 .. code-block:: python
 
-    class RunConfig(kw.DataConfig):
+    class RunConfig(kw.Config):
         __fuzzy_hyphens__ = 1
         workers: int = 0
         verbose = kw.Value(0, short_alias=['v'], isflag='counter')
@@ -84,7 +84,7 @@ Special options are off by default.  Opt in per call or at the class level:
 
 .. code-block:: python
 
-    class Dumpable(kw.DataConfig):
+    class Dumpable(kw.Config):
         __special_options__ = True
         x: int = 1
 

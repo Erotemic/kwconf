@@ -2,7 +2,7 @@ Nested Configs
 ==============
 
 Nested configs are declared explicitly with :class:`kwconf.SubConfig`.  A
-``SubConfig`` wraps a :class:`kwconf.DataConfig` class or instance and lets files
+``SubConfig`` wraps a :class:`kwconf.Config` class or instance and lets files
 and CLIs update nested values without hiding the tree shape.
 
 Basic nesting
@@ -12,15 +12,15 @@ Basic nesting
 
     import kwconf as kw
 
-    class Dataset(kw.DataConfig):
+    class Dataset(kw.Config):
         path: str = 'demo'
         augment: bool = False
 
-    class Adam(kw.DataConfig):
+    class Adam(kw.Config):
         lr: float = 0.001
         beta1: float = 0.9
 
-    class Train(kw.DataConfig):
+    class Train(kw.Config):
         dataset = kw.SubConfig(Dataset)
         optim = kw.SubConfig(Adam)
         epochs: int = 10
@@ -38,11 +38,11 @@ then override leaves below that selected class.
 
 .. code-block:: python
 
-    class SGD(kw.DataConfig):
+    class SGD(kw.Config):
         lr: float = 0.01
         momentum: float = 0.9
 
-    class Train(kw.DataConfig):
+    class Train(kw.Config):
         optim = kw.SubConfig(Adam, choices={'adam': Adam, 'sgd': SGD})
 
     cfg = Train.cli(argv=['--optim=sgd', '--optim.momentum=0.7'])

@@ -4,7 +4,7 @@ import kwconf
 import ubelt as ub
 
 
-class TemplateCLI(kwconf.DataConfig):
+class TemplateCLI(kwconf.Config):
     """
     Generate boilerplate for a template CLI script.
     """
@@ -47,7 +47,7 @@ def _build_single_template(config):
         import kwconf
 
 
-        class {classname}(kwconf.DataConfig):
+        class {classname}(kwconf.Config):
             """
             Write your documentation here
             """

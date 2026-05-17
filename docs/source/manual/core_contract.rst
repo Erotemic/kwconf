@@ -11,7 +11,7 @@ Stable public objects
 
 The stable public surface is intentionally small:
 
-``DataConfig``
+``Config``
     The only public configuration base class.  Define schemas with typed class
     variables and optional ``Value`` wrappers.  Construct with keyword
     arguments, ``.load(...)``, or ``.cli(argv=...)``.
@@ -26,7 +26,7 @@ The stable public surface is intentionally small:
     selector choices for variant nodes.
 
 ``ModalCLI`` / ``ModalValue``
-    Build subcommand CLIs from ``DataConfig`` classes, including aliases and
+    Build subcommand CLIs from ``Config`` classes, including aliases and
     nested modal dispatch.
 
 ``dataconf`` / ``define``
@@ -42,7 +42,7 @@ Prefer typed class variables:
     import kwconf as kw
 
 
-    class TrainConfig(kw.DataConfig):
+    class TrainConfig(kw.Config):
         lr: float = 1e-3
         mode: str = kw.Value('fast', choices=['fast', 'safe'])
         tags: list[str] = kw.Value(default_factory=list, nargs='+')
@@ -97,7 +97,7 @@ Runtime validation is off by default.  Opt in with:
 
 .. code-block:: python
 
-    class C(kw.DataConfig):
+    class C(kw.Config):
         __validate__ = 'error'  # or 'warn'
         count: int | None = None
 
@@ -112,10 +112,10 @@ keys:
 
 .. code-block:: python
 
-    class Inner(kw.DataConfig):
+    class Inner(kw.Config):
         depth: int = 1
 
-    class Outer(kw.DataConfig):
+    class Outer(kw.Config):
         inner = kw.SubConfig(Inner)
 
     cfg = Outer.cli(argv=['--inner.depth=3'])
@@ -127,7 +127,7 @@ input controls selectors.
 Modal contract
 --------------
 
-``ModalCLI`` collects class attributes that are ``DataConfig`` or ``ModalCLI``
+``ModalCLI`` collects class attributes that are ``Config`` or ``ModalCLI``
 subclasses and exposes them as subcommands.  Use ``ModalValue`` when a command
 needs aliases or grouping metadata.
 
@@ -136,7 +136,7 @@ Removed scriptconfig behavior
 
 The following APIs and behaviors are deliberately not part of kwconf:
 
-* ``scriptconfig.Config`` / ``kwconf.Config``.
+* ``kwconf.DataConfig`` and the old ``scriptconfig.Config(data=..., cmdline=...)`` constructor style.
 * ``cmdline=``.
 * non-dunder lifecycle aliases: ``default``, ``normalize``, ``description``,
   ``epilog``, and ``prog``.

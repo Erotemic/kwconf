@@ -1,14 +1,14 @@
 Quickstart
 ==========
 
-Define a config by subclassing ``DataConfig``:
+Define a config by subclassing ``Config``:
 
 .. code-block:: python
 
     import kwconf as kw
 
 
-    class DemoConfig(kw.DataConfig):
+    class DemoConfig(kw.Config):
         count: int = 1
         mode: str = kw.Value('fast', choices=['fast', 'safe'])
         tags: list[str] = kw.Value(default_factory=list, nargs='+')
@@ -38,10 +38,10 @@ Nested configs
 
 .. code-block:: python
 
-    class Train(kw.DataConfig):
+    class Train(kw.Config):
         lr: float = 1e-3
 
-    class Experiment(kw.DataConfig):
+    class Experiment(kw.Config):
         train = kw.SubConfig(Train)
 
     cfg = Experiment.cli(argv=['--train.lr=0.01'])
@@ -52,7 +52,7 @@ Subcommands
 
 .. code-block:: python
 
-    class Foo(kw.DataConfig):
+    class Foo(kw.Config):
         __command__ = 'foo'
         @classmethod
         def main(cls, argv=1, **kwargs):

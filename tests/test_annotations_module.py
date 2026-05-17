@@ -23,7 +23,7 @@ from __future__ import annotations
 import typing
 import kwconf as kw
 
-class C(kw.DataConfig):
+class C(kw.Config):
     mode: typing.Literal['x', 'y'] = 'x'
 """,
         ns,
@@ -34,7 +34,7 @@ class C(kw.DataConfig):
 
 
 def test_annotations_helpers_do_not_break_forward_refs():
-    class C(kw.DataConfig):
+    class C(kw.Config):
         node: 'NotYetDefined' = None  # noqa: F821
 
     template = C.__default__['node']

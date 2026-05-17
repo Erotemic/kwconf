@@ -16,7 +16,7 @@ def mark_requires_yaml():
 def test_json_dump():
     import json
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
@@ -31,7 +31,7 @@ def test_json_dump():
 def test_yaml_dump():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
@@ -46,7 +46,7 @@ def test_yaml_dump():
 def test_yaml_load():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
@@ -68,7 +68,7 @@ def test_yaml_load():
 
 def test_json_load():
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
@@ -91,7 +91,7 @@ def test_json_load():
 def test_config_dumps_load_cli():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
@@ -115,7 +115,7 @@ def test_config_load_from_json_text():
     """
     Check that the config can load from raw text on the command line
     """
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
@@ -130,7 +130,7 @@ def test_config_load_from_yaml_text():
     Check that the config can load from raw text on the command line
     """
     mark_requires_yaml()
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'

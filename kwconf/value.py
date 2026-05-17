@@ -258,7 +258,7 @@ class Value(ub.NiceRepr):
 
     def _to_value_kw(self) -> MutableMapping[str, Any]:
         """
-        Used in port-to-dataconf and port-to-argparse
+        Used in port-to-config and port-to-argparse
         """
 
         value = self

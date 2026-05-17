@@ -9,7 +9,7 @@ def test_special_options_default_off():
     import kwconf
     import pytest
 
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         config = None
 
     # Without using the ``cli`` classmethod there is no conflict.
@@ -34,7 +34,7 @@ def test_special_options_class_attribute_opt_in():
     import kwconf
     import pytest
 
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         __special_options__ = True
         x = 1
 

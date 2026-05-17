@@ -1,7 +1,7 @@
 Modal CLIs
 ==========
 
-:class:`kwconf.ModalCLI` groups several smaller ``DataConfig`` CLIs into one
+:class:`kwconf.ModalCLI` groups several smaller ``Config`` CLIs into one
 subcommand-based program.  Each command owns its own config class and ``main``
 method.
 
@@ -12,7 +12,7 @@ Basic modal
 
     import kwconf as kw
 
-    class Train(kw.DataConfig):
+    class Train(kw.Config):
         __command__ = 'train'
         epochs: int = kw.Value(1, help='number of epochs')
         dry_run = kw.Flag(False, help='only print what would run')
@@ -23,7 +23,7 @@ Basic modal
             print(f'train epochs={cfg.epochs} dry_run={cfg.dry_run}')
             return 0
 
-    class Eval(kw.DataConfig):
+    class Eval(kw.Config):
         __command__ = 'eval'
         dataset: str = kw.Value('demo', help='dataset name')
 

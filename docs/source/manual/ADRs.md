@@ -3,7 +3,7 @@
 ## Table of Contents
 
 1. [ADR-0001 — Interoperability across CLI, kwargs, and on-disk config files](#adr-0001--interoperability-across-cli-kwargs-and-on-disk-config-files)
-2. [ADR-0002 — DataConfig is the only public base class](#adr-0002--dataconfig-is-the-only-public-base-class)
+2. [ADR-0002 — Config is the only public base class](#adr-0002--config-is-the-only-public-base-class)
 3. [ADR-0003 — Preferred schema style is declarative class attributes](#adr-0003--preferred-schema-style-is-declarative-class-attributes)
 4. [ADR-0004 — Value is optional metadata](#adr-0004--value-is-optional-metadata)
 5. [ADR-0005 — Type annotations improve typing support](#adr-0005--type-annotations-improve-typing-support)
@@ -37,12 +37,12 @@ This is the main architectural rule. It states the purpose of the system in oper
 
 ---
 
-## ADR-0002 — DataConfig is the only public base class
+## ADR-0002 — Config is the only public base class
 
 **Decision**
-`DataConfig` is the single public base class for kwconf configs. The
-former `Config` base class is no longer exposed; its behavior is folded
-into `DataConfig`.
+`Config` is the single public base class for kwconf configs. The
+former `DataConfig` base class has been renamed to `Config`. No
+`kwconf.DataConfig` alias is exposed.
 
 **Why add this**
 The library needs one public entry point and one primary mental model.
@@ -51,19 +51,19 @@ duplication in the implementation and confusion in the public surface.
 
 **What the ADR should lock down**
 
-* All documentation and examples use `DataConfig`.
-* New features target `DataConfig`.
-* `kwconf.Config` is not part of the public API.
+* All documentation and examples use `Config`.
+* New features target `Config`.
+* `kwconf.DataConfig` is not part of the public API.
 * The metaclass, ``cli`` / ``load`` / ``argparse`` / ``dump`` lifecycle,
   and dataclass-style ``__init__(*args, **kwargs)`` all live on
-  ``DataConfig``.
+  ``Config``.
 
 ---
 
 ## ADR-0003 — Preferred schema style is declarative class attributes
 
 **Decision**
-The preferred way to define config schema is with class attributes on `DataConfig`. Type annotations are encouraged, but not required.
+The preferred way to define config schema is with class attributes on `Config`. Type annotations are encouraged, but not required.
 
 **Why add this**
 This is the main simplification in kwconf. It keeps schema declaration close to normal Python class definition.

@@ -13,7 +13,7 @@ Preferred usage:
     import kwconf as kw
 
 
-    class MyConfig(kw.DataConfig):
+    class MyConfig(kw.Config):
         x: int = 1
         y: str = 'foo'
         tags: list[str] = kw.Value(default_factory=list)
@@ -45,10 +45,10 @@ __submodules__ = {
 
 from . import diagnostics  # NOQA
 from .modal import (ModalCLI, ModalValue)
-from .config import (DataConfig, define,)
+from .config import (Config, define,)
 from .value import (Value, Flag)
 from .dataconfig import (dataconf,)
 from .subconfig import (SubConfig,)
 
-__all__ = ['DataConfig', 'Value', 'Flag',
+__all__ = ['Config', 'Value', 'Flag',
            'dataconf', 'define', 'ModalCLI', 'ModalValue', 'SubConfig']

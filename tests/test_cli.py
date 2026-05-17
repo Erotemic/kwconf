@@ -4,7 +4,7 @@ import kwconf
 
 def test_cli_dataconfig():
 
-    class ConfigCls(kwconf.DataConfig):
+    class ConfigCls(kwconf.Config):
         x: int = 0
         y: str = '3'
 
@@ -13,7 +13,7 @@ def test_cli_dataconfig():
 
 def test_cli_dataconfig_with_alias():
 
-    class ConfigCls(kwconf.DataConfig):
+    class ConfigCls(kwconf.Config):
         foo = kwconf.Value(0, alias=['x'], type=int)
         y: str = '3'
 
@@ -22,7 +22,7 @@ def test_cli_dataconfig_with_alias():
 
 def test_cli_config_with_alias():
 
-    class ConfigCls(kwconf.DataConfig):
+    class ConfigCls(kwconf.Config):
         foo: int = kwconf.Value(0, alias=['x'], type=int)
         y: str = '3'
 
@@ -31,7 +31,7 @@ def test_cli_config_with_alias():
 
 def test_cli_config():
 
-    class ConfigCls(kwconf.DataConfig):
+    class ConfigCls(kwconf.Config):
         x: int = 0
         y: str = '3'
     _test_common_cli_classmethod(ConfigCls)

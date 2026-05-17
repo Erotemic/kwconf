@@ -1,6 +1,6 @@
 # mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 """
-Tests for optional annotation-based validation on DataConfig.
+Tests for optional annotation-based validation on Config.
 
 Validation is opt-in via ``__validate__ = 'error' | 'warn'`` on the class
 or ``Value(..., validate=...)`` per field. Annotations consulted include
@@ -18,7 +18,7 @@ import pytest
 def test_validation_off_by_default():
     import kwconf
 
-    class D(kwconf.DataConfig):
+    class D(kwconf.Config):
         mode: typing.Literal['fast', 'slow'] = 'fast'
 
     # mode is a choice on argparse but constructor doesn't enforce
@@ -30,7 +30,7 @@ def test_validation_off_by_default():
 def test_class_level_error_validation_literal():
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         __validate__ = 'error'
         mode: typing.Literal['fast', 'slow'] = 'fast'
 
@@ -42,7 +42,7 @@ def test_class_level_error_validation_literal():
 def test_class_level_warn_validation_literal():
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         __validate__ = 'warn'
         mode: typing.Literal['fast', 'slow'] = 'fast'
 
@@ -54,7 +54,7 @@ def test_class_level_warn_validation_literal():
 def test_per_field_validate_overrides_class():
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         __validate__ = 'error'
         mode: typing.Literal['fast', 'slow'] = kwconf.Value(  # ty: ignore[invalid-assignment]
             'fast', validate=False)
@@ -67,7 +67,7 @@ def test_per_field_validate_overrides_class():
 def test_validation_union_int_or_none():
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         __validate__ = 'error'
         x: typing.Optional[int] = None
 
@@ -82,7 +82,7 @@ def test_validation_yaml_typed_with_literal():
     pytest.importorskip('yaml')
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         __validate__ = 'error'
         flag: typing.Literal[1, 0, True, 'auto', None] = kwconf.Value(  # ty: ignore[invalid-assignment]
             None, type='yaml')
@@ -103,7 +103,7 @@ def test_validation_yaml_typed_with_literal():
 def test_validation_list_of_int():
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         __validate__ = 'error'
         nums: list[int] = kwconf.Value(default_factory=list)
 
@@ -115,7 +115,7 @@ def test_validation_list_of_int():
 def test_validation_skipped_without_annotation():
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         __validate__ = 'error'
         x = kwconf.Value(None)  # no annotation
 
@@ -126,7 +126,7 @@ def test_validation_skipped_without_annotation():
 def test_validation_runs_on_setitem():
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         __validate__ = 'error'
         mode: typing.Literal['a', 'b'] = 'a'
 
