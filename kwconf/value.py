@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, cast, Optional, Union
 
-from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import MutableMapping, Sequence
 
 import ubelt as ub
 

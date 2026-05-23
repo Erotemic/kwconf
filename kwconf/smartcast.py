@@ -256,12 +256,3 @@ def _smartcast_simple_sequence(item: str, astype: Any = list) -> Any:
 def _identity(arg: Any) -> Any:
     """ identity function """
     return arg
-
-
-if __name__ == '__main__':
-    """
-    CommandLine:
-        python ~/code/kwconf/kwconf/smartcast.py
-    """
-    import xdoctest
-    xdoctest.doctest_module(__file__)

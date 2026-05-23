@@ -84,7 +84,25 @@ from kwconf.value import Value, Flag
 from kwconf import diagnostics
 from collections.abc import Mapping, Sequence
 from typing import Any
+from abc import ABCMeta as _ABCMeta
+from kwconf.annotations import (
+    choices_from_annotation as _choices_from_annotation,
+    format_annotation as _format_annotation,
+    get_class_namespace_annotations as _get_class_namespace_annotations,
+    runtime_type_from_annotation as _runtime_type_from_annotation,
+    value_matches_annotation as _value_matches_annotation,
+)
 # from kwconf.util.util_class import class_or_instancemethod
+
+
+try:
+    from typing import dataclass_transform as _dataclass_transform
+except ImportError:  # pragma: no cover - Python < 3.11 compatibility
+    def _dataclass_transform(*args, **kwargs):
+        """Fallback no-op for Python versions without typing.dataclass_transform."""
+        def decorator(cls):
+            return cls
+        return decorator
 
 __all__ = ['Config', 'define']
 
@@ -118,15 +136,6 @@ def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
     cls = vals[name]
     return cast(Type["Config"], cls)
 
-
-
-from kwconf.annotations import (
-    choices_from_annotation as _choices_from_annotation,
-    format_annotation as _format_annotation,
-    get_class_namespace_annotations as _get_class_namespace_annotations,
-    runtime_type_from_annotation as _runtime_type_from_annotation,
-    value_matches_annotation as _value_matches_annotation,
-)
 
 def _maybe_apply_annotation_to_value(key, value, annotations):
     """
@@ -322,18 +331,6 @@ def _normalize_class_defaults(defaults, annotations=None):
                     normalized_value = Value(value)
         normalized[key] = normalized_value
     return normalized
-
-
-from abc import ABCMeta as _ABCMeta
-
-try:
-    from typing import dataclass_transform as _dataclass_transform
-except ImportError:  # pragma: no cover - Python < 3.11 compatibility
-    def _dataclass_transform(*args, **kwargs):
-        """Fallback no-op for Python versions without typing.dataclass_transform."""
-        def decorator(cls):
-            return cls
-        return decorator
 
 
 @_dataclass_transform(field_specifiers=(Value, Flag))
@@ -1997,9 +1994,6 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 entries.append((key, value))
         return entries
 
-    # Backwards compatibility, deprecate and remove
-    port_argparse = port_from_argparse
-
     def port_to_argparse(self,
                          fuzzy_hyphens: bool = False,
                          flag_value_mode: bool = False) -> str:
@@ -2402,7 +2396,7 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> self = MyConfig()
             >>> parser = self.argparse()
             >>> parser.print_help()
-            >>> print(self.port_argparse(parser))
+            >>> print(self.port_from_argparse(parser))
             >>> import pytest
             >>> import argparse
             >>> with pytest.raises(SystemExit):
