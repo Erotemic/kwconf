@@ -1,8 +1,30 @@
 """
 Modal CLIs: one application, multiple subcommands.
+
+A ModalCLI routes the first positional command to a Config-backed command. Each
+command still gets normal Config.cli parsing, and each command prints the
+resolved config plus the concrete Python types produced by CLI coercion.
+
+DEMO:
+    Command::
+
+        python examples/05_modal_cli.py fit --epochs=3 --dry-run
+
+    Expected output::
+
+        RESOLVED CONFIG:
+        epochs: 3
+        dry_run: true
+        RESOLVED TYPES:
+        __class__: Train
+        epochs: int
+        dry_run: bool
+        COMMAND RESULT:
+        train epochs=3 dry_run=True
 """
 
 import _bootstrap  # noqa: F401
+from _bootstrap import print_resolved_config
 import kwconf as kw
 
 
@@ -14,9 +36,11 @@ class Train(kw.Config):
     @classmethod
     def main(cls, argv=None, **kwargs):
         config = cls.cli(argv=argv, data=kwargs)
+        print_resolved_config(config)
         message = f'train epochs={config.epochs} dry_run={config.dry_run}'
+        print('COMMAND RESULT:')
         print(message)
-        return message
+        return config
 
 
 class Evaluate(kw.Config):
@@ -26,9 +50,11 @@ class Evaluate(kw.Config):
     @classmethod
     def main(cls, argv=None, **kwargs):
         config = cls.cli(argv=argv, data=kwargs)
+        print_resolved_config(config)
         message = f'eval dataset={config.dataset}'
+        print('COMMAND RESULT:')
         print(message)
-        return message
+        return config
 
 
 class Tools(kw.ModalCLI):
@@ -38,7 +64,7 @@ class Tools(kw.ModalCLI):
 
 
 class App(kw.ModalCLI):
-    """Small modal demo application."""
+    """Small modal example application."""
 
     __version__ = '1.0.0'
 
@@ -49,13 +75,6 @@ class App(kw.ModalCLI):
 
 def main(argv=None):
     return App.main(argv=argv)
-
-
-def demo():
-    assert App.main(argv=['fit', '--epochs=3', '--dry-run']) == 'train epochs=3 dry_run=True'
-    assert App.main(argv=['eval', '--dataset=coco']) == 'eval dataset=coco'
-    assert App.main(argv=['tools', 'evaluate', '--dataset=demo']) == 'eval dataset=demo'
-    print('05_modal_cli: ok')
 
 
 if __name__ == '__main__':

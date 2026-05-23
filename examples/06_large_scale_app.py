@@ -4,11 +4,154 @@ A larger, repo-scale pattern.
 This example sketches a research pipeline with nested configs for datasets,
 models, optimizers, trainers, and logging. The commands only print plans, but
 this is the structure you would scale up for real training / evaluation code.
+Each command prints the resolved config and the concrete Python types produced
+by file loading plus CLI coercion.
+
+DEMO:
+    Modal command::
+
+        python examples/06_large_scale_app.py fit --profile=debug --trainer.max_steps=25 --optim.lr=0.01 --dry_run
+
+    Expected output::
+
+        RESOLVED CONFIG:
+        profile: debug
+        dataset:
+          root: data/images
+          channels:
+          - red
+          - green
+          - blue
+          cache: false
+          __class__: folder
+        model:
+          depth: 50
+          pretrained: true
+          __class__: resnet
+        optim:
+          lr: 0.01
+          beta1: 0.9
+          __class__: adam
+        trainer:
+          max_steps: 25
+          batch_size: 4
+          accumulate_grad_batches: 1
+          precision: fp32
+          __class__: __main__.Trainer
+        logging:
+          level: INFO
+          run_name: debug-resnet
+          tags: []
+          __class__: __main__.Logging
+        dry_run: true
+        RESOLVED TYPES:
+        __class__: TrainCommand
+        profile: str
+        dataset:
+          __class__: FolderDataset
+          root: str
+          channels:
+            list_of: str
+          cache: bool
+        model:
+          __class__: ResNet
+          depth: int
+          pretrained: bool
+        optim:
+          __class__: Adam
+          lr: float
+          beta1: float
+        trainer:
+          __class__: Trainer
+          max_steps: int
+          batch_size: int
+          accumulate_grad_batches: int
+          precision: str
+        logging:
+          __class__: Logging
+          level: str
+          run_name: str
+          tags: list
+        dry_run: bool
+        PLAN:
+        {'profile': 'debug', 'dataset_type': 'FolderDataset', 'model_type': 'ResNet', 'optim_type': 'Adam', 'max_steps': 25, 'lr': 0.01, 'run_name': 'debug-resnet', 'dry_run': True}
+
+    Config-file command with selector choices::
+
+        python examples/06_large_scale_app.py train-direct --config examples/data/large_train.yaml --optim.lr=0.01 --dry-run --logging.tags example large-scale
+
+    Expected output::
+
+        RESOLVED CONFIG:
+        profile: debug
+        dataset:
+          root: data/images
+          channels:
+          - red
+          - green
+          - blue
+          cache: false
+          __class__: folder
+        model:
+          depth: 4
+          width: 32
+          __class__: unet
+        optim:
+          lr: 0.01
+          momentum: 0.8
+          __class__: sgd
+        trainer:
+          max_steps: 25
+          batch_size: 4
+          accumulate_grad_batches: 2
+          precision: fp32
+          __class__: __main__.Trainer
+        logging:
+          level: INFO
+          run_name: yaml-demo
+          tags:
+          - example
+          - large-scale
+          __class__: __main__.Logging
+        dry_run: true
+        RESOLVED TYPES:
+        __class__: TrainCommand
+        profile: str
+        dataset:
+          __class__: FolderDataset
+          root: str
+          channels:
+            list_of: str
+          cache: bool
+        model:
+          __class__: UNet
+          depth: int
+          width: int
+        optim:
+          __class__: SGD
+          lr: float
+          momentum: float
+        trainer:
+          __class__: Trainer
+          max_steps: int
+          batch_size: int
+          accumulate_grad_batches: int
+          precision: str
+        logging:
+          __class__: Logging
+          level: str
+          run_name: str
+          tags:
+            list_of: str
+        dry_run: bool
+        PLAN:
+        {'profile': 'debug', 'dataset_type': 'FolderDataset', 'model_type': 'UNet', 'optim_type': 'SGD', 'max_steps': 25, 'lr': 0.01, 'run_name': 'yaml-demo', 'dry_run': True}
 """
 
-from pathlib import Path
+import sys
 
 import _bootstrap  # noqa: F401
+from _bootstrap import print_resolved_config
 import kwconf as kw
 
 
@@ -118,9 +261,11 @@ class TrainCommand(TrainConfig):
         # None. Drop those empty defaults before feeding them back into Config.
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         config = cls.cli(argv=argv, data=kwargs, allow_subconfig_overrides=True)
+        print_resolved_config(config)
         plan = build_train_plan(config)
+        print('PLAN:')
         print(plan)
-        return plan
+        return config
 
 
 class EvalCommand(EvalConfig):
@@ -130,13 +275,15 @@ class EvalCommand(EvalConfig):
     def main(cls, argv=None, **kwargs):
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         config = cls.cli(argv=argv, data=kwargs)
+        print_resolved_config(config)
         plan = {
             'checkpoint': config.checkpoint,
             'dataset': config.dataset.asdict(),
             'metrics': list(config.metrics),
         }
+        print('PLAN:')
         print(plan)
-        return plan
+        return config
 
 
 class ExportCommand(ExportConfig):
@@ -146,9 +293,11 @@ class ExportCommand(ExportConfig):
     def main(cls, argv=None, **kwargs):
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         config = cls.cli(argv=argv, data=kwargs)
+        print_resolved_config(config)
         plan = config.asdict()
+        print('PLAN:')
         print(plan)
-        return plan
+        return config
 
 
 class ResearchApp(kw.ModalCLI):
@@ -162,53 +311,14 @@ class ResearchApp(kw.ModalCLI):
 
 
 def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    # A plain ModalCLI command demonstrates normal subcommand dispatch. The
+    # explicit train-direct path demonstrates the full Config.cli loader,
+    # including --config files and selector choices.
+    if argv and argv[0] == 'train-direct':
+        return TrainCommand.main(argv=argv[1:])
     return ResearchApp.main(argv=argv)
-
-
-def demo():
-    data_path = Path(__file__).parent / 'data' / 'large_train.yaml'
-
-    # Direct command execution gets the full Config.cli behavior: --config,
-    # selector choices, dotted leaf overrides, and CLI-over-file precedence.
-    plan = TrainCommand.main(argv=[
-        '--config', str(data_path),
-        '--optim.lr=0.01',
-        '--logging.tags', 'example', 'large-scale',
-        '--dry-run',
-    ])
-    assert plan['dataset_type'] == 'FolderDataset'
-    assert plan['model_type'] == 'UNet'
-    assert plan['optim_type'] == 'SGD'
-    assert plan['max_steps'] == 25
-    assert plan['lr'] == 0.01
-    assert plan['run_name'] == 'yaml-demo'
-    assert plan['dry_run'] is True
-
-    # Modal dispatch demonstrates how the same command plugs into an app.
-    # The modal parser is built from the default tree, so keep this path to
-    # ordinary leaf overrides and use direct Config.cli when you need selector
-    # multipass parsing.
-    modal_plan = ResearchApp.main(argv=[
-        'fit',
-        '--profile=debug',
-        '--trainer.max_steps=25',
-        '--optim.lr=0.01',
-        '--dry_run',
-    ])
-    assert modal_plan['model_type'] == 'ResNet'
-    assert modal_plan['optim_type'] == 'Adam'
-    assert modal_plan['max_steps'] == 25
-    assert modal_plan['lr'] == 0.01
-
-    eval_plan = ResearchApp.main(argv=[
-        'score',
-        '--checkpoint=demo.pt',
-        '--metrics', 'accuracy', 'f1',
-    ])
-    assert eval_plan['checkpoint'] == 'demo.pt'
-    assert eval_plan['metrics'] == ['accuracy', 'f1']
-
-    print('06_large_scale_app: ok')
 
 
 if __name__ == '__main__':

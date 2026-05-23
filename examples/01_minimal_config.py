@@ -3,10 +3,40 @@ Minimal kwconf usage.
 
 This is the shape to copy into a small script: declare a Config subclass,
 parse it with `.cli(...)`, and then pass the resulting object into your real
-function.
+function. The script prints the resolved config and the concrete Python types
+produced by CLI coercion.
+
+DEMO:
+    Command::
+
+        python examples/01_minimal_config.py --width=128 --height=96 --method=lanczos --dst=thumb.png --tags demo small --dry-run
+
+    Expected output::
+
+        RESOLVED CONFIG:
+        width: 128
+        height: 96
+        method: lanczos
+        output: thumb.png
+        tags:
+        - demo
+        - small
+        dry_run: true
+        RESOLVED TYPES:
+        __class__: ResizeConfig
+        width: int
+        height: int
+        method: str
+        output: str
+        tags:
+          list_of: str
+        dry_run: bool
+        PLAN:
+        {'size': (128, 96), 'method': 'lanczos', 'output': 'thumb.png', 'tags': ['demo', 'small'], 'dry_run': True}
 """
 
 import _bootstrap  # noqa: F401
+from _bootstrap import print_resolved_config
 import kwconf as kw
 
 
@@ -40,32 +70,11 @@ def plan_resize(config):
 
 def main(argv=None):
     config = ResizeConfig.cli(argv=argv)
+    print_resolved_config(config)
     plan = plan_resize(config)
+    print('PLAN:')
     print(plan)
-    return plan
-
-
-def demo():
-    config = ResizeConfig.cli(argv=[
-        '--width=128',
-        '--height=96',
-        '--method=lanczos',
-        '--dst=thumb.png',
-        '--tags', 'demo', 'small',
-        '--dry-run',
-    ])
-    assert config.width == 128
-    assert config.output == 'thumb.png'
-    assert config.tags == ['demo', 'small']
-    assert config.dry_run is True
-
-    # Instances are both namespace-like and dict-like.
-    assert config['width'] == config.width
-    assert plan_resize(config)['size'] == (128, 96)
-
-    # Programmatic construction uses the same schema and normalization.
-    assert ResizeConfig(width=64, height=64).width == 64
-    print('01_minimal_config: ok')
+    return config
 
 
 if __name__ == '__main__':

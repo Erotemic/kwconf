@@ -1,9 +1,10 @@
 # kwconf examples
 
 This directory contains small, executable examples that show how the main
-kwconf systems fit together. They are intentionally self-contained: each file
-can be run directly from a source checkout, and `run_all.py` executes the full
-set with deterministic arguments.
+kwconf systems fit together. Each example has a top-level `DEMO` docstring
+section with commands to try and expected output. Each command prints the
+resolved config plus a type summary so it is clear how CLI strings, config-file
+values, and defaults were coerced.
 
 ## Run everything
 

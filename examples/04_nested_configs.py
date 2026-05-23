@@ -3,12 +3,43 @@ Nested config trees and selector choices.
 
 Use SubConfig for structured objects that have their own schemas. Dotted CLI
 keys update leaves. Selector choices switch one implementation for another.
+The script prints the resolved config and the concrete Python types produced by
+CLI coercion, including the selected nested config classes.
+
+DEMO:
+    Command::
+
+        python examples/04_nested_configs.py --dataset.root=data/images --dataset.augment --optim=sgd --optim.momentum=0.7 --epochs=3
+
+    Expected output::
+
+        RESOLVED CONFIG:
+        dataset:
+          root: data/images
+          augment: true
+          __class__: __main__.Dataset
+        optim:
+          lr: 0.01
+          momentum: 0.7
+          __class__: sgd
+        epochs: 3
+        RESOLVED TYPES:
+        __class__: TrainConfig
+        dataset:
+          __class__: Dataset
+          root: str
+          augment: bool
+        optim:
+          __class__: SGD
+          lr: float
+          momentum: float
+        epochs: int
+        SUMMARY:
+        {'dataset_root': 'data/images', 'augment': True, 'optim_cls': 'SGD', 'optim': {'lr': 0.01, 'momentum': 0.7}, 'epochs': 3}
 """
 
-import tempfile
-from pathlib import Path
-
 import _bootstrap  # noqa: F401
+from _bootstrap import print_resolved_config
 import kwconf as kw
 
 
@@ -47,38 +78,11 @@ def describe(config):
 
 def main(argv=None):
     config = TrainConfig.cli(argv=argv, allow_subconfig_overrides=True)
+    print_resolved_config(config)
     summary = describe(config)
+    print('SUMMARY:')
     print(summary)
-    return summary
-
-
-def demo():
-    config = TrainConfig.cli(argv=[
-        '--dataset.root=data/images',
-        '--dataset.augment',
-        '--optim=sgd',
-        '--optim.momentum=0.7',
-        '--epochs=3',
-    ], allow_subconfig_overrides=True)
-    assert isinstance(config.optim, SGD)
-    assert config.dataset.root == 'data/images'
-    assert config.optim.momentum == 0.7
-
-    with tempfile.TemporaryDirectory() as dpath:
-        yaml_path = Path(dpath) / 'train.yaml'
-        yaml_path.write_text(
-            'optim:\n'
-            '  __class__: sgd\n'
-            '  lr: 0.2\n'
-            '  momentum: 0.6\n'
-            'epochs: 5\n'
-        )
-        config2 = TrainConfig.cli(argv=['--config', str(yaml_path), '--optim.lr=0.05'])
-        assert isinstance(config2.optim, SGD)
-        assert config2.optim.lr == 0.05
-        assert config2.epochs == 5
-
-    print('04_nested_configs: ok')
+    return config
 
 
 if __name__ == '__main__':

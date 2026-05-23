@@ -2,14 +2,43 @@
 Loading and dumping config files.
 
 The important pattern is: defaults come from the class, files or Python data
-update those defaults, and CLI arguments are the final override layer.
+update those defaults, and CLI arguments are the final override layer. The
+script prints the resolved config and the concrete Python types produced by
+file loading plus CLI coercion.
+
+DEMO:
+    Command::
+
+        python examples/03_config_files.py --config examples/data/report.yaml --limit=3 --format=json --metadata '{owner: bob, priority: 1}' --labels urgent external
+
+    Expected output::
+
+        RESOLVED CONFIG:
+        title: weekly status
+        limit: 3
+        format: json
+        output: report.html
+        labels:
+        - urgent
+        - external
+        metadata:
+          owner: bob
+          priority: 1
+        RESOLVED TYPES:
+        __class__: ReportConfig
+        title: str
+        limit: int
+        format: str
+        output: str
+        labels:
+          list_of: str
+        metadata:
+          owner: str
+          priority: int
 """
 
-import json
-import tempfile
-from pathlib import Path
-
 import _bootstrap  # noqa: F401
+from _bootstrap import print_resolved_config
 import kwconf as kw
 
 
@@ -31,43 +60,8 @@ class ReportConfig(kw.Config):
 
 def main(argv=None):
     config = ReportConfig.cli(argv=argv)
-    print(config.dumps(mode='yaml'))
+    print_resolved_config(config)
     return config
-
-
-def demo():
-    with tempfile.TemporaryDirectory() as dpath:
-        dpath = Path(dpath)
-        yaml_path = dpath / 'report.yaml'
-        json_path = dpath / 'report.json'
-
-        yaml_path.write_text(
-            'title: weekly status\n'
-            'limit: 20\n'
-            'format: html\n'
-            'metadata: {owner: alice, priority: 2}\n'
-        )
-        json_path.write_text(json.dumps({'title': 'from json', 'limit': 5}))
-
-        # Load a YAML file through the ordinary data argument.
-        config = ReportConfig.cli(data=str(yaml_path), argv=['--limit=3'])
-        assert config.title == 'weekly status'
-        assert config.limit == 3  # CLI wins over file data.
-        assert config.metadata == {'owner': 'alice', 'priority': 2}
-
-        # The opt-in special --config option is useful for real CLIs.
-        config2 = ReportConfig.cli(argv=['--config', str(json_path), '--format=json'])
-        assert config2.title == 'from json'
-        assert config2.limit == 5
-        assert config2.format == 'json'
-
-        # Dump / load roundtrip.
-        dumped = config2.dumps(mode='json')
-        config3 = ReportConfig()
-        config3.load(dumped, mode='json', argv=False)
-        assert config3.asdict() == config2.asdict()
-
-    print('03_config_files: ok')
 
 
 if __name__ == '__main__':
