@@ -3,7 +3,8 @@ Argparse Extensions
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional, Sequence, Tuple, cast
+from dataclasses import dataclass
+from typing import Any, List, Sequence, Tuple
 import argparse
 import os
 import sys
@@ -59,6 +60,100 @@ HAS_ARGPARSE_GH_125355 = (
 # reasonably just inherit from Action
 _Base = argparse._StoreAction
 # _Base = argparse.Action
+
+
+@dataclass(frozen=True)
+class ParseResult:
+    """
+    Result of parsing command-line arguments with provenance metadata.
+
+    ``namespace`` contains argparse's resolved values, including parser
+    defaults. ``explicit_keys`` contains only canonical destinations that were
+    supplied by the user for the selected parser. This lets kwconf keep
+    resolved values separate from user intent.
+    """
+
+    namespace: argparse.Namespace
+    unknown_args: List[str]
+    parser: argparse.ArgumentParser
+    selected_parser: argparse.ArgumentParser
+    explicit_keys: frozenset[str]
+
+    @property
+    def values(self) -> dict[str, Any]:
+        return vars(self.namespace)
+
+    @property
+    def explicit_values(self) -> dict[str, Any]:
+        values = self.values
+        return {
+            key: values[key]
+            for key in self.explicit_keys
+            if key in values
+        }
+
+
+def parse_known_result(
+    parser: argparse.ArgumentParser,
+    args: Sequence[str] | None = None,
+    namespace: argparse.Namespace | None = None,
+) -> ParseResult:
+    """
+    Parse arguments and return resolved values plus provenance metadata.
+
+    This works with any ``argparse.ArgumentParser``. Parsers created by kwconf
+    add ``_explicitly_given`` and ``_deepest_subparser_for_argv`` metadata,
+    but plain argparse parsers still receive a valid result with empty
+    provenance when those hooks are absent.
+    """
+    if args is None:
+        args = sys.argv[1:]
+    else:
+        args = [
+            os.fspath(a) if isinstance(a, os.PathLike) else a
+            for a in args
+        ]
+    if namespace is None:
+        namespace, unknown_args = parser.parse_known_args(args=args)
+    else:
+        namespace, unknown_args = parser.parse_known_args(
+            args=args,
+            namespace=namespace,
+        )
+    deepest = getattr(parser, '_deepest_subparser_for_argv', None)
+    if deepest is None:
+        selected_parser = parser
+    else:
+        selected_parser = deepest(args) or parser
+    explicit_keys = frozenset(
+        getattr(selected_parser, '_explicitly_given', set())
+    )
+    return ParseResult(
+        namespace=namespace,
+        unknown_args=unknown_args,
+        parser=parser,
+        selected_parser=selected_parser,
+        explicit_keys=explicit_keys,
+    )
+
+
+def parse_result(
+    parser: argparse.ArgumentParser,
+    args: Sequence[str] | None = None,
+    namespace: argparse.Namespace | None = None,
+) -> ParseResult:
+    """
+    Strict parse that returns resolved values plus provenance metadata.
+    """
+    result = parse_known_result(parser, args=args, namespace=namespace)
+    if result.unknown_args:
+        msg = 'unrecognized arguments: %s' % ' '.join(result.unknown_args)
+        if getattr(parser, 'exit_on_error', True):
+            result.selected_parser.error(msg)
+        else:
+            from argparse import ArgumentError
+            raise ArgumentError(None, msg)
+    return result
 
 
 class BooleanFlagOrKeyValAction(_Base):
@@ -117,8 +212,8 @@ class BooleanFlagOrKeyValAction(_Base):
                  dest: str,
                  default: Any = None,
                  required: bool = False,
-                 help: Optional[str] = None,
-                 type: Optional[type] = None) -> None:
+                 help: str | None = None,
+                 type: type | None = None) -> None:
 
         _option_strings: list[str] = []
         for option_string in option_strings:
@@ -168,7 +263,7 @@ class BooleanFlagOrKeyValAction(_Base):
                  parser: argparse.ArgumentParser,
                  namespace: argparse.Namespace,
                  values: Any,
-                 option_string: Optional[str] = None) -> None:
+                 option_string: str | None = None) -> None:
         """
         Args:
             parser (argparse.ArgumentParser): Parser instance.
@@ -265,7 +360,7 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
                  parser: argparse.ArgumentParser,
                  namespace: argparse.Namespace,
                  values: Any,
-                 option_string: Optional[str] = None) -> None:
+                 option_string: str | None = None) -> None:
         if option_string is None:
             raise Exception('Cannot use a CounterFlagOrKeyValAction as a positional argument')
         if option_string in self.option_strings:
@@ -328,8 +423,8 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
 
 
 class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
-        _RawDescriptionHelpFormatter,  # type: ignore[misc,valid-type]  # ty: ignore[unsupported-base]
-        _ArgumentDefaultsHelpFormatter):  # type: ignore[misc,valid-type]  # ty: ignore[unsupported-base]
+        _RawDescriptionHelpFormatter,  # type: ignore[misc,valid-type]
+        _ArgumentDefaultsHelpFormatter):  # type: ignore[misc,valid-type]
 
     group_name_formatter: type = str  # revert rich-argparse title change
 
@@ -444,8 +539,8 @@ class CompatArgumentParser(argparse.ArgumentParser):
         super().__init__(*args, **kwargs)
 
     def parse_known_args(self,  # type: ignore[override]  # ty: ignore[invalid-method-override]
-                         args: Optional[Sequence[str]] = None,
-                         namespace: Optional[argparse.Namespace] = None) -> Tuple[argparse.Namespace, List[str]]:
+                         args: Sequence[str] | None = None,
+                         namespace: argparse.Namespace | None = None) -> Tuple[argparse.Namespace, List[str]]:
         """
         This is the Python 3.10 implementation of this function.
         We define this for Python 3.6-3.8 compatibility where the exit_on_error
@@ -570,7 +665,7 @@ class ExtendedArgumentParser_PRE_GH_114180(CompatArgumentParser):
         """
         Helper to allow "_" or "-" on the CLI.
         """
-        result: list[tuple[Any, str, Optional[str]]] = []
+        result: list[tuple[Any, str, str | None]] = []
 
         if '=' in option_string:
             option_prefix, explicit_arg = option_string.split('=', 1)
@@ -627,7 +722,7 @@ class ExtendedArgumentParser_POST_GH_114180(CompatArgumentParser):
     https://github.com/python/cpython/commit/c02b7ae4dd367444aa6822d5fb73b61e8f5a4ff9
     """
     def _get_option_tuples(self, option_string: str):
-        result: list[tuple[Any, str, Optional[str], Optional[str]]] = []
+        result: list[tuple[Any, str, str | None, str | None]] = []
 
         # option strings starting with two prefix characters are only
         # split at the '='
@@ -644,7 +739,7 @@ class ExtendedArgumentParser_POST_GH_114180(CompatArgumentParser):
                     # if option_string.startswith(option_prefix):
                     if norm_option_string.startswith(norm_option_prefix):
                         action = self._option_string_actions[option_string]
-                        tup: tuple[Any, str, Optional[str], Optional[str]] = (action, option_string, sep, explicit_arg)
+                        tup: tuple[Any, str, str | None, str | None] = (action, option_string, sep, explicit_arg)
                         result.append(tup)
 
         # single character options can be concatenated with their arguments
@@ -756,8 +851,28 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
         >>>     assert result.__dict__ == case['expected']
     """
 
+    def parse_known_result(
+        self,
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> ParseResult:
+        """
+        Parse arguments and return resolved values plus provenance metadata.
+        """
+        return parse_known_result(self, args=args, namespace=namespace)
+
+    def parse_result(
+        self,
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> ParseResult:
+        """
+        Strict parse that returns resolved values plus provenance metadata.
+        """
+        return parse_result(self, args=args, namespace=namespace)
+
     # Public parse that applies the "print leaf help on error" policy.
-    def parse_args(self, args: Optional[Sequence[str]] = None, namespace: Optional[argparse.Namespace] = None) -> argparse.Namespace | None:  # type: ignore
+    def parse_args(self, args: Sequence[str] | None = None, namespace: argparse.Namespace | None = None) -> argparse.Namespace | None:  # type: ignore
         if args is None:
             args = sys.argv[1:]
         # If the caller wants default behavior, defer entirely to argparse.
@@ -779,14 +894,14 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
         return super().parse_args(args, namespace=namespace)  # type: ignore
 
     # Helper: find deepest subparser matched by tokens.
-    def _deepest_subparser_for_argv(self, tokens: Optional[Sequence[str]] = None) -> Optional[argparse.ArgumentParser]:
+    def _deepest_subparser_for_argv(self, tokens: Sequence[str] | None = None) -> argparse.ArgumentParser | None:
         if tokens is None:
             tokens = sys.argv[1:]
         parser: argparse.ArgumentParser = self
         i: int = 0
-        deepest: Optional[argparse.ArgumentParser] = None
+        deepest: argparse.ArgumentParser | None = None
         while True:
-            sub_action: Optional[argparse._SubParsersAction] = None
+            sub_action: argparse._SubParsersAction | None = None
             for act in parser._actions:
                 if isinstance(act, argparse._SubParsersAction):
                     sub_action = act

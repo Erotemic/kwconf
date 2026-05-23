@@ -30,6 +30,9 @@ python examples/run_all.py
   app. This is meant to show the pattern you would scale up in a real repo.
 - `07_decorator_and_dynamic.py` - compatibility helpers: `@kw.dataconf` and
   `kw.define` for dynamic or migration-heavy situations.
+- `08_modal_default_precedence_mwe.py` - bug-report MWE for modal dispatch
+  preserving omitted-vs-explicit option semantics, based on a real
+  `git-well archive_source` repo-local default issue.
 
 ## Notes
 

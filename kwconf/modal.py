@@ -662,14 +662,16 @@ class ModalCLI(metaclass=MetaModalCLI):
         if isinstance(argv, (int, bool)) and argv:
             argv = None
         try:
-            ns, unknown_args = parser.parse_known_args(args=argv)
+            from kwconf import argparse_ext
+            parse_result = argparse_ext.parse_known_result(parser, args=argv)
         except SystemExit as ex:
             if diagnostics.DEBUG_MODAL:
                 print(f'[kwconf.modal.ModalCLI.main] Modal main {self} caught an SystemExit error {ex}')
             if _noexit:
                 return 1
             raise
-        kw = ns.__dict__
+        kw = parse_result.values
+        unknown_args = parse_result.unknown_args
 
         if diagnostics.DEBUG_MODAL:
             print(f'[kwconf.modal.ModalCLI.main] Modal main {self} parsed arguments: ' + ub.urepr(kw, nl=1))  # type: ignore
@@ -697,9 +699,7 @@ class ModalCLI(metaclass=MetaModalCLI):
                 if getattr(parser, 'exit_on_error', True):
                     # Also use the extended deepest parser logic we added to
                     # the extended parser here.
-                    deepest = parser._deepest_subparser_for_argv(argv)
-                    if deepest is None:
-                        deepest = self
+                    deepest = parse_result.selected_parser
                     # deepest.print_usage()
                     deepest.error(msg)  # type: ignore
                 else:
@@ -718,6 +718,11 @@ class ModalCLI(metaclass=MetaModalCLI):
         version_request = kw.pop('__modal_version_request__', None)
         sub_modal = kw.pop('__submodal__', None)
         sub_main = kw.pop('__main_function__', None)
+        explicit_kw = {
+            key: kw[key]
+            for key in parse_result.explicit_keys
+            if key in kw
+        }
         if version_request:
             if sub_modal is None:
                 if diagnostics.DEBUG_MODAL:
@@ -763,7 +768,7 @@ class ModalCLI(metaclass=MetaModalCLI):
             control_kw['argv'] = False
 
         try:
-            ret = sub_main(**control_kw, **kw)
+            ret = sub_main(**control_kw, **explicit_kw)
         except Exception as ex:
             print('ERROR ex = {!r}'.format(ex))
             raise

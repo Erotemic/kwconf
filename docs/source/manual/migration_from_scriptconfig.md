@@ -23,6 +23,7 @@ and shows what to change.
 | `description` / `epilog` / `prog` class attributes    | accepted (deprecation warned) | removed -- use `__description__` / `__epilog__` / `__prog__`           |
 | `cmdline=` kwarg on `load()` / `cli()`                | available                     | removed -- use `argv=`                                                 |
 | `--config` / `--dump` / `--dumps` special CLI options | on by default                 | off by default (opt in via `__special_options__ = True` or per-call)   |
+| Modal subcommand dispatch                             | forwards resolved defaults as kwargs | forwards only explicitly supplied child args as kwargs        |
 
 The rest of this document walks through each item.
 
@@ -218,6 +219,39 @@ class MyConfig(kw.Config):
 If your existing code expected ``--config <path>`` to work, add
 ``special_options=True`` (or set ``__special_options__ = True`` on the
 class).
+
+## Modal dispatch forwards only explicit child arguments
+
+scriptconfig modal dispatch parsed the selected subcommand and then called the
+child ``main`` with a kwargs dictionary containing every resolved child value,
+including schema defaults. That made omitted values indistinguishable from
+values the user explicitly supplied.
+
+kwconf keeps those concepts separate. Modal dispatch still parses enough to
+select and validate the child command, but when it calls the child ``main`` it
+forwards only arguments that were explicitly present in argv.
+
+```python
+class ArchiveSource(kw.Config):
+    depth = kw.Value('full')
+    verbose = kw.Flag(False)
+
+    @classmethod
+    def main(cls, argv=None, **kwargs):
+        # In kwconf modal invocation with: archive_source --verbose
+        assert kwargs == {'verbose': True}
+```
+
+This allows the child command to apply later default sources naturally:
+
+```python
+repo_defaults = {'depth': '0'}
+config = ArchiveSource.cli(argv=False, data=kwargs, default=repo_defaults)
+assert config.depth == '0'
+```
+
+If the user explicitly passes ``--depth=full``, modal dispatch forwards
+``depth='full'`` and the explicit CLI value wins.
 
 ## `Value.cast` -> `Value.coerce`
 

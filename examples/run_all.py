@@ -54,6 +54,10 @@ EXAMPLE_COMMANDS = [
         'examples/07_decorator_and_dynamic.py',
         '--chip-size', '[512, 512]', '-j', '8',
     ],
+    [
+        sys.executable,
+        'examples/08_modal_default_precedence_mwe.py',
+    ],
 ]
 
 

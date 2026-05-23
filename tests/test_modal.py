@@ -750,6 +750,46 @@ def test_modal_with_config_field_special_options():
     assert exit_code == 0
 
 
+def test_modal_forwards_only_explicit_kwargs():
+    """
+    Modal dispatch should not make omitted child defaults look explicit.
+    """
+
+    repo_defaults = {'depth': '0'}
+    calls = []
+
+    class ArchiveSource(kwconf.Config):
+        __command__ = 'archive_source'
+
+        depth = kwconf.Value('full')
+        format = kwconf.Value('auto')
+        verbose = kwconf.Flag(False)
+
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append({'argv': argv, 'kwargs': dict(kwargs)})
+            return cls.cli(argv=argv, data=kwargs, default=repo_defaults)
+
+    class App(kwconf.ModalCLI):
+        archive_source = ArchiveSource
+
+    direct = ArchiveSource.main(argv=['--verbose'])
+    modal = App.main(argv=['archive_source', '--verbose'])
+    explicit_modal = App.main(
+        argv=['archive_source', '--verbose', '--depth=full']
+    )
+
+    assert direct.depth == '0'
+    assert modal.depth == '0'
+    assert explicit_modal.depth == 'full'
+    assert calls[0] == {'argv': ['--verbose'], 'kwargs': {}}
+    assert calls[1] == {'argv': False, 'kwargs': {'verbose': True}}
+    assert calls[2] == {
+        'argv': False,
+        'kwargs': {'verbose': True, 'depth': 'full'},
+    }
+
+
 if __name__ == '__main__':
     """
     CommandLine:

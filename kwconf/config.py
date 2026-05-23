@@ -1334,10 +1334,13 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 argcomplete_mod.autocomplete(parser)
 
         try:
+            from kwconf import argparse_ext
             if strict:
-                ns = parser.parse_args(argv).__dict__
+                parse_result = argparse_ext.parse_result(parser, argv)
             else:
-                ns = parser.parse_known_args(argv)[0].__dict__
+                parse_result = argparse_ext.parse_known_result(parser, argv)
+            ns = parse_result.values
+            explicit_keys = set(parse_result.explicit_keys)
         except (ValueError, TypeError, KeyError) as ex:
             # For errors (like ValueError) where its probably a programmer
             # error and not a user error, give the debugger some information
@@ -1369,11 +1372,10 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             # Subconfig selectors need special handling, but regular values
             # can use the standard Config setitem logic.
             from kwconf import subconfig as _subcfg_mod
-            explicit: set[str] = getattr(parser, '_explicitly_given', set())
             subconfig_paths = set(_subcfg_mod.find_subconfig_paths(self))
-            if explicit:
+            if explicit_keys:
                 selector_keys = {
-                    k for k in explicit
+                    k for k in explicit_keys
                     if k.endswith('.__class__') or k in subconfig_paths
                 }
                 if selector_keys:
@@ -1387,16 +1389,16 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     )
                     for key in selector_keys:
                         ns.pop(key, None)
-                    parser._explicitly_given = explicit - selector_keys  # type: ignore
+                    explicit_keys = explicit_keys - selector_keys
             if subconfig_paths:
                 for key in subconfig_paths:
                     ns.pop(key, None)
-                parser._explicitly_given = {  # type: ignore
-                    key for key in parser._explicitly_given  # type: ignore
+                explicit_keys = {
+                    key for key in explicit_keys
                     if key not in subconfig_paths
                 }
         # First load argparse defaults in first
-        _not_given = set(ns.keys()) - parser._explicitly_given  # type: ignore
+        _not_given = set(ns.keys()) - explicit_keys
         # print('_not_given = {!r}'.format(_not_given))
         # print('parser._explicitly_given = {!r}'.format(parser._explicitly_given))
         for key in _not_given:
@@ -1427,7 +1429,7 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         # Finally load explicit CLI values. The parser action has already
         # coerced the raw token; we just need to store it.
-        for key in parser._explicitly_given:  # type: ignore
+        for key in explicit_keys:
             if key not in special_ns:
                 self[key] = ns[key]
 
