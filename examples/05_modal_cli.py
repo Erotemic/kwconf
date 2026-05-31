@@ -2,29 +2,18 @@
 Modal CLIs: one application, multiple subcommands.
 
 A ModalCLI routes the first positional command to a Config-backed command. Each
-command still gets normal Config.cli parsing, and each command prints the
-resolved config plus the concrete Python types produced by CLI coercion.
+command still gets normal Config.cli parsing, and each command prints resolved
+config fields as ``name : type = value`` rows.
 
 DEMO:
     Command::
 
         python examples/05_modal_cli.py fit --epochs=3 --dry-run
-
-    Expected output::
-
-        RESOLVED CONFIG:
-        epochs: 3
-        dry_run: true
-        RESOLVED TYPES:
-        __class__: Train
-        epochs: int
-        dry_run: bool
-        COMMAND RESULT:
-        train epochs=3 dry_run=True
 """
 
 import _bootstrap  # noqa: F401
 from _bootstrap import print_resolved_config
+
 import kwconf as kw
 
 

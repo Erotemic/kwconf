@@ -3,42 +3,17 @@ Command-line surface area.
 
 This example demonstrates the CLI conveniences kwconf keeps: positional
 arguments, aliases, fuzzy hyphen names, booleans, counters, choices, and nargs.
-The script prints the resolved config and the concrete Python types produced by
-CLI coercion.
+The script prints resolved config fields as ``name : type = value`` rows.
 
 DEMO:
     Command::
 
         python examples/02_cli_surface.py raw.dat clean.dat -vvv -j 4 --dry-run --mode=safe --include metadata features
-
-    Expected output::
-
-        RESOLVED CONFIG:
-        src: raw.dat
-        dst: clean.dat
-        workers: 4
-        mode: safe
-        include:
-        - metadata
-        - features
-        verbose: 3
-        dry_run: true
-        RESOLVED TYPES:
-        __class__: ConvertConfig
-        src: str
-        dst: str
-        workers: int
-        mode: str
-        include:
-          list_of: str
-        verbose: int
-        dry_run: bool
-        SUMMARY:
-        {'src': 'raw.dat', 'dst': 'clean.dat', 'workers': 4, 'mode': 'safe', 'include': ['metadata', 'features'], 'verbose': 3, 'dry_run': True}
 """
 
 import _bootstrap  # noqa: F401
 from _bootstrap import print_resolved_config
+
 import kwconf as kw
 
 

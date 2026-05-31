@@ -3,40 +3,19 @@ Minimal kwconf usage.
 
 This is the shape to copy into a small script: declare a Config subclass,
 parse it with `.cli(...)`, and then pass the resulting object into your real
-function. The script prints the resolved config and the concrete Python types
-produced by CLI coercion.
+function. The output prints each resolved field as a colorized
+``name : type = value`` row, then shows the plain application plan that would
+be handed to real work.
 
 DEMO:
     Command::
 
         python examples/01_minimal_config.py --width=128 --height=96 --method=lanczos --dst=thumb.png --tags demo small --dry-run
-
-    Expected output::
-
-        RESOLVED CONFIG:
-        width: 128
-        height: 96
-        method: lanczos
-        output: thumb.png
-        tags:
-        - demo
-        - small
-        dry_run: true
-        RESOLVED TYPES:
-        __class__: ResizeConfig
-        width: int
-        height: int
-        method: str
-        output: str
-        tags:
-          list_of: str
-        dry_run: bool
-        PLAN:
-        {'size': (128, 96), 'method': 'lanczos', 'output': 'thumb.png', 'tags': ['demo', 'small'], 'dry_run': True}
 """
 
 import _bootstrap  # noqa: F401
-from _bootstrap import print_resolved_config
+from _bootstrap import _dump_text, print_resolved_config, print_rule, rich_print
+
 import kwconf as kw
 
 
@@ -69,11 +48,24 @@ def plan_resize(config):
 
 
 def main(argv=None):
+    print_rule('kwconf example 01: minimal Config')
+    rich_print(
+        'The CLI starts as strings; kwconf resolves them into typed Python '
+        'fields that downstream code can use directly.',
+        style='white',
+    )
     config = ResizeConfig.cli(argv=argv)
     print_resolved_config(config)
+    print_rule('Why this is interesting')
+    rich_print('--dst populated output because output declared alias=[\'dst\'].')
+    rich_print('--dry-run became True because dry_run is a kw.Flag.')
+    rich_print('--tags demo small stayed a list instead of a single string.')
+    rich_print(
+        'width and height are real ints, so downstream code can use them directly.'
+    )
     plan = plan_resize(config)
-    print('PLAN:')
-    print(plan)
+    rich_print('PLAN:', style='bold yellow')
+    print(_dump_text(plan))
     return config
 
 

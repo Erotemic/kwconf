@@ -4,154 +4,23 @@ A larger, repo-scale pattern.
 This example sketches a research pipeline with nested configs for datasets,
 models, optimizers, trainers, and logging. The commands only print plans, but
 this is the structure you would scale up for real training / evaluation code.
-Each command prints the resolved config and the concrete Python types produced
-by file loading plus CLI coercion.
+Each command prints resolved config fields as ``name : type = value`` rows.
 
 DEMO:
     Modal command::
 
         python examples/06_large_scale_app.py fit --profile=debug --trainer.max_steps=25 --optim.lr=0.01 --dry_run
 
-    Expected output::
-
-        RESOLVED CONFIG:
-        profile: debug
-        dataset:
-          root: data/images
-          channels:
-          - red
-          - green
-          - blue
-          cache: false
-          __class__: folder
-        model:
-          depth: 50
-          pretrained: true
-          __class__: resnet
-        optim:
-          lr: 0.01
-          beta1: 0.9
-          __class__: adam
-        trainer:
-          max_steps: 25
-          batch_size: 4
-          accumulate_grad_batches: 1
-          precision: fp32
-          __class__: __main__.Trainer
-        logging:
-          level: INFO
-          run_name: debug-resnet
-          tags: []
-          __class__: __main__.Logging
-        dry_run: true
-        RESOLVED TYPES:
-        __class__: TrainCommand
-        profile: str
-        dataset:
-          __class__: FolderDataset
-          root: str
-          channels:
-            list_of: str
-          cache: bool
-        model:
-          __class__: ResNet
-          depth: int
-          pretrained: bool
-        optim:
-          __class__: Adam
-          lr: float
-          beta1: float
-        trainer:
-          __class__: Trainer
-          max_steps: int
-          batch_size: int
-          accumulate_grad_batches: int
-          precision: str
-        logging:
-          __class__: Logging
-          level: str
-          run_name: str
-          tags: list
-        dry_run: bool
-        PLAN:
-        {'profile': 'debug', 'dataset_type': 'FolderDataset', 'model_type': 'ResNet', 'optim_type': 'Adam', 'max_steps': 25, 'lr': 0.01, 'run_name': 'debug-resnet', 'dry_run': True}
-
     Config-file command with selector choices::
 
         python examples/06_large_scale_app.py train-direct --config examples/data/large_train.yaml --optim.lr=0.01 --dry-run --logging.tags example large-scale
-
-    Expected output::
-
-        RESOLVED CONFIG:
-        profile: debug
-        dataset:
-          root: data/images
-          channels:
-          - red
-          - green
-          - blue
-          cache: false
-          __class__: folder
-        model:
-          depth: 4
-          width: 32
-          __class__: unet
-        optim:
-          lr: 0.01
-          momentum: 0.8
-          __class__: sgd
-        trainer:
-          max_steps: 25
-          batch_size: 4
-          accumulate_grad_batches: 2
-          precision: fp32
-          __class__: __main__.Trainer
-        logging:
-          level: INFO
-          run_name: yaml-demo
-          tags:
-          - example
-          - large-scale
-          __class__: __main__.Logging
-        dry_run: true
-        RESOLVED TYPES:
-        __class__: TrainCommand
-        profile: str
-        dataset:
-          __class__: FolderDataset
-          root: str
-          channels:
-            list_of: str
-          cache: bool
-        model:
-          __class__: UNet
-          depth: int
-          width: int
-        optim:
-          __class__: SGD
-          lr: float
-          momentum: float
-        trainer:
-          __class__: Trainer
-          max_steps: int
-          batch_size: int
-          accumulate_grad_batches: int
-          precision: str
-        logging:
-          __class__: Logging
-          level: str
-          run_name: str
-          tags:
-            list_of: str
-        dry_run: bool
-        PLAN:
-        {'profile': 'debug', 'dataset_type': 'FolderDataset', 'model_type': 'UNet', 'optim_type': 'SGD', 'max_steps': 25, 'lr': 0.01, 'run_name': 'yaml-demo', 'dry_run': True}
 """
 
 import sys
 
 import _bootstrap  # noqa: F401
 from _bootstrap import print_resolved_config
+
 import kwconf as kw
 
 

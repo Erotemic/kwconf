@@ -2,9 +2,9 @@
 
 This directory contains small, executable examples that show how the main
 kwconf systems fit together. Each example has a top-level `DEMO` docstring
-section with commands to try and expected output. Each command prints the
-resolved config plus a type summary so it is clear how CLI strings, config-file
-values, and defaults were coerced.
+section with commands to try. Each command prints the resolved config as
+`name : type = value` rows so it is clear how CLI strings, config-file values,
+and defaults were coerced.
 
 ## Run everything
 

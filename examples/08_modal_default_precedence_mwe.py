@@ -52,8 +52,8 @@ PROMPT FOR THE KWCONF AGENT:
 """
 
 import _bootstrap  # noqa: F401
-import kwconf as kw
 
+import kwconf as kw
 
 REPO_LOCAL_DEFAULTS = {
     # Simulates: git config --local git-well.archive-source.depth 0

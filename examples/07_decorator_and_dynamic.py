@@ -3,39 +3,18 @@ Decorator and dynamic-class helpers.
 
 Most new code should inherit from kw.Config directly. These helpers are useful
 when migrating old code or generating schemas from another source. The script
-prints both a decorator-based config and a dynamic config to show that the
-resolved objects still use the same Config machinery.
+prints both configs as ``name : type = value`` rows to show that the resolved
+objects still use the same Config machinery.
 
 DEMO:
     Command::
 
         python examples/07_decorator_and_dynamic.py --chip-size '[512, 512]' -j 8
-
-    Expected output::
-
-        DECORATED CONFIG:
-        chip_size:
-        - 512
-        - 512
-        channels: red|green|blue
-        workers: 8
-        RESOLVED TYPES:
-        __class__: DecoratedConfig
-        chip_size:
-          list_of: int
-        channels: str
-        workers: int
-        DYNAMIC CONFIG:
-        alpha: 3
-        name: generated
-        RESOLVED TYPES:
-        __class__: DynamicConfig
-        alpha: int
-        name: str
 """
 
 import _bootstrap  # noqa: F401
 from _bootstrap import print_resolved_config
+
 import kwconf as kw
 
 

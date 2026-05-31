@@ -7,7 +7,6 @@ from pathlib import Path
 
 import _bootstrap  # noqa: F401
 
-
 EXAMPLE_COMMANDS = [
     [
         sys.executable,
