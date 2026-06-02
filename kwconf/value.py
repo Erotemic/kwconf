@@ -111,6 +111,8 @@ class Value(ub.NiceRepr):
         tags (Any):
             for external program use
 
+        # TODO: Document other new values
+
     CommandLine:
         xdoctest -m /home/joncrall/code/kwconf/kwconf/value.py Value
         xdoctest -m kwconf.value Value
@@ -174,6 +176,8 @@ class Value(ub.NiceRepr):
         # was associated, so validation is a no-op.
         self._annotation: Any = None
 
+        # FIXME / TODO: Doesn't this defeat the purpose of the default factory
+        # if we just immediately construct the instance?
         if default_factory is not None:
             initial = default_factory()
         elif default is not ub.NoParam:

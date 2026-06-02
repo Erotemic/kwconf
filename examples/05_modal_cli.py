@@ -18,7 +18,6 @@ import kwconf as kw
 
 
 class Train(kw.Config):
-    __command__ = 'train'
     epochs: int = kw.Value(1, help='number of epochs')
     dry_run = kw.Flag(False, help='only print what would run')
 
@@ -33,7 +32,6 @@ class Train(kw.Config):
 
 
 class Evaluate(kw.Config):
-    __command__ = 'eval'
     dataset: str = kw.Value('demo', help='dataset name')
 
     @classmethod

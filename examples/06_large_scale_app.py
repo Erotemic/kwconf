@@ -122,7 +122,6 @@ def build_train_plan(config):
 
 
 class TrainCommand(TrainConfig):
-    __command__ = 'train'
 
     @classmethod
     def main(cls, argv=None, **kwargs):
@@ -138,7 +137,6 @@ class TrainCommand(TrainConfig):
 
 
 class EvalCommand(EvalConfig):
-    __command__ = 'eval'
 
     @classmethod
     def main(cls, argv=None, **kwargs):
@@ -156,7 +154,6 @@ class EvalCommand(EvalConfig):
 
 
 class ExportCommand(ExportConfig):
-    __command__ = 'export'
 
     @classmethod
     def main(cls, argv=None, **kwargs):
