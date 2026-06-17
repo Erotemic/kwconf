@@ -565,6 +565,52 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return cls(**coerced)
 
     @classmethod
+    def from_cli(cls, argv: Sequence[str] | str | bool | None = None,
+                 **kwargs: Any) -> "Config":
+        """Construct from command-line arguments (a named alias for :meth:`cli`)."""
+        return cls.cli(argv=argv, **kwargs)
+
+    @classmethod
+    def from_yaml(cls, path: Any, **kwargs: Any) -> "Config":
+        """
+        Construct from a YAML (or JSON) file path. Values keep the file
+        format's own typing -- no extra string coercion is applied (a quoted
+        ``"123"`` stays a string), consistent with the text-boundary rule.
+        """
+        return cls.cli(data=path, argv=False, **kwargs)
+
+    @classmethod
+    def from_env(cls, prefix: str = '', **kwargs: Any) -> "Config":
+        """
+        Construct from environment variables.
+
+        Each declared field ``name`` is read from
+        ``os.environ[f'{prefix}{name}']`` (the suffix after ``prefix`` is matched
+        case-insensitively against declared fields). Environment values are
+        strings, so they pass through the text-boundary parser via
+        :meth:`coerce`. Explicit ``kwargs`` override environment values.
+
+        Example:
+            >>> import os, kwconf
+            >>> class MyConfig(kwconf.Config):
+            >>>     __default__ = {'num': kwconf.Value(0, type=int)}
+            >>> os.environ['MYAPP_NUM'] = '7'
+            >>> assert MyConfig.from_env(prefix='MYAPP_')['num'] == 7
+            >>> del os.environ['MYAPP_NUM']
+        """
+        import os
+        fields = getattr(cls, '__default__', {}) or {}
+        collected: Dict[str, Any] = {}
+        for env_key, env_val in os.environ.items():
+            if prefix and not env_key.startswith(prefix):
+                continue
+            field = env_key[len(prefix):].lower()
+            if field in fields:
+                collected[field] = env_val
+        collected.update(kwargs)
+        return cls.coerce(**collected)
+
+    @classmethod
     def cli(
         cls,
         data: Mapping[str, Any] | str | None = None,
