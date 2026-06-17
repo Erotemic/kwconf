@@ -77,8 +77,10 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
 - **Text boundary** (argv, env): parse via the `coerce`/`auto` path. Typed file
   formats (YAML/JSON/TOML) respect their own typing — a quoted `"123"` stays a
   string; no re-parse. **[LOCKED]**
-- **`Config.coerce(**kwargs)`** — opt-in alternative constructor that parses
-  string inputs (mirrors the argv/env path; also great for tests). **[LOCKED]**
+- **Opt-in textual constructors** (mirror the argv/env path; great for tests):
+  `Config.coerce(**kwargs)` (parse a string-valued dict), plus named adapters
+  `Config.from_cli(argv)`, `Config.from_env(prefix=…)`, `Config.from_yaml(path)`.
+  Normal `MyConfig(x=…)` stays the trusted, non-coercing path. **[LOCKED]**
 - **Architecture:** physically move parsing **out of the universal
   assignment/`coerce()` path and into argv/env ingestion adapters.** Core =
   trust; adapters = parse. **[LOCKED direction; TODO implementation]**
@@ -100,24 +102,44 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
   best-effort resolution (PEP 563 / `from __future__ import annotations` safe),
   falling back to `Any` on unresolved forward refs. kwconf already has a
   best-effort resolver in `kwconf/annotations.py`. **[LOCKED]**
+- **Mechanism: a `.pyi` static facade over a `.py` runtime class.** Type
+  `Value(...)`/`Flag(...)` as overloaded functions returning `T` in the stub,
+  keep the real `class Value` at runtime so `isinstance(x, Value)` still works.
+  (Preferred over a factory `+ _Value` class, which breaks `isinstance`, and over
+  `__new__` overloads, which mypy rejects.) **[LOCKED]**
+- **Do NOT use PEP 681 `converter`** for coercion. The spec's `converter`
+  rewrites constructor/assignment *types* — the opposite of our "constructor
+  trusts, does not coerce" boundary. (mypy doesn't support it yet anyway.)
+  Coercion stays in the ingestion path. **[LOCKED]**
+- **Runtime field metadata is a separate API** from the typed surface: collect
+  `Value` objects in the metaclass into `Config.__kwconf_fields__` /
+  `Config.fields()`. Statically, `MyConfig.x` and `cfg.x` are the *field type*
+  (`int`), not the wrapper — internals must not expect to recover wrappers from
+  `MyConfig.x`. **[LOCKED]**
 - **`dataclass_transform` (constructor-kwarg checking) — OPEN.** Positional
   defaults make the synthesized `__init__` mark every `Value`-wrapped field as
-  **required** on mypy + pyright (the spec says standardized field-specifier
-  params are keyword-only), producing spurious "missing field" errors when you
-  omit a defaulted wrapped field. Bare `x: int = 5` fields are fine. So whether
-  to apply `dataclass_transform` at all is undecided. **[GPT]** — see Q1 of the
-  pending ChatGPT report.
-- **Runtime-class `Value` vs `-> T` typing** must be reconciled (factory
-  function vs `.pyi` stub vs `__new__` overloads). **[GPT / OPEN]**
+  **required** on mypy + pyright (spec: standardized field-specifier params are
+  keyword-only — *no* spec-conformant workaround, confirmed by the GPT report),
+  producing spurious "missing field" errors when a defaulted wrapped field is
+  omitted. Bare `x: int = 5` and keyword `Value(default=…)` fields are fine. So
+  whether to apply `dataclass_transform` is the live fork (see §6.1).
 
 ### Verified checker facts (mypy 2.1.0 · pyright 1.1.410 · ty 0.0.49)
 
 - Default-vs-annotation validation: works on all three, positionally (it's a
   plain typed assignment once `Value -> T`).
-- mypy + pyright fully synthesize/check `__init__`; **ty 0.0.49 does not yet**
-  for hand-rolled transforms (ty#1327 is closed/Stable → transient; we follow
-  the spec and assume it lands).
-- Positional `default` ⇒ field read as required by mypy + pyright.
+- mypy + pyright fully synthesize/check `__init__` (bad kwarg type, unknown
+  kwarg, missing required). **ty 0.0.49 does NOT** for hand-rolled transforms —
+  it does default-validation only. RE-VERIFIED 2026-06-17 on
+  `dev/poc/poc_typing/gpt_recipe.py` (GPT's recommended metaclass+keyword shape):
+  mypy/pyright caught all 4 errors, ty caught only the default. The GPT report's
+  "couldn't reproduce the ty gap" does not hold on our setup. ty#1327 is
+  closed/Stable, so treat ty's gap as transient and assume it lands.
+- **Implication for a ty-primary user:** since ty does no ctor checking either
+  way today, positional `Value(10)` forfeits *nothing on ty right now* — it only
+  forfeits mypy/pyright ctor checking.
+- Positional `default` ⇒ field read as required by mypy + pyright (and ty when
+  it synthesizes).
 - `required=True`/no-default → field correctly required.
 - Bare `x: int = 5` is fully checked and correctly optional everywhere.
 
@@ -127,11 +149,21 @@ the typing spec so it works now or eventually. Separate transient checker gaps
 
 ## 6. Open questions (consolidated)
 
-1. **[GPT]** Apply `dataclass_transform` or not, given positional defaults break
-   optional-detection for wrapped fields? Any spec-conformant way to keep
-   positional `Value(10)` *and* get constructor-kwarg checking without spurious
-   "required" errors?
-2. **[GPT]** Mechanism to keep `Value` a runtime class while typing it `-> T`.
+1. **[OPEN — the live fork]** Apply `dataclass_transform` or not? There is *no*
+   spec-conformant way to keep positional `Value(10)` AND get clean
+   constructor-kwarg checking (GPT confirmed). So:
+   - **(A) Positional-first / no transform:** keep positional `Value(10)`; rely
+     on `Value -> T` default-checking (works on ty/mypy/pyright) + bare `x:int=5`
+     for fully-checked simple fields. No false positives; no static ctor-kwarg
+     checking.
+   - **(B) Full checking / transform on:** apply `dataclass_transform`; steer
+     metadata fields to keyword `Value(default=…)` or bare attrs to get
+     mypy/pyright ctor+unknown-kwarg checking; positional `Value(10)` then reads
+     as "required" (documented caveat). ty does default-only until it ships synth.
+   - Decision driver: do we run mypy/pyright in CI and want ctor-kwarg checking?
+     For a ty-primary user, (A) costs nothing today.
+2. ~~Mechanism to keep `Value` a runtime class while typing `-> T`.~~
+   **RESOLVED:** `.pyi` facade (see §5). **[LOCKED]**
 3. **[TODO]** Contents of the `coerce` registry and the per-type `str -> T`
    parsers, especially container handling.
 4. **[TODO]** The ingestion-adapter refactor (move parsing off the assignment
