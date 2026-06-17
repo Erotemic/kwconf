@@ -73,7 +73,12 @@ def test_validation_union_int_or_none():
 
     assert C(x=None)['x'] is None
     assert C(x=5)['x'] == 5
-    assert C(x='5')['x'] == 5  # ty: ignore[invalid-argument-type]
+    # The plain constructor does not coerce; with __validate__='error' an
+    # uncoerced string fails the int|None annotation.
+    with pytest.raises(TypeError):
+        C(x='5')  # ty: ignore[invalid-argument-type]
+    # coerce() parses the string to an int, which then validates.
+    assert C.coerce(x='5')['x'] == 5
     with pytest.raises(TypeError):
         C(x=[1, 2])  # ty: ignore[invalid-argument-type]
 

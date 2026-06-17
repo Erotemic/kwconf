@@ -888,9 +888,11 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         else:
             template = self.__default__.get(key, None)
             if template is not None and isinstance(template, Value):
-                # If the new value is raw data, and we have a underlying Value
-                # object update it.
-                coerced = template.coerce(value)
+                # BOUNDARY (design.md §4): the Python assignment path TRUSTS the
+                # user and does NOT coerce strings. Coercion only happens at the
+                # text boundary (argv pre-coerces in argparse; Config.coerce()/
+                # from_cli/from_env parse explicitly). So store the value as-is.
+                coerced = value
                 self._validate_assignment(key, coerced, template)
                 self._data[key] = coerced
             else:
