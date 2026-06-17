@@ -73,7 +73,7 @@ class ParseResult:
     resolved values separate from user intent.
     """
 
-    namespace: argparse.Namespace
+    namespace: argparse.Namespace | None
     unknown_args: List[str]
     parser: argparse.ArgumentParser
     selected_parser: argparse.ArgumentParser
