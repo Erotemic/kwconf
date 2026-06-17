@@ -6,6 +6,26 @@ log in `dev/journals/claude.md` and the typing experiments in `dev/poc/`.
 Status legend: **[LOCKED]** decided · **[OPEN]** undecided · **[GPT]** waiting on
 the pending ChatGPT report · **[TODO]** implementation work, direction agreed.
 
+## 0. Implementation status (chunks 1–11, all committed; suite green + `ty check ./kwconf` green)
+
+1. removed `@dataclass_transform` (Option A)
+2. `kwconf/coerce.py` — the `auto` parser (additive)
+3. `Value(coerce=…)` kwarg → routes through `coerce.py`
+4. `Config.coerce(**kwargs)` opt-in coercing constructor
+5. **boundary**: plain constructor trusts (no string coercion at the Python boundary)
+6. **static check**: public `Value`/`Flag` typed `-> T` via a function facade in
+   `__init__.py` (no `.pyi`) — `x: int = Value(None)` errors on ty/mypy/pyright
+7. `coerce=` canonical, `type=` deprecated (mutually exclusive)
+8. `from_cli` / `from_yaml` / `from_env` named constructors
+9. **`auto` is the default parser** (annotation-gated; union & strict-bool honored)
+10. `argparse_ext` made kwconf-free (`_infer_scalar` helper) + AST guard test
+11. scalar CLI parsing routed through the field `coerce` (union-aware CLI)
+
+Remaining (optional): retire `smartcast` (still backing the deprecated `type=`
+path); route positional / nargs CLI fields through `coerce` too; add a
+`port_to_argparse` opt-in flag to emit the heavyweight annotation-based coerce
+`type=` (default stays lightweight approximations).
+
 ## 1. Vision & guiding principles
 
 - Successor to scriptconfig, **without the footguns**. The biggest historical
