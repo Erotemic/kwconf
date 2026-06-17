@@ -182,3 +182,10 @@ class TestConfigCoerceConstructor:
             __default__ = {'num': kwconf.Value(0, type=int)}
 
         assert MyConfig.coerce(num=7)['num'] == 7
+
+
+def test_coerce_and_type_are_mutually_exclusive():
+    import pytest
+    from kwconf import Value
+    with pytest.raises(ValueError, match='either .coerce.* or the deprecated'):
+        Value(None, type=int, coerce='auto')

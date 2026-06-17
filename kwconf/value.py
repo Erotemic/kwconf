@@ -75,10 +75,17 @@ class Value(ub.NiceRepr):
         value (Any):
             A float, int, etc...
 
+        coerce (Callable | str | None):
+            How to parse a *string* input into a value (the text-boundary
+            parser). Either a callable ``str -> value``, or a registry key such
+            as ``'auto'`` (annotation-gated; the eventual default), ``'yaml'``,
+            or ``'csv'``. See :mod:`kwconf.coerce`. Preferred over ``type``;
+            mutually exclusive with it.
+
         type (type | None):
-            the "type" of the value. This is usually used if the value
-            specified is not the type that `self.value` would usually be set
-            to.
+            DEPRECATED alias kept for back-compat. Sets the argparse ``type``
+            and the legacy smartcast coercion. Prefer ``coerce=`` for new code;
+            mutually exclusive with ``coerce``.
 
         parsekw (dict):
             kwargs for to argparse add_argument
@@ -147,6 +154,11 @@ class Value(ub.NiceRepr):
 
         if default_factory is not None and default is not ub.NoParam:
             raise ValueError('Error: default_factory is mutually exclusive with default')
+
+        if coerce is not None and type is not None:
+            raise ValueError(
+                'Value: pass either `coerce` (preferred) or the deprecated '
+                '`type`, not both.')
 
         type = _resolve_named_type(type)
 
