@@ -20,11 +20,15 @@ the pending ChatGPT report · **[TODO]** implementation work, direction agreed.
 9. **`auto` is the default parser** (annotation-gated; union & strict-bool honored)
 10. `argparse_ext` made kwconf-free (`_infer_scalar` helper) + AST guard test
 11. scalar CLI parsing routed through the field `coerce` (union-aware CLI)
+12. nargs/positional CLI fields routed through `coerce` (per-element via
+    `coerce.element_annotation`)
+13. `port_to_argparse(kwconf_primatives=True)` — 1-to-1 emission using
+    `argparse_ext` + our coerce; default stays lightweight pure argparse
+14. **`smartcast` retired** (module deleted); the deprecated `type=` path maps
+    onto `kwconf.coerce`
 
-Remaining (optional): retire `smartcast` (still backing the deprecated `type=`
-path); route positional / nargs CLI fields through `coerce` too; add a
-`port_to_argparse` opt-in flag to emit the heavyweight annotation-based coerce
-`type=` (default stays lightweight approximations).
+Remaining: per-feature opt-in "vendored QoL" flags on `port_to_argparse` (the
+master `kwconf_primatives` switch exists; granular ones are future work).
 
 ## 1. Vision & guiding principles
 

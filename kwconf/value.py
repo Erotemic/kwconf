@@ -7,8 +7,6 @@ from collections.abc import MutableMapping, Sequence
 
 import ubelt as ub
 
-from . import smartcast as smartcast_mod
-
 
 long_prefix_pat: re.Pattern[str] = re.compile('--[^-].*')
 short_prefix_pat: re.Pattern[str] = re.compile('-[^-].*')
@@ -247,16 +245,15 @@ class Value(ub.NiceRepr):
         Best-effort coercion of ``value`` toward this Value's expected runtime
         type. The name is deliberate: this is not a clean type-cast.
 
-        Strings delegate to ``smartcast`` for type inference. kwconf
-        intentionally departs from scriptconfig: comma-separated strings are
-        NOT auto-split into lists -- a value like ``"a,b"`` stays the literal
-        string. To get a list, declare ``Value(..., type=list)`` or use
-        ``nargs='+'`` for CLI input.
+        Strings are parsed via :mod:`kwconf.coerce` (the ``'auto'`` parser by
+        default, gated by the field annotation). kwconf intentionally departs
+        from scriptconfig: comma-separated strings are NOT auto-split into lists
+        -- ``"a,b"`` stays the literal string. To get a list use ``nargs`` or
+        ``coerce='csv'``/``'yaml'``.
 
-        Named-type sentinels like ``type='yaml'`` route strings through
-        the registered parser instead of smartcast. ``type='yaml'`` calls
-        ``yaml.safe_load`` so ``"[1,2,3]"`` becomes ``[1, 2, 3]`` and
-        ``"true"`` becomes ``True``.
+        Non-strings pass through untouched. The deprecated ``type=`` kwarg is
+        mapped onto the same machinery; ``type='yaml'`` routes through the
+        registered yaml parser.
         """
         if isinstance(value, str):
             from kwconf import coerce as _coerce_mod
@@ -266,10 +263,15 @@ class Value(ub.NiceRepr):
                 return _coerce_mod.coerce(value, annotation=self._annotation,
                                           spec=self._coerce_spec)
             if self._user_gave_type:
-                # Deprecated explicit type= path (legacy smartcast).
+                # Deprecated explicit type= path, mapped onto kwconf.coerce
+                # (smartcast has been retired). Named parsers (e.g. 'yaml') and
+                # plain types go through the annotation-gated parser; any other
+                # callable is invoked directly.
                 if self.type in _NAMED_TYPE_PARSER_SET:
                     return self.type(value)
-                return smartcast_mod.smartcast(value, self.type)
+                if isinstance(self.type, type):
+                    return _coerce_mod.auto(value, self.type)
+                return self.type(value)
             # Default: the annotation-gated 'auto' parser.
             return _coerce_mod.auto(value, self._annotation)
         return value

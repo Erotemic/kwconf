@@ -1,5 +1,6 @@
 """
-String coercion for kwconf -- the eventual successor to :mod:`kwconf.smartcast`.
+String coercion for kwconf -- the replacement for the (now-removed) ``smartcast``
+module.
 
 This module is the home of the ``coerce`` mechanism described in
 ``dev/planning/design.md``. The key entry points are:
@@ -13,7 +14,8 @@ This module is the home of the ``coerce`` mechanism described in
   ``'yaml'``, ``'csv'``). Coercion only ever runs on *strings*; real Python
   objects pass through untouched.
 
-Deliberate departures from scriptconfig / smartcast (see the design doc):
+Deliberate departures from scriptconfig's old smartcast behavior (see the
+design doc):
 
 * **No comma-splitting.** ``"1,2,3"`` stays the literal string under every
   annotation. Use ``coerce='csv'`` / ``coerce='yaml'`` or ``nargs`` for lists.
@@ -24,9 +26,8 @@ Deliberate departures from scriptconfig / smartcast (see the design doc):
   ``str`` is not allowed, ``auto`` warns and falls back to the original string.
   Annotations are statically binding but runtime-advisory.
 
-This module is intentionally additive: it is not yet wired into the Value /
-Config hot path. That integration (and the removal of ``smartcast``) happens in
-a later step.
+This is the default coercion path: ``Value.coerce()`` and ``Config.coerce()``
+route here, and the deprecated ``type=`` kwarg is mapped onto it.
 """
 from __future__ import annotations
 
