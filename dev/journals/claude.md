@@ -77,7 +77,7 @@ coercion boundary, and static-typing guarantees.
 - Should `choices=[1,2,3]` inform the parser's target type? (Probably yes.)
 - Does annotation `: bool` auto-imply flag behavior, or still require `Flag()`?
 
-### Static-typing POC results (ty 0.0.49, pyright 1.1.410, Python 3.12)
+### Static-typing POC results (ty 0.0.49, pyright 1.1.410, mypy 2.1.0, Python 3.12)
 
 POCs in `dev/poc/` (see `dev/poc/FINDINGS.md`). The user uses **`ty`**. Venv at
 `dev/poc/.venv` (git-ignored). Reproduce:
@@ -85,44 +85,68 @@ POCs in `dev/poc/` (see `dev/poc/FINDINGS.md`). The user uses **`ty`**. Venv at
 cd dev/poc
 .venv/bin/pyright --pythonpath .venv/bin/python poc_typing/<file>.py
 .venv/bin/ty check --python .venv poc_typing/<file>.py
+.venv/bin/mypy poc_typing/<file>.py
 .venv/bin/python poc_auto_parser/auto_parser.py
 ```
 
+CORRECTION to an earlier-in-session over-claim ("ty doesn't support
+dataclass_transform"): ty issue astral-sh/ty#1327 ("dataclass_transform
+support") is **closed/completed** (Stable milestone). The published **ty 0.0.49**
+binary doesn't yet synthesize a checking `__init__` for hand-rolled transforms,
+but per the user's principle we **follow the spec and assume it lands**. Both
+**mypy and pyright already implement it fully today**. So this is a transient
+gap, not a design blocker.
+
+Policy (user): don't cater to type-checker bugs/incompleteness. Follow PEP 681 /
+the typing spec so it works now or eventually. Distinguish transient checker
+gaps (fine to ignore) from real spec constraints (must design around).
+
+Checker matrix on the verified recipe (field-specifier fns returning `T`,
+`@dataclass_transform`, keyword `default=`):
+
+| check | mypy 2.1.0 | pyright 1.1.410 | ty 0.0.49 |
+|---|---|---|---|
+| bad default `x: int = Value(default=None)` | ✔ | ✔ | ✔ (plain assignment) |
+| bad ctor kwarg `C(x='3')` | ✔ | ✔ | ✗ (not synthesized yet) |
+| unknown kwarg `C(nope=1)` | ✔ | ✔ | ✗ (not synthesized yet) |
+| generic `@dataclass_transform` decorator form | ✔ | ✔ | ✗ (stdlib `@dataclass` only) |
+| keyword-default field treated optional | ✔ | ✔ | n/a |
+
 1. **`Value` must be typed to return `T`** (the value type), NOT the `Value`
    wrapper — the attrs/pydantic trick. Then `x: int = Value(default=None)` is a
-   static error on BOTH ty and pyright. Today's `Value` is typed to return
-   `Value`, so the check never fires (and would misfire as "Value not assignable
-   to int" under pyright). **Cheapest high-value change; needs no
-   `dataclass_transform`.**
+   static error on ALL THREE checkers (it's a plain typed assignment; needs no
+   `dataclass_transform`). Today's `Value` is typed to return `Value`, so the
+   check never fires (and misfires as "Value not assignable to int" under pyright).
+   **Cheapest high-value change.**
 
-2. **ty 0.0.49 does NOT implement generic `dataclass_transform.__init__`
-   synthesis.** Control test: ty caught a stdlib `@dataclass` error but ignored a
-   `@dataclass_transform`-decorated one; it only has pydantic-specific handling.
-   So constructor-kwarg checking (`MyConfig(x='3')` → error, unknown-field →
-   error) is **pyright-only** until ty ships it. Field-default validation (#1)
-   works on ty regardless.
+2. **REAL CONSTRAINT (not a checker bug): the field-specifier `default` must be
+   passed by KEYWORD.** Positional `Value(10)` is treated as a REQUIRED field by
+   BOTH mypy and pyright (so `MyConfig()` errors "missing field"). This matches
+   the spec: the standardized field-specifier parameters (`default`,
+   `default_factory`, `factory`, ...) "must be keyword-only." Implication for the
+   API:
+   - simple fields → bare attribute `x: int = 5` (full checking, optional, no
+     wrapper); kwconf already collects bare class attrs as defaults.
+   - metadata fields → `x: int = Value(default=5, help=..., alias=...)`, i.e.
+     the positional `Value(5)` idiom must become keyword `Value(default=5)`.
+   - This is the one finding that should actually shape the `Value` signature.
 
-3. **pyright treats a POSITIONAL default as required**: `x: int = Value(10)`
-   makes `x` a required ctor param (confirmed against pydantic `Field(5)` too).
-   Use KEYWORD `default=` / `default_factory=` to mark fields optional.
+3. `required=True` with no default → field-specifier overload returns `Any`
+   (type from the annotation; field required). ✔
 
-4. `required=True` with no default → field-specifier overload returns `Any`
-   (type from the annotation; field required).
-
-5. An explicit `__init__` on the BASE `Config` (kwconf has
+4. An explicit `__init__` on the BASE `Config` (kwconf has
    `__init__(self, *args, **kwargs)` at config.py:485) does NOT suppress
-   transform `__init__` synthesis on subclasses under pyright.
+   transform `__init__` synthesis on subclasses under pyright/mypy (subclasses
+   define no `__init__`). ✔
 
-6. kwconf applies the transform on the **metaclass** (config.py:336). In the POC,
-   metaclass-form + no explicit base `__init__` made ty fall back to
-   `object.__init__` (false positives); base-class form degraded silently. The
-   real permissive base `__init__` avoids the false positives but also means no
-   kwarg checking under ty.
+5. kwconf applies the transform on the **metaclass** (config.py:336); spec
+   supports decorator/metaclass/base forms. mypy+pyright handle the metaclass
+   form; ty 0.0.49 doesn't synthesize for it yet (transient).
 
-Verified recipe: `dev/poc/poc_typing/recipe_recommended.py` → pyright reports
-exactly the 3 intended errors, ty reports the 2 default-validation errors, zero
-false positives. (Value/Flag as field-specifier functions returning `T`, keyword
-defaults, `@dataclass_transform(field_specifiers=(Value, Flag), kw_only_default=True)`.)
+Verified recipe: `dev/poc/poc_typing/recipe_recommended.py` → mypy & pyright
+report exactly the 3 intended errors; ty 0.0.49 reports the 2 default-validation
+errors (no false positives). (Value/Flag as field-specifier functions returning
+`T`, keyword defaults, `@dataclass_transform(field_specifiers=(Value, Flag), kw_only_default=True)`.)
 
 ### Auto parser POC
 

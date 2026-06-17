@@ -28,14 +28,18 @@ cd dev/poc
   not assignable to `int`" under pyright). This is the cheapest, highest-value
   change.
 - **Constructor-kwarg checking** (`MyConfig(x='3')` → error; unknown-field →
-  error) needs `dataclass_transform`'s `__init__` synthesis. **pyright supports
-  it; ty 0.0.49 does not** (ty implements stdlib `@dataclass` and has
-  pydantic-specific handling, but not generic `dataclass_transform`). So under
-  ty, constructor checking is unavailable today no matter how kwconf is written.
-- The "drop runtime coercion at the Python boundary, let the checker catch it"
-  decision is therefore **pyright-enforced now, ty-enforced later**. Until ty
-  ships generic `dataclass_transform`, ty users get default-validation but not
-  constructor-kwarg validation.
+  error) needs `dataclass_transform`'s `__init__` synthesis. **mypy 2.1.0 and
+  pyright 1.1.410 both support it fully** (all transformer forms). The published
+  **ty 0.0.49** binary doesn't synthesize a checking `__init__` for hand-rolled
+  transforms yet — but ty's tracking issue astral-sh/ty#1327 is closed/completed
+  (Stable milestone), so this is a transient gap. Per project policy we follow
+  the spec and assume it lands.
+- **REAL spec constraint (all checkers):** the field-specifier `default` must be
+  passed by KEYWORD. Positional `Value(10)` is treated as a *required* field by
+  both mypy and pyright (the spec says the standardized field-specifier params
+  are keyword-only). So either use bare `x: int = 5` for simple fields or
+  `Value(default=5, ...)` for metadata fields — the positional `Value(5)` idiom
+  cannot be both wrapped and optional.
 
 ## Finding 1 — type `Value` as a field specifier returning `T`
 
