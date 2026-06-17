@@ -2074,7 +2074,8 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     def port_to_argparse(self,
                          fuzzy_hyphens: bool = False,
-                         flag_value_mode: bool = False) -> str:
+                         flag_value_mode: bool = False,
+                         kwconf_primatives: bool = False) -> str:
         """
         Attempt to make code for a nearly-equivalent argparse object.
 
@@ -2103,6 +2104,17 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 generated code using local argparse actions (supports
                 ``--flag`` and ``--flag=value`` forms for boolean / counter
                 flags).
+
+            kwconf_primatives (bool):
+                If True, emit the 1-to-1 experience that *depends on kwconf*:
+                the generated code imports ``kwconf.argparse_ext`` and
+                ``kwconf.coerce`` and wires each argument with the real
+                argparse_ext actions and our annotation-gated coerce as
+                ``type=``. This reproduces kwconf's CLI behavior exactly at the
+                cost of a small kwconf dependency, bypassing the vendored
+                lightweight reconstructions. When False (default), the generated
+                code is plain argparse with lightweight approximations (opt into
+                individual QoL features via ``flag_value_mode`` etc.).
 
         SeeAlso:
             :meth:`Config.argparse` - creates a real argparse object
@@ -2160,7 +2172,25 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         constructor_body = ub.indent(ub.urepr(parserkw, explicit=True, nobr=1))  # type: ignore
 
+        def _annotation_to_code(ann: Any) -> str:
+            # Render an annotation as code for the emitted coerce partial.
+            # Builtins/types use their name; typing / PEP 604 forms repr cleanly
+            # (``str | int | None``, ``list[int]``, ``typing.Optional[int]``).
+            if ann is None:
+                return 'None'
+            if isinstance(ann, type):
+                return ann.__name__
+            return repr(ann)
+
         lines = []
+        if kwconf_primatives:
+            lines.append(ub.codeblock(
+                '''
+                import functools
+                import typing  # noqa: F401  (used by emitted annotations)
+                from kwconf import argparse_ext
+                from kwconf import coerce as _kwconf_coerce
+                '''))
         lines.append(ub.codeblock(
             '''
             import argparse
@@ -2200,9 +2230,16 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     # positional argument is omitted.
                     kwargs['default'] = value_mod.CodeRepr('argparse.SUPPRESS')
                 action = kwargs.get('action')
+                action_name = (getattr(action, '__name__', '')
+                               if not isinstance(action, str) else '')
+                is_flag_action = action_name in (
+                    'BooleanFlagOrKeyValAction', 'CounterOrKeyValAction')
                 if not isinstance(action, str):
-                    action_name = getattr(action, '__name__', '')
-                    if flag_value_mode and action_name == 'BooleanFlagOrKeyValAction':
+                    if kwconf_primatives and is_flag_action:
+                        # Use the real argparse_ext actions (1-to-1; depends on kwconf).
+                        kwargs['action'] = value_mod.CodeRepr(
+                            f'argparse_ext.{action_name}')
+                    elif flag_value_mode and action_name == 'BooleanFlagOrKeyValAction':
                         kwargs['action'] = value_mod.CodeRepr(
                             '_PortedBooleanFlagOrKeyValAction')
                         need_ported_bool_action = True
@@ -2213,7 +2250,18 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                         need_ported_bool_action = True
                     else:
                         kwargs.pop('action', None)
-                if kwargs.get('type', None) is not None:
+                if kwconf_primatives and not is_flag_action:
+                    # Emit our annotation-gated coerce as the type= converter,
+                    # matching the live kwconf CLI behavior.
+                    ann = getattr(_value, '_annotation', None)
+                    base_ann = ann if ann is not None else kwargs.get('type')
+                    if kwargs.get('nargs', None) is not None:
+                        from kwconf import coerce as _cm
+                        base_ann = _cm.element_annotation(base_ann)
+                    kwargs['type'] = value_mod.CodeRepr(
+                        'functools.partial(_kwconf_coerce.auto, '
+                        f'annotation={_annotation_to_code(base_ann)})')
+                elif kwargs.get('type', None) is not None:
                     kwargs['type'] = value_mod.CodeRepr(kwargs['type'].__name__)
                 to_pop = {k for k, v in kwargs.items() if v is None}
                 kwargs = ub.udict(kwargs) - to_pop  # type: ignore
