@@ -283,8 +283,8 @@ def _normalize_class_defaults(defaults, annotations=None):
         ...     __default__ = {'inner': Inner, 'flag': False, 'leaf': 3}
         >>> norms = _normalize_class_defaults(Outer.__default__)
         >>> assert isinstance(norms['inner'], kwconf.SubConfig)
-        >>> assert isinstance(norms['flag'], kwconf.Value) and norms['flag'].isflag is True
-        >>> assert isinstance(norms['leaf'], kwconf.Value)
+        >>> assert isinstance(norms['flag'], kwconf.value.Value) and norms['flag'].isflag is True
+        >>> assert isinstance(norms['leaf'], kwconf.value.Value)
     """
     normalized = {}
     if defaults is None:
