@@ -125,3 +125,42 @@ class TestCoerceDispatch:
 
 def test_cannot_coerce_is_exported():
     assert issubclass(CannotCoerce, Exception)
+
+
+class TestValueCoerceKwarg:
+    """The new Value(coerce=...) kwarg routes string coercion through
+    kwconf.coerce; omitting it preserves the legacy type=/smartcast path."""
+
+    def test_legacy_path_unchanged_when_coerce_unset(self):
+        from kwconf import Value
+        v = Value(None, type=float)
+        v.update('3.3')
+        assert v.value == 3.3
+
+    def test_coerce_callable(self):
+        from kwconf import Value
+        v = Value(None, coerce=str)
+        v.update('123')
+        assert v.value == '123'   # explicit str escape hatch keeps the string
+
+    def test_coerce_csv(self):
+        from kwconf import Value
+        v = Value(None, coerce='csv')
+        v.update('1,2,3')
+        assert v.value == [1, 2, 3]
+
+    def test_coerce_auto_gated_by_annotation(self):
+        from kwconf import Value
+        v = Value(None, coerce='auto')
+        v._annotation = str           # mimic a `: str` class annotation
+        v.update('123')
+        assert v.value == '123'
+        v2 = Value(None, coerce='auto')
+        v2.update('123')              # no annotation -> full inference
+        assert v2.value == 123
+
+    def test_non_string_passthrough(self):
+        from kwconf import Value
+        v = Value(None, coerce='csv')
+        v.update([1, 2])              # already a list; not re-parsed
+        assert v.value == [1, 2]

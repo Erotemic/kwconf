@@ -142,6 +142,7 @@ class Value(ub.NiceRepr):
                  tags: Optional[Any] = None,
                  *,
                  default_factory: Callable[[], Any] | None = None,
+                 coerce: Any = None,
                  validate: Optional[Union[bool, str]] = None) -> None:
 
         if default_factory is not None and default is not ub.NoParam:
@@ -175,6 +176,12 @@ class Value(ub.NiceRepr):
         # class with a matching annotation. ``None`` means no annotation
         # was associated, so validation is a no-op.
         self._annotation: Any = None
+        # New-style coercion spec (see kwconf.coerce). ``None`` means
+        # "unset": fall back to the legacy ``type``/smartcast path. A
+        # callable or registry-string (e.g. 'auto', 'yaml', 'csv') routes
+        # string coercion through kwconf.coerce instead. This is the
+        # forward-looking replacement for ``type=``; both coexist for now.
+        self._coerce_spec: Any = coerce
 
         # FIXME / TODO: Doesn't this defeat the purpose of the default factory
         # if we just immediately construct the instance?
@@ -234,6 +241,12 @@ class Value(ub.NiceRepr):
         ``"true"`` becomes ``True``.
         """
         if isinstance(value, str):
+            if self._coerce_spec is not None:
+                # New-style coercion via kwconf.coerce. 'auto' is gated by the
+                # field annotation; named/callable specs ignore it.
+                from kwconf import coerce as _coerce_mod
+                return _coerce_mod.coerce(value, annotation=self._annotation,
+                                          spec=self._coerce_spec)
             if self.type in _NAMED_TYPE_PARSER_SET:
                 return self.type(value)
             value = smartcast_mod.smartcast(value, self.type)
