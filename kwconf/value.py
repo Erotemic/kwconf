@@ -477,6 +477,15 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any
     argkw['default'] = value
     argkw['action'] = _maker_smart_parse_action(self)
 
+    if not isflag and argkw.get('nargs', None) is None:
+        # Route scalar CLI conversion through the field's coerce() (the
+        # annotation-gated 'auto' parser / deprecated type= / coerce=), so CLI
+        # parsing matches Config.coerce() and honors unions. With no argparse
+        # ``type`` set, the ParseAction installs a _smart_type that calls
+        # template.coerce(). nargs / collection / flag fields keep argparse's
+        # own per-token handling.
+        argkw.pop('type', None)
+
     if positional:
         parent.add_argument(name, **argkw)
 

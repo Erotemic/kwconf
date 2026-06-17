@@ -52,3 +52,21 @@ def test_from_yaml_respects_file_typing(tmp_path):
     p.write_text('name: "123"\n')
     cfg = Cfg.from_yaml(str(p))
     assert cfg['name'] == '123'
+
+
+def test_from_cli_union_field_is_auto_gated():
+    """CLI parsing of a union-annotated field now honors the union (consistent
+    with Config.coerce), instead of using only the first runtime type."""
+    class C(kwconf.Config):
+        x: 'str | int | None' = None
+
+    assert C.from_cli(argv=['--x=123'])['x'] == 123
+    assert type(C.from_cli(argv=['--x=123'])['x']) is int
+    assert C.from_cli(argv=['--x=foo'])['x'] == 'foo'
+
+
+def test_from_cli_str_annotation_pins_string():
+    class C(kwconf.Config):
+        name: str = 'd'
+
+    assert C.from_cli(argv=['--name=123'])['name'] == '123'
