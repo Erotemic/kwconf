@@ -477,13 +477,13 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any
     argkw['default'] = value
     argkw['action'] = _maker_smart_parse_action(self)
 
-    if not isflag and argkw.get('nargs', None) is None:
-        # Route scalar CLI conversion through the field's coerce() (the
-        # annotation-gated 'auto' parser / deprecated type= / coerce=), so CLI
-        # parsing matches Config.coerce() and honors unions. With no argparse
-        # ``type`` set, the ParseAction installs a _smart_type that calls
-        # template.coerce(). nargs / collection / flag fields keep argparse's
-        # own per-token handling.
+    if not isflag:
+        # Route CLI conversion through the field's coerce() (the annotation-
+        # gated 'auto' parser / deprecated type= / coerce=), so CLI parsing
+        # matches Config.coerce() and honors unions. With no argparse ``type``
+        # set, the ParseAction installs a _smart_type that calls
+        # template.coerce() for scalars and per-element coercion for nargs
+        # fields. Flag fields keep their own (argparse_ext) handling.
         argkw.pop('type', None)
 
     if positional:
@@ -686,13 +686,18 @@ def _maker_smart_parse_action(self):
             self.required = False  # hack
 
             if self.type is None:
-                # If a type isn't explicitly declared, we will either use
-                # the template (if it exists) or try using a smartcast.
+                # Route conversion through the field's coerce(). For nargs
+                # fields argparse calls the converter per token, so coerce each
+                # token as the container's element type rather than the
+                # (container) field annotation.
                 def _smart_type(value):
-                    key = self.dest
-                    template = kwconf_object.__default__[key]
-                    value = template.coerce(value)
-                    return value
+                    template = kwconf_object.__default__[self.dest]
+                    if self.nargs is not None:
+                        from kwconf import coerce as _coerce_mod
+                        elem = _coerce_mod.element_annotation(
+                            getattr(template, '_annotation', None))
+                        return _coerce_mod.auto(value, elem)
+                    return template.coerce(value)
 
                 self.type = _smart_type
 

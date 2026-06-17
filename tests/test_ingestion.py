@@ -70,3 +70,18 @@ def test_from_cli_str_annotation_pins_string():
         name: str = 'd'
 
     assert C.from_cli(argv=['--name=123'])['name'] == '123'
+
+
+def test_from_cli_nargs_coerces_elements():
+    """nargs fields coerce each token as the container's element type."""
+    class C(kwconf.Config):
+        nums: 'list[int]' = kwconf.Value(None, nargs='+')
+
+    assert C.from_cli(argv=['--nums', '1', '2', '3'])['nums'] == [1, 2, 3]
+
+
+def test_from_cli_nargs_bare_list_keeps_strings():
+    class C(kwconf.Config):
+        words: list = kwconf.Value(None, nargs='+')
+
+    assert C.from_cli(argv=['--words', 'a', 'b'])['words'] == ['a', 'b']

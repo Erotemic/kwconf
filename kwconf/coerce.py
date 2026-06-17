@@ -35,7 +35,8 @@ import typing
 import warnings
 from typing import Any, Callable
 
-__all__ = ['auto', 'coerce', 'register_parser', 'CannotCoerce']
+__all__ = ['auto', 'coerce', 'register_parser', 'CannotCoerce',
+           'element_annotation']
 
 NoneType = type(None)
 
@@ -117,6 +118,40 @@ def _candidate_types(annotation: Any) -> list[type]:
         raise CannotCoerce(annotation)
     # Unresolved string / forward ref / anything else -> behave like Any.
     return list(_PRECEDENCE)
+
+
+def element_annotation(annotation: Any) -> Any:
+    """
+    For a container annotation, return the element type; otherwise return the
+    annotation unchanged.
+
+    Used for per-token coercion of ``nargs`` CLI fields: argparse applies the
+    converter to each token individually, so we coerce each token as the
+    container's element type.
+
+    Examples:
+        >>> from kwconf.coerce import element_annotation
+        >>> element_annotation(list[int])
+        <class 'int'>
+        >>> element_annotation(tuple[str, ...])
+        <class 'str'>
+        >>> element_annotation(int)
+        <class 'int'>
+        >>> element_annotation(list) is typing.Any   # bare container -> Any element
+        True
+    """
+    origin = typing.get_origin(annotation)
+    if origin in {list, set, frozenset}:
+        args = typing.get_args(annotation)
+        return args[0] if args else Any
+    if origin is tuple:
+        args = typing.get_args(annotation)
+        if len(args) == 2 and args[1] is Ellipsis:
+            return args[0]
+        return Any  # heterogeneous tuple -> per-token Any
+    if annotation in {list, set, frozenset, tuple}:
+        return Any  # bare (unparameterized) container -> unknown element type
+    return annotation
 
 
 def auto(token: str, annotation: Any = Any) -> Any:
