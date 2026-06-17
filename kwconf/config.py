@@ -95,15 +95,6 @@ from kwconf.annotations import (
 # from kwconf.util.util_class import class_or_instancemethod
 
 
-try:
-    from typing import dataclass_transform as _dataclass_transform
-except ImportError:  # pragma: no cover - Python < 3.11 compatibility
-    def _dataclass_transform(*args, **kwargs):
-        """Fallback no-op for Python versions without typing.dataclass_transform."""
-        def decorator(cls):
-            return cls
-        return decorator
-
 __all__ = ['Config', 'define']
 
 
@@ -333,7 +324,11 @@ def _normalize_class_defaults(defaults, annotations=None):
     return normalized
 
 
-@_dataclass_transform(field_specifiers=(Value, Flag))
+# NOTE: kwconf intentionally does NOT apply @dataclass_transform here (Option A,
+# see dev/planning/design.md §6.1). With positional ``Value(...)`` defaults the
+# typing spec forces the synthesized ``__init__`` to treat every wrapped field as
+# *required*, producing spurious "missing field" errors under mypy/pyright. Static
+# checking of field defaults is delivered instead by typing ``Value(...) -> T``.
 class MetaConfig(_ABCMeta):
     """
     Metaclass that collects declarative config fields and normalizes

@@ -149,19 +149,18 @@ the typing spec so it works now or eventually. Separate transient checker gaps
 
 ## 6. Open questions (consolidated)
 
-1. **[OPEN — the live fork]** Apply `dataclass_transform` or not? There is *no*
-   spec-conformant way to keep positional `Value(10)` AND get clean
-   constructor-kwarg checking (GPT confirmed). So:
-   - **(A) Positional-first / no transform:** keep positional `Value(10)`; rely
-     on `Value -> T` default-checking (works on ty/mypy/pyright) + bare `x:int=5`
-     for fully-checked simple fields. No false positives; no static ctor-kwarg
-     checking.
-   - **(B) Full checking / transform on:** apply `dataclass_transform`; steer
-     metadata fields to keyword `Value(default=…)` or bare attrs to get
-     mypy/pyright ctor+unknown-kwarg checking; positional `Value(10)` then reads
-     as "required" (documented caveat). ty does default-only until it ships synth.
-   - Decision driver: do we run mypy/pyright in CI and want ctor-kwarg checking?
-     For a ty-primary user, (A) costs nothing today.
+1. **[RESOLVED 2026-06-17 — Option A]** Do not apply `dataclass_transform`.
+   There is *no* spec-conformant way to keep positional `Value(10)` AND get
+   clean constructor-kwarg checking (GPT confirmed; ty/mypy/pyright agree). So:
+   - **(A) CHOSEN — positional-first / no transform:** keep positional
+     `Value(10)`; deliver static checking via `Value -> T` default-validation
+     (works on ty/mypy/pyright) + bare `x:int=5` for fully-checked simple fields.
+     No false positives; no static ctor-kwarg checking. The `@dataclass_transform`
+     decorator on `MetaConfig` is removed.
+   - (B) rejected: apply `dataclass_transform`, steer metadata fields to keyword
+     `Value(default=…)`; positional `Value(10)` would then read as "required"
+     (spurious "missing field" on mypy/pyright). Not worth it for a ty-primary,
+     positional-first project. Revisit only if an opt-in "strict" mode is wanted.
 2. ~~Mechanism to keep `Value` a runtime class while typing `-> T`.~~
    **RESOLVED:** `.pyi` facade (see §5). **[LOCKED]**
 3. **[TODO]** Contents of the `coerce` registry and the per-type `str -> T`
