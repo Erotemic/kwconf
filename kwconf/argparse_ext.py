@@ -13,6 +13,35 @@ _FALSY: set[str] = {'0', 'false', 'f', 'no', ''}
 KWCONF_NORICH: bool = os.environ.get('KWCONF_NORICH', '').lower() not in _FALSY
 
 
+def _infer_scalar(text: Any) -> Any:
+    """
+    Best-effort standalone scalar inference for flag-or-keyval actions.
+
+    Kept self-contained on purpose: ``argparse_ext`` must not import from the
+    rest of ``kwconf`` so it stays a small, portable layer (a parser built from
+    it can run without kwconf). It is only used as the fallback when no
+    argparse ``type`` is set; kwconf injects richer coercion via ``type=``.
+
+    Tries int, float, complex, then ``true``/``false`` and ``none``/``null``,
+    otherwise returns the original string.
+    """
+    if not isinstance(text, str):
+        return text
+    for caster in (int, float, complex):
+        try:
+            return caster(text)
+        except (ValueError, TypeError):
+            pass
+    low = text.strip().lower()
+    if low == 'true':
+        return True
+    if low == 'false':
+        return False
+    if low in {'none', 'null'}:
+        return None
+    return text
+
+
 __docstubs__ = """
 import argparse
 _Base = argparse._StoreAction
@@ -295,12 +324,10 @@ class BooleanFlagOrKeyValAction(_Base):
         else:
             # Case where no value is given, parse it and use it.
             # Allow for non-boolean values (i.e. auto) to be passed
-            from kwconf import smartcast as smartcast_mod
             if self.type is None:
-                value = smartcast_mod.smartcast(values)
+                value = _infer_scalar(values)
             else:
                 value = values
-            # value = smartcast_mod._smartcast_bool(values)
             if key_is_negative:
                 value = not value
         setattr(namespace, self.dest, value)
@@ -412,9 +439,7 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
             value: int = prev_value + key_default
         else:
             # Allow for non-boolean values (i.e. auto) to be passed
-            from kwconf import smartcast as smartcast_mod
-            value = smartcast_mod.smartcast(values)
-            # value = smartcast_mod._smartcast_bool(values)
+            value = _infer_scalar(values)
             if not key_default:
                 value = not value
 
