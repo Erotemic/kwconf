@@ -164,3 +164,21 @@ class TestValueCoerceKwarg:
         v = Value(None, coerce='csv')
         v.update([1, 2])              # already a list; not re-parsed
         assert v.value == [1, 2]
+
+
+class TestConfigCoerceConstructor:
+    def test_coerce_constructor_parses_strings(self):
+        import kwconf
+
+        class MyConfig(kwconf.Config):
+            __default__ = {'num': kwconf.Value(0, type=int)}
+
+        assert MyConfig.coerce(num='42')['num'] == 42
+
+    def test_coerce_constructor_passes_through_real_values(self):
+        import kwconf
+
+        class MyConfig(kwconf.Config):
+            __default__ = {'num': kwconf.Value(0, type=int)}
+
+        assert MyConfig.coerce(num=7)['num'] == 7

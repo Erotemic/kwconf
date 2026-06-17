@@ -537,6 +537,34 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         wrap_subconfig_defaults(self, _dont_call_post_init=_dont_call_post_init)
 
     @classmethod
+    def coerce(cls, **kwargs: Any) -> "Config":
+        """
+        Construct a config, coercing string-valued arguments through each
+        field's parser (the text-boundary path).
+
+        This is the opt-in counterpart to the plain constructor. ``cls(**kwargs)``
+        is the *trusted* Python path; ``cls.coerce(**kwargs)`` is for argv/env-like
+        string inputs and for tests that want CLI-style parsing without argv.
+        Only string values are parsed; real Python objects pass through.
+
+        Example:
+            >>> import kwconf
+            >>> class MyConfig(kwconf.Config):
+            >>>     __default__ = {'num': kwconf.Value(0, type=int)}
+            >>> cfg = MyConfig.coerce(num='42')
+            >>> assert cfg['num'] == 42
+        """
+        defaults = getattr(cls, '__default__', {}) or {}
+        coerced: Dict[str, Any] = {}
+        for key, value in kwargs.items():
+            template = defaults.get(key)
+            if isinstance(value, str) and isinstance(template, Value):
+                coerced[key] = template.coerce(value)
+            else:
+                coerced[key] = value
+        return cls(**coerced)
+
+    @classmethod
     def cli(
         cls,
         data: Mapping[str, Any] | str | None = None,
