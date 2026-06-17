@@ -160,6 +160,12 @@ class Value(ub.NiceRepr):
                 'Value: pass either `coerce` (preferred) or the deprecated '
                 '`type`, not both.')
 
+        # Whether the user explicitly passed ``type=`` (deprecated). The
+        # metaclass also populates ``self.type`` from a field annotation, so we
+        # capture user intent here, before that happens, to decide whether
+        # coerce() should use the legacy ``type`` path or the default 'auto'.
+        self._user_gave_type: bool = type is not None
+
         type = _resolve_named_type(type)
 
         self.value = None
@@ -253,15 +259,19 @@ class Value(ub.NiceRepr):
         ``"true"`` becomes ``True``.
         """
         if isinstance(value, str):
+            from kwconf import coerce as _coerce_mod
             if self._coerce_spec is not None:
-                # New-style coercion via kwconf.coerce. 'auto' is gated by the
-                # field annotation; named/callable specs ignore it.
-                from kwconf import coerce as _coerce_mod
+                # Explicit coerce= spec. 'auto' is gated by the field
+                # annotation; named/callable specs ignore it.
                 return _coerce_mod.coerce(value, annotation=self._annotation,
                                           spec=self._coerce_spec)
-            if self.type in _NAMED_TYPE_PARSER_SET:
-                return self.type(value)
-            value = smartcast_mod.smartcast(value, self.type)
+            if self._user_gave_type:
+                # Deprecated explicit type= path (legacy smartcast).
+                if self.type in _NAMED_TYPE_PARSER_SET:
+                    return self.type(value)
+                return smartcast_mod.smartcast(value, self.type)
+            # Default: the annotation-gated 'auto' parser.
+            return _coerce_mod.auto(value, self._annotation)
         return value
 
     def copy(self) -> "Value":

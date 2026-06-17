@@ -189,3 +189,36 @@ def test_coerce_and_type_are_mutually_exclusive():
     from kwconf import Value
     with pytest.raises(ValueError, match='either .coerce.* or the deprecated'):
         Value(None, type=int, coerce='auto')
+
+
+class TestAutoIsDefaultParser:
+    """With neither type= nor coerce= set, coercion uses the annotation-gated
+    'auto' parser (the new default), for both bare and Value-wrapped fields."""
+
+    def test_union_field_bare_and_wrapped_agree(self):
+        import kwconf
+
+        class Bare(kwconf.Config):
+            x: Union[str, int, None] = None
+
+        class Wrapped(kwconf.Config):
+            x: Union[str, int, None] = kwconf.Value(None)
+
+        for C in (Bare, Wrapped):
+            assert C.coerce(x='123')['x'] == 123      # int member of the union
+            assert C.coerce(x='foo')['x'] == 'foo'    # str catch-all
+            assert C.coerce(x='None')['x'] is None
+
+    def test_str_annotation_pins_to_string(self):
+        import kwconf
+
+        class C(kwconf.Config):
+            x: str = 'd'
+
+        assert C.coerce(x='123')['x'] == '123'
+
+    def test_explicit_deprecated_type_uses_legacy_path(self):
+        import kwconf
+        v = kwconf.Value(None, type=int)
+        v.update('5')
+        assert v.value == 5

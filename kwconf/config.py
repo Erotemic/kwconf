@@ -194,7 +194,14 @@ def _maybe_apply_annotation_to_value(key, value, annotations):
             value.parsekw['type'] = runtime_type
         value._annotation = annotation
         return value
-    new_value = Value(value, type=runtime_type, isflag=isinstance(value, bool))
+    # Set the annotation-derived runtime type as an attribute rather than
+    # passing ``type=`` to the constructor, so the Value is NOT marked as
+    # "user gave type=" (which would route coercion through the legacy smartcast
+    # path instead of the annotation-gated 'auto' default).
+    new_value = Value(value, isflag=isinstance(value, bool))
+    new_value.type = runtime_type
+    new_value.parsekw = dict(new_value.parsekw)
+    new_value.parsekw['type'] = runtime_type
     new_value._annotation = annotation
     return new_value
 
