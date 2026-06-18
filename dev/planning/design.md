@@ -6,7 +6,7 @@ log in `dev/journals/claude.md` and the typing experiments in `dev/poc/`.
 Status legend: **[LOCKED]** decided · **[OPEN]** undecided · **[GPT]** waiting on
 the pending ChatGPT report · **[TODO]** implementation work, direction agreed.
 
-## 0. Implementation status (chunks 1–11, all committed; suite green + `ty check ./kwconf` green)
+## 0. Implementation status (chunks 1–17, all committed; suite green + `ty check ./kwconf` green)
 
 1. removed `@dataclass_transform` (Option A)
 2. `kwconf/coerce.py` — the `auto` parser (additive)
