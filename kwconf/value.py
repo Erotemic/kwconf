@@ -12,6 +12,44 @@ long_prefix_pat: re.Pattern[str] = re.compile('--[^-].*')
 short_prefix_pat: re.Pattern[str] = re.compile('-[^-].*')
 
 
+class _FactoryUnset:
+    """
+    Sentinel for a ``default_factory`` Value whose representative template
+    value has not been materialized yet.
+
+    The factory is intentionally *not* run at class-definition time (see
+    ``_Value.__init__``); it is invoked lazily on the first read of
+    ``Value.value`` and cached on the template. Per-instance freshness is a
+    separate guarantee provided by ``clone_default``. The sentinel is a
+    copy/deepcopy-safe singleton and is falsy so attribute-introspection code
+    (e.g. ``_to_value_kw``) skips it.
+    """
+    _instance: "Optional[_FactoryUnset]" = None
+
+    def __new__(cls) -> "_FactoryUnset":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return '<FACTORY_UNSET>'
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __copy__(self) -> "_FactoryUnset":
+        return self
+
+    def __deepcopy__(self, memo: Any) -> "_FactoryUnset":
+        return self
+
+    def __reduce__(self) -> Any:
+        return (_FactoryUnset, ())
+
+
+_FACTORY_UNSET = _FactoryUnset()
+
+
 def normalize_option_str(s: str) -> str:
     return s.lstrip('-').replace('-', '_')
 
@@ -220,19 +258,23 @@ class _Value(ub.NiceRepr):
         # forward-looking replacement for ``type=``; both coexist for now.
         self._parser_spec: Any = parser
 
-        # FIXME / TODO: Doesn't this defeat the purpose of the default factory
-        # if we just immediately construct the instance?
+        # default_factory is deferred, NOT run here: invoking it at
+        # class-definition time would be wasteful (the result is only ever a
+        # representative template value) and would prematurely trigger any
+        # cost/side-effects of the factory. It is materialized lazily on the
+        # first read of ``.value`` (see the ``value`` property) and, crucially,
+        # re-invoked per Config instance by ``clone_default`` so mutable
+        # defaults are never shared.
         if default_factory is not None:
-            initial = default_factory()
+            self._value: Any = _FACTORY_UNSET
         elif default is not ub.NoParam:
-            initial = default
+            # BOUNDARY (design.md §4): the default is a Python-boundary value and
+            # is stored verbatim (WYSIWYG). It is NOT run through coerce(), so
+            # ``Value('512')`` keeps the string ``'512'``. Coercion happens only
+            # at the text boundary (argv/env/Config.coerce()).
+            self._value = default
         else:
-            initial = None
-        # BOUNDARY (design.md §4): the default is a Python-boundary value and is
-        # stored verbatim (WYSIWYG). It is NOT run through coerce(), so
-        # ``Value('512')`` keeps the string ``'512'``. Coercion happens only at
-        # the text boundary (argv/env/Config.coerce()).
-        self.value = initial
+            self._value = None
 
         # if __debug__:
         #     self._check_values()
@@ -260,6 +302,23 @@ class _Value(ub.NiceRepr):
     def __nice__(self) -> str:
         # return '{!r}: {!r}'.format(self.type, self.value)
         return f'{self.value!r}'
+
+    @property
+    def value(self) -> Any:
+        """
+        The template's current value. For ``default_factory`` fields this
+        materializes the factory lazily on first access and caches the result
+        (per-instance fresh values are produced separately by
+        ``clone_default``).
+        """
+        val = self._value
+        if val is _FACTORY_UNSET:
+            val = self._value = self.default_factory()  # type: ignore[misc]
+        return val
+
+    @value.setter
+    def value(self, val: Any) -> None:
+        self._value = val
 
     def update(self, value: Any) -> "_Value":
         self.value = self.coerce(value)
@@ -333,6 +392,11 @@ class _Value(ub.NiceRepr):
         orig_help = cast(Optional[str], self.parsekw['help'])
         orig_type = cast(Optional[Union[str, type]], self.parsekw['type'])
         value_kw: MutableMapping[str, Any] = {k: v for k, v in self.__dict__.items() if v}
+        # The value is stored under the private ``_value`` attribute (it is a
+        # lazily-materialized property); expose it under ``value`` so the
+        # ordering/pop logic below treats it as before.
+        if '_value' in value_kw:
+            value_kw['value'] = value_kw.pop('_value')
         value_kw.pop('parsekw')
         value_kw.update(value.parsekw)
         value_kw['help'] = CodeRepr(repr(orig_help))

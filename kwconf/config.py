@@ -304,6 +304,13 @@ def _normalize_class_defaults(defaults, annotations=None):
             normalized_value = value
         elif isinstance(value, Value):
             value = _maybe_apply_annotation_to_value(key, value, annotations)
+            if value.default_factory is not None:
+                # A default_factory cannot wrap a SubConfig/Config, and reading
+                # ``value.value`` here would force the factory to run at
+                # class-definition time. Skip the SubConfig detection so the
+                # factory stays deferred until first use.
+                normalized[key] = value
+                continue
             inner = value.value
             if isinstance(inner, SubConfig):
                 if value.help and not inner.help:
