@@ -51,12 +51,14 @@ master `kwconf_primatives` switch exists; granular ones are future work).
 
 ## 2. The `Value` API
 
-- **`type=` → `parser=`.** (Renamed from `coerce=` -> `parser=` since it only
-  ever parses a string at the text boundary.) The old `type` kwarg was overloaded (argparse type +
-  smartcast hint + container shape). `coerce` is a callable `str -> value` OR a
-  string key into a registry (`'auto'`, `'yaml'`, `'csv'`, ...). Default `'auto'`.
-  Precedence: **explicit `coerce` > annotation-derived auto > untyped auto.**
-  `parser=str` is the escape hatch to keep a string verbatim. **[LOCKED]**
+- **`type=` → `parser=`.** (Named `parser` because it only ever parses a string
+  at the text boundary; briefly called `coerce=`.) The old `type` kwarg was
+  overloaded (argparse type + smartcast hint + container shape). `parser` is a
+  callable `str -> value` OR a string key into a registry (`'auto'`, `'yaml'`,
+  `'csv'`, ...). Default `'auto'`. Precedence: **explicit `parser` >
+  annotation-derived auto > untyped auto.** `parser=str` is the escape hatch to
+  keep a string verbatim. The runtime *mechanism* keeps the `coerce` name
+  (`Value.coerce()`, `Config.coerce()`, `kwconf.coerce`). **[LOCKED]**
 - **`default` is positional-allowed.** `Value(10)`, `Value((256, 256))`,
   `Value('soft2')` all valid. No keyword requirement. **[LOCKED]**
 - `default_factory=` (keyword) for mutable defaults. `required=True` with no
