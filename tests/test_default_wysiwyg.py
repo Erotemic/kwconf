@@ -53,3 +53,18 @@ def test_text_boundary_still_coerces():
     # argv path: coerced to int.
     parsed = C.cli(argv=['--some_int=99'])
     assert parsed['some_int'] == 99 and isinstance(parsed['some_int'], int)
+
+
+def test_cli_with_no_argv_preserves_verbatim_default():
+    # argparse parses *string* defaults through the action's type=; the
+    # not-given merge in _read_argv must use the verbatim kwconf default so the
+    # WYSIWYG guarantee holds through .cli(), not just the plain constructor.
+    class C(kwconf.Config):
+        int_or_str: int | str = kwconf.Value('512')
+        str_or_null: str | None = kwconf.Value(None)
+        yaml_default: list = kwconf.Value('512', parser='yaml')
+
+    cfg = C.cli(argv=[])
+    assert cfg['int_or_str'] == '512' and isinstance(cfg['int_or_str'], str)
+    assert cfg['str_or_null'] is None
+    assert cfg['yaml_default'] == '512' and isinstance(cfg['yaml_default'], str)

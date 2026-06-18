@@ -1485,7 +1485,6 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # print('_not_given = {!r}'.format(_not_given))
         # print('parser._explicitly_given = {!r}'.format(parser._explicitly_given))
         for key in _not_given:
-            value = ns[key]
             if key not in self.__default__:
                 # Skip dotted selector keys or unknown argparse entries.
                 continue
@@ -1494,14 +1493,18 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             # attributes can all be Value objects, but this gets messy when the
             # "default" constructor argument is used. We should refactor so
             # _data and _default only store the raw current values,
-            # post-casting. Until then we trust the parser action to have
-            # already coerced the value.
+            # post-casting.
             default_value = self.__default__[key].value
-            # Preserve any data/default overrides that were already applied
-            # before argparse defaults are merged in.
+            # BOUNDARY (design.md §4): for keys not supplied on argv, use the
+            # kwconf default verbatim rather than ``ns[key]``. argparse coerces
+            # *string* defaults through the action's ``type=`` (e.g. a default
+            # of ``'512'`` would come back as ``512``); the Python-boundary
+            # default must stay WYSIWYG.
             if self._data.get(key, default_value) != default_value:
+                # Preserve any data/default overrides already applied before
+                # argparse defaults are merged in.
                 continue
-            self[key] = value
+            self[key] = default_value
 
         # Then load config file defaults
         if special_options:
