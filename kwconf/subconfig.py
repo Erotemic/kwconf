@@ -28,7 +28,7 @@ from typing import Any, IO
 import ubelt as ub
 
 from kwconf.config import Config
-from kwconf.value import Value
+from kwconf.value import _Value as Value
 
 __all__ = [
     'SubConfig',

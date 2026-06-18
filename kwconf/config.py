@@ -80,7 +80,7 @@ from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Un
 from kwconf import _ubelt_repr_extension
 from collections.abc import Mapping as _ABCMapping
 from kwconf.file_like import FileLike
-from kwconf.value import Value, Flag
+from kwconf.value import _Value as Value, _Flag as Flag
 from kwconf import diagnostics
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -290,8 +290,8 @@ def _normalize_class_defaults(defaults, annotations=None):
         ...     __default__ = {'inner': Inner, 'flag': False, 'leaf': 3}
         >>> norms = _normalize_class_defaults(Outer.__default__)
         >>> assert isinstance(norms['inner'], kwconf.SubConfig)
-        >>> assert isinstance(norms['flag'], kwconf.value.Value) and norms['flag'].isflag is True
-        >>> assert isinstance(norms['leaf'], kwconf.value.Value)
+        >>> assert isinstance(norms['flag'], kwconf.value._Value) and norms['flag'].isflag is True
+        >>> assert isinstance(norms['leaf'], kwconf.value._Value)
     """
     normalized = {}
     if defaults is None:
@@ -2206,14 +2206,14 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         need_ported_bool_action = False
         need_ported_counter_action = False
         for key, _value in self._data.items():
-            if isinstance(_value, value_mod.Value):
+            if isinstance(_value, value_mod._Value):
                 value = _value.value
             else:
                 value = _value
                 _value = self._default[key]
-                if not isinstance(_value, value_mod.Value):
+                if not isinstance(_value, value_mod._Value):
                     # hack
-                    _value = value_mod.Value(_value)
+                    _value = value_mod._Value(_value)
 
             invocations = value_mod._value_add_argument_kw(
                 value, _value, self, key, fuzzy_hyphens=fuzzy_hyphens)

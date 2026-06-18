@@ -6,7 +6,7 @@ def test_paths_with_commas():
     (a deliberate departure from scriptconfig). A path that contains commas
     must round-trip as a string both with and without an explicit type.
     """
-    from kwconf.value import Value
+    from kwconf.value import _Value as Value
 
     self = Value('key')
     self.update('/path/with,commas')

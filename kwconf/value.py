@@ -63,7 +63,7 @@ TODO:
 """
 
 
-class Value(ub.NiceRepr):
+class _Value(ub.NiceRepr):
     """
     You may set any item in the config's default to an instance of this class.
     Using this class allows you to declare the desired default value as well as
@@ -116,14 +116,35 @@ class Value(ub.NiceRepr):
         tags (Any):
             for external program use
 
-        # TODO: Document other new values
+        help (str | None):
+            CLI help text shown for this option.
+
+        choices (Sequence | None):
+            Restrict accepted CLI values to this set (argparse ``choices``).
+
+        nargs (int | str | None):
+            argparse ``nargs`` for this option (e.g. ``'+'``, ``'*'``, ``'?'``,
+            or an integer count).
+
+        required (bool):
+            If True, the CLI requires this option to be supplied.
+
+        default_factory (Callable[[], Any] | None):
+            A zero-argument callable that produces the default value; mutually
+            exclusive with a positional ``default``. Use for mutable defaults
+            (e.g. ``default_factory=list``).
+
+        validate (bool | str | None):
+            Opt into post-coerce annotation validation for this field. ``None``
+            inherits the owning class's ``__validate__``; ``'warn'`` warns on a
+            mismatch; ``'error'`` / ``True`` raises; ``False`` disables it.
 
     CommandLine:
-        xdoctest -m /home/joncrall/code/kwconf/kwconf/value.py Value
-        xdoctest -m kwconf.value Value
+        xdoctest -m kwconf.value _Value
 
     Example:
-        >>> self = Value(None, type=float)
+        >>> from kwconf.value import _Value
+        >>> self = _Value(None, type=float)
         >>> print('self.value = {!r}'.format(self.value))
         self.value = None
         >>> self.update('3.3')
@@ -236,7 +257,7 @@ class Value(ub.NiceRepr):
         # return '{!r}: {!r}'.format(self.type, self.value)
         return f'{self.value!r}'
 
-    def update(self, value: Any) -> "Value":
+    def update(self, value: Any) -> "_Value":
         self.value = self.coerce(value)
         return self
 
@@ -276,11 +297,11 @@ class Value(ub.NiceRepr):
             return _coerce_mod.auto(value, self._annotation)
         return value
 
-    def copy(self) -> "Value":
+    def copy(self) -> "_Value":
         import copy
         return copy.copy(self)
 
-    def clone_default(self) -> "Value":
+    def clone_default(self) -> "_Value":
         """
         Create a fresh per-instance copy of this value template.
         """
@@ -354,10 +375,10 @@ class Value(ub.NiceRepr):
             import argparse
             from kwconf.value import *  # NOQA
             action = argparse._StoreAction('foo', 'bar', default=3)
-            value = Value._from_action(action, {}, {}, 0)
+            value = _Value._from_action(action, {}, {}, 0)
 
             action = argparse._CountAction('foo', 'bar')
-            value = Value._from_action(action, {}, {}, 0)
+            value = _Value._from_action(action, {}, {}, 0)
         """
         import argparse
         key = action.dest
@@ -404,11 +425,11 @@ class Value(ub.NiceRepr):
             real_value_kw['mutex_group'] = repr(actionid_to_mgroupkey[action_id])
         if len(action.option_strings) == 0:
             real_value_kw['position'] = next(pos_counter)
-        value = Value(**real_value_kw)  # type: ignore
+        value = _Value(**real_value_kw)  # type: ignore
         return value
 
 
-class Flag(Value):
+class _Flag(_Value):
     """
     Exactly the same as a Value except isflag default to True
     """
@@ -419,7 +440,7 @@ class Flag(Value):
         super().__init__(default=default, **kwargs)
 
 
-def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
+def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
     """
     POC for a new simplified way for a value to add itself as an argument to a
     parser.
@@ -536,7 +557,7 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any
         raise
 
 
-def _value_add_argument_kw(value: Any, _value: Optional[Value], self: Any, key: str, fuzzy_hyphens: int = 0) -> dict[str, tuple]:
+def _value_add_argument_kw(value: Any, _value: Optional[_Value], self: Any, key: str, fuzzy_hyphens: int = 0) -> dict[str, tuple]:
     """
     TODO: resolve with :func:`_value_add_argument_to_parser`. This just creates
     one or more kwargs for add_argument. (Depending on how many variants of the
@@ -639,7 +660,7 @@ def _value_add_argument_kw(value: Any, _value: Optional[Value], self: Any, key: 
     return invocations
 
 
-def _resolve_alias(name: str, _value: Optional[Value], fuzzy_hyphens: int | bool) -> list[str]:
+def _resolve_alias(name: str, _value: Optional[_Value], fuzzy_hyphens: int | bool) -> list[str]:
     aliases: Optional[Sequence[str]]
     short_aliases: Optional[Sequence[str]]
     if _value is None:
