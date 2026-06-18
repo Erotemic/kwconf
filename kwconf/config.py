@@ -1871,7 +1871,7 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 dataset = kwconf.Value(None, required=True, help='input dataset')
                 deployed = kwconf.Value(None, required=True, help='weights file')
                 key1 = kwconf.Value(123, help='some key')
-                key2 = kwconf.Value(456, help='another key')
+                key2 = kwconf.Value('456', help='another key')
         """
         import click
         ctx = click.Context(click.Command(''))

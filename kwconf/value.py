@@ -228,7 +228,11 @@ class _Value(ub.NiceRepr):
             initial = default
         else:
             initial = None
-        self.update(initial)
+        # BOUNDARY (design.md §4): the default is a Python-boundary value and is
+        # stored verbatim (WYSIWYG). It is NOT run through coerce(), so
+        # ``Value('512')`` keeps the string ``'512'``. Coercion happens only at
+        # the text boundary (argv/env/Config.coerce()).
+        self.value = initial
 
         # if __debug__:
         #     self._check_values()
@@ -308,7 +312,9 @@ class _Value(ub.NiceRepr):
         import copy
         new = self.copy()
         if self.default_factory is not None:
-            new.value = new.coerce(self.default_factory())
+            # BOUNDARY (design.md §4): factory output is a Python-boundary value
+            # and is stored verbatim, consistent with __init__.
+            new.value = self.default_factory()
         else:
             new.value = copy.deepcopy(self.value)
         return new
