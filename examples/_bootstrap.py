@@ -185,10 +185,23 @@ def _iter_config_fields(config, prefix=''):
             yield name, value
 
 
-def print_resolved_config(config, label='RESOLVED CONFIG'):
-    """Print resolved config fields as name/type/value triples."""
+def print_resolved_config(config, label='RESOLVED CONFIG', explicit_only=False):
+    """
+    Print resolved config fields as name/type/value triples.
+
+    Args:
+        config (kwconf.Config): the config to print.
+        label (str): heading printed above the fields.
+        explicit_only (bool):
+            if True, only show fields that were explicitly provided on the
+            command line (as tracked by ``config._explicit_argv_keys``),
+            rather than every resolved field including defaults.
+    """
     rich_print(f'{label}:', style='bold green')
+    explicit_keys = getattr(config, '_explicit_argv_keys', frozenset())
     for name, value in _iter_config_fields(config):
+        if explicit_only and name not in explicit_keys:
+            continue
         _styled_line([
             (name, 'bold cyan'),
             (' : ', 'white'),
