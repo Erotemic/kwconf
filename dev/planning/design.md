@@ -26,11 +26,14 @@ the pending ChatGPT report · **[TODO]** implementation work, direction agreed.
     `argparse_ext` + our coerce; default stays lightweight pure argparse
 14. **`smartcast` retired** (module deleted); the deprecated `type=` path maps
     onto `kwconf.coerce`
-15. **`Value`/`Flag` are explicit-signature factory functions** (no `@overload`,
-    no `*args/**kwargs`); the runtime wrappers are the classes `_Value`/`_Flag`.
-    Public `Value`/`Flag` are typed `-> T`/`-> bool` (via a `_NODEFAULT: Any`
-    sentinel + `cast`) so `x: int = Value(None)` errors on ty/mypy/pyright with
-    no false positives for `required=`/`default_factory=`. Args fully documented.
+15. **`Value`/`Flag` are explicit-signature factory functions** (no `*args/**kwargs`);
+    the runtime wrappers are the classes `_Value`/`_Flag`. So `x: int = Value(None)`
+    errors on ty/mypy/pyright.
+16. `parser=` rename (was `coerce=`); see §2.
+17. **`Value`/`Flag` functions live in `kwconf.value`** (next to their classes;
+    `__init__` just re-exports). Two `Value` overloads give precise inference:
+    `T` from a positional/keyword `default`, or from `default_factory`'s return
+    type (works with no annotation). No false positives for `required=`.
 
 Remaining: per-feature opt-in "vendored QoL" flags on `port_to_argparse` (the
 master `kwconf_primatives` switch exists; granular ones are future work).

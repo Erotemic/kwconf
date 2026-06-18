@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, cast, Optional, Union
+from typing import Any, Callable, cast, Optional, TypeVar, Union, overload
 
 from collections.abc import MutableMapping, Sequence
 
@@ -438,6 +438,192 @@ class _Flag(_Value):
         assert isflag, 'Cannot disable isflag on a Flag value'
         kwargs['isflag'] = isflag
         super().__init__(default=default, **kwargs)
+
+
+_T = TypeVar('_T')
+
+
+# The classes above (``_Value`` / ``_Flag``) are the runtime field-metadata
+# wrappers. The PUBLIC API is these factory *functions*: they construct one of
+# those classes but are typed to return the field's value type ``T`` (the attrs
+# ``field()`` pattern), so ``x: int = Value(None)`` is a static type error and
+# ``cfg.x`` reads as ``int``. Two overloads give precise inference: from a
+# positional/keyword ``default`` (``T`` = the default's type), or from
+# ``default_factory`` (``T`` = the factory's return type, even with no
+# annotation). Internals keep constructing / isinstance-checking ``_Value`` /
+# ``_Flag`` directly.
+@overload
+def Value(
+    default: _T = ...,
+    type: Any = ...,
+    help: Optional[str] = ...,
+    choices: Sequence[Any] | None = ...,
+    position: Optional[int] = ...,
+    isflag: Union[bool, str] = ...,
+    nargs: Optional[Any] = ...,
+    alias: Sequence[str] | None = ...,
+    required: bool = ...,
+    short_alias: Sequence[str] | None = ...,
+    group: Optional[str] = ...,
+    mutex_group: Optional[str] = ...,
+    tags: Optional[Any] = ...,
+    *,
+    default_factory: None = ...,
+    parser: Any = ...,
+    validate: Optional[Union[bool, str]] = ...,
+) -> _T: ...
+@overload
+def Value(
+    *,
+    default_factory: Callable[[], _T],
+    type: Any = ...,
+    help: Optional[str] = ...,
+    choices: Sequence[Any] | None = ...,
+    position: Optional[int] = ...,
+    isflag: Union[bool, str] = ...,
+    nargs: Optional[Any] = ...,
+    alias: Sequence[str] | None = ...,
+    required: bool = ...,
+    short_alias: Sequence[str] | None = ...,
+    group: Optional[str] = ...,
+    mutex_group: Optional[str] = ...,
+    tags: Optional[Any] = ...,
+    parser: Any = ...,
+    validate: Optional[Union[bool, str]] = ...,
+) -> _T: ...
+def Value(
+    default: Any = ub.NoParam,
+    type: Any = None,
+    help: Optional[str] = None,
+    choices: Sequence[Any] | None = None,
+    position: Optional[int] = None,
+    isflag: Union[bool, str] = False,
+    nargs: Optional[Any] = None,
+    alias: Sequence[str] | None = None,
+    required: bool = False,
+    short_alias: Sequence[str] | None = None,
+    group: Optional[str] = None,
+    mutex_group: Optional[str] = None,
+    tags: Optional[Any] = None,
+    *,
+    default_factory: Optional[Callable[[], Any]] = None,
+    parser: Any = None,
+    validate: Optional[Union[bool, str]] = None,
+) -> Any:
+    """
+    Declare a config field, attaching CLI / parsing metadata to a default value.
+
+    Returns a :class:`_Value` wrapper at runtime, but is *typed* as the field's
+    value type ``T`` so the default is checked against the field annotation
+    (``x: int = Value(None)`` is a static error) and ``cfg.x`` reads as ``int``.
+    Use a bare attribute (``x: int = 5``) when you need no metadata.
+
+    Args:
+        default (T):
+            The default value. Omit for a required field (``required=True``) or
+            when using ``default_factory``. A *string* default is parsed only at
+            the text boundary, never on plain Python assignment.
+
+        type (type | str | Callable | None):
+            DEPRECATED alias for ``parser`` (kept for back-compat); mutually
+            exclusive with it. Also sets the argparse ``type``.
+
+        help (str | None):
+            CLI help text for this option.
+
+        choices (Sequence | None):
+            Restrict accepted CLI values to this set (argparse ``choices``).
+
+        position (int | None):
+            Allow this field as a positional CLI argument at this 1-based index.
+
+        isflag (bool | str):
+            If True, parse as a boolean flag; ``'counter'`` for a count flag.
+            Prefer :func:`Flag` for boolean flags.
+
+        nargs (int | str | None):
+            argparse ``nargs`` (e.g. ``'+'``, ``'*'``, ``'?'``, or an int). For
+            container fields each token is coerced as the element type.
+
+        alias (Sequence[str] | None):
+            Additional long option names (each prefixed with ``--``).
+
+        required (bool):
+            If True, the CLI requires this option. Mutually exclusive with a
+            supplied default.
+
+        short_alias (Sequence[str] | None):
+            Short option names (each prefixed with ``-``), e.g. ``['n']``.
+
+        group (str | None):
+            Display-only: group options together in CLI help.
+
+        mutex_group (str | None):
+            Mark options mutually exclusive on the command line.
+
+        tags (Any):
+            Free-form metadata for external program use.
+
+        default_factory (Callable[[], T] | None):
+            Zero-argument callable producing the default; mutually exclusive with
+            ``default``. Use for mutable defaults (e.g. ``default_factory=list``).
+            ``T`` is inferred from the factory's return type.
+
+        parser (Callable | str | None):
+            How to parse a *string* input into a value (the text-boundary
+            parser): a callable ``str -> value`` or a registry key such as
+            ``'auto'`` (annotation-gated, the default), ``'yaml'``, or ``'csv'``.
+            See :mod:`kwconf.coerce`. Preferred over ``type``.
+
+        validate (bool | str | None):
+            Opt into post-coerce annotation validation. ``None`` inherits the
+            class ``__validate__``; ``'warn'`` warns; ``'error'`` / ``True``
+            raises; ``False`` disables.
+
+    Returns:
+        T: typed as the field value type (a ``_Value`` wrapper at runtime).
+
+    Example:
+        >>> import kwconf
+        >>> class Cfg(kwconf.Config):
+        >>>     epochs: int = kwconf.Value(10, help='number of epochs')
+        >>>     name: str | None = kwconf.Value(None, alias=['n'])
+        >>>     tags: list = kwconf.Value(default_factory=list)
+        >>> assert Cfg(epochs=3)['epochs'] == 3
+    """
+    return _Value(
+        default, type=type, help=help, choices=choices, position=position,
+        isflag=isflag, nargs=nargs, alias=alias, required=required,
+        short_alias=short_alias, group=group, mutex_group=mutex_group,
+        tags=tags, default_factory=default_factory, parser=parser,
+        validate=validate,
+    )
+
+
+def Flag(
+    default: bool = False,
+    help: Optional[str] = None,
+    *,
+    alias: Sequence[str] | None = None,
+    short_alias: Sequence[str] | None = None,
+    group: Optional[str] = None,
+    mutex_group: Optional[str] = None,
+    required: bool = False,
+    position: Optional[int] = None,
+    tags: Optional[Any] = None,
+    parser: Any = None,
+    validate: Optional[Union[bool, str]] = None,
+) -> bool:
+    """
+    Declare a boolean flag field: like :func:`Value` but with flag semantics
+    (supports both ``--flag`` and ``--flag=value`` on the CLI). Typed to return
+    ``bool``. See :func:`Value` for the shared keyword arguments.
+    """
+    return cast(bool, _Flag(
+        default, help=help, alias=alias, short_alias=short_alias, group=group,
+        mutex_group=mutex_group, required=required, position=position,
+        tags=tags, parser=parser, validate=validate,
+    ))
 
 
 def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
