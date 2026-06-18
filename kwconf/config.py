@@ -531,6 +531,14 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         self._has_subconfigs = False
         self._kwconf_post_init_done = False
         self._alias_map = None
+        # Provenance: canonical keys that were explicitly supplied on argv
+        # during the most recent :func:`_read_argv`. Empty for configs that
+        # were never populated from the command line. This is intentionally
+        # private and argv-scoped; it is *not* a general "was this key set by
+        # any source" flag. Populated authoritatively by ``_read_argv`` (never
+        # by ``__setitem__``, since that funnel also handles default/config
+        # writes).
+        self._explicit_argv_keys: frozenset = frozenset()
         cls_default = getattr(self, '__default__', None)
         if cls_default:
             self._default.update(_materialize_default_items(cls_default))
@@ -1507,6 +1515,19 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         for key in explicit_keys:
             if key not in special_ns:
                 self[key] = ns[key]
+
+        # Record argv provenance once values (and any subconfig class swaps)
+        # are finalized. Use the raw ParseResult set so the snapshot faithfully
+        # reflects what argv supplied -- including ``.__class__`` selectors --
+        # then distribute the dotted keys to the realized subconfig children.
+        # Only the special-options destinations (config/dump/dumps) are
+        # dropped, since those are CLI plumbing rather than config fields.
+        from kwconf import subconfig as _subcfg_mod
+        recorded_keys = {
+            key for key in parse_result.explicit_keys
+            if key not in special_ns_keys
+        }
+        _subcfg_mod.distribute_explicit_argv_keys(self, recorded_keys)
 
         if special_options:
             dump_fpath = special_ns['dump']

@@ -953,6 +953,45 @@ def find_subconfig_paths(cfg):
     return paths
 
 
+def distribute_explicit_argv_keys(cfg, keys):
+    """
+    Record argv-explicit provenance across a realized config tree.
+
+    ``keys`` is the set of canonical (possibly dotted) destinations that were
+    explicitly supplied on argv for ``cfg``. The full set is stored on
+    ``cfg._explicit_argv_keys``; dotted keys are additionally distributed to
+    the matching SubConfig children with their leading segment stripped,
+    recursing into the realized tree so each node carries the keys relevant to
+    it (e.g. the parent records ``inner.x`` while ``inner`` records ``x``).
+
+    Example:
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
+        ...     __default__ = {'x': 1}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
+        >>> cfg = Outer(_dont_call_post_init=True)
+        >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
+        >>> distribute_explicit_argv_keys(cfg, {'inner.x'})
+        >>> assert cfg._explicit_argv_keys == frozenset({'inner.x'})
+        >>> assert cfg._data['inner']._explicit_argv_keys == frozenset({'x'})
+    """
+    keys = frozenset(keys)
+    cfg._explicit_argv_keys = keys
+    # Group dotted keys by their first segment so each subconfig child receives
+    # the remainder of the path.
+    child_keys: dict = {}
+    for key in keys:
+        head, sep, tail = key.partition('.')
+        if not sep or not tail:
+            continue
+        child = cfg._data.get(head)
+        if isinstance(child, Config):
+            child_keys.setdefault(head, set()).add(tail)
+    for head, subkeys in child_keys.items():
+        distribute_explicit_argv_keys(cfg._data[head], subkeys)
+
+
 def config_to_nested_dict(cfg, include_class=True):
     """
     Convert a realized config tree to a nested dictionary.
