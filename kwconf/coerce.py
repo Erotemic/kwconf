@@ -9,7 +9,7 @@ This module is the home of the ``coerce`` mechanism described in
   a type annotation, it infers a value using a fixed, documented precedence
   *intersected with the annotation*. The annotation's union members are the only
   candidate types it may produce.
-* :func:`coerce` -- dispatch over the ``coerce=`` spec on a :class:`kwconf.Value`
+* :func:`coerce` -- dispatch over the ``parser=`` spec on a :class:`kwconf.Value`
   (a callable, or a string key into the parser registry such as ``'auto'``,
   ``'yaml'``, ``'csv'``). Coercion only ever runs on *strings*; real Python
   objects pass through untouched.
@@ -18,10 +18,10 @@ Deliberate departures from scriptconfig's old smartcast behavior (see the
 design doc):
 
 * **No comma-splitting.** ``"1,2,3"`` stays the literal string under every
-  annotation. Use ``coerce='csv'`` / ``coerce='yaml'`` or ``nargs`` for lists.
+  annotation. Use ``parser='csv'`` / ``parser='yaml'`` or ``nargs`` for lists.
 * **Strict bool.** The ``'auto'`` parser accepts only ``0/1/true/false`` for a
   bool (never arbitrary ints like ``"123"``). Users wanting laxer behavior set
-  an explicit ``coerce``.
+  an explicit ``parser``.
 * **Warn, never raise, on no-match.** If nothing in the candidate set matches and
   ``str`` is not allowed, ``auto`` warns and falls back to the original string.
   Annotations are statically binding but runtime-advisory.
@@ -79,7 +79,7 @@ _PARSERS: dict[type, Callable[[str], Any]] = {
 
 class CannotCoerce(Exception):
     """The annotation is a shape ``auto`` cannot build from a single token
-    (e.g. ``list[int]``). Callers should use ``coerce='csv'``/``'yaml'`` or
+    (e.g. ``list[int]``). Callers should use ``parser='csv'``/``'yaml'`` or
     ``nargs``."""
 
 
@@ -191,7 +191,7 @@ def auto(token: str, annotation: Any = Any) -> Any:
     except CannotCoerce:
         warnings.warn(
             f'auto parser cannot build {annotation!r} from the single token '
-            f'{token!r}; use coerce=\'csv\'/\'yaml\' or nargs. Keeping string.',
+            f'{token!r}; use parser=\'csv\'/\'yaml\' or nargs. Keeping string.',
             stacklevel=2,
         )
         return token
@@ -216,7 +216,7 @@ def _parse_yaml(token: str) -> Any:
         import yaml  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise ImportError(
-            "coerce='yaml' requires PyYAML. Install with `pip install pyyaml`."
+            "parser='yaml' requires PyYAML. Install with `pip install pyyaml`."
         ) from exc
     return yaml.safe_load(token)
 
@@ -237,7 +237,7 @@ def _parse_csv(token: str) -> list[Any]:
     return [auto(p) for p in parts if p]
 
 
-# Registry of named string parsers usable as ``coerce='<name>'``.
+# Registry of named string parsers usable as ``parser='<name>'``.
 _REGISTRY: dict[str, Callable[..., Any]] = {
     'auto': auto,
     'yaml': _parse_yaml,
@@ -246,7 +246,7 @@ _REGISTRY: dict[str, Callable[..., Any]] = {
 
 
 def register_parser(name: str, parser: Callable[[str], Any]) -> None:
-    """Register a named parser usable as ``coerce='<name>'``."""
+    """Register a named parser usable as ``parser='<name>'``."""
     _REGISTRY[name] = parser
 
 

@@ -73,7 +73,7 @@ class _Value(ub.NiceRepr):
         value (Any):
             A float, int, etc...
 
-        coerce (Callable | str | None):
+        parser (Callable | str | None):
             How to parse a *string* input into a value (the text-boundary
             parser). Either a callable ``str -> value``, or a registry key such
             as ``'auto'`` (annotation-gated; the eventual default), ``'yaml'``,
@@ -82,8 +82,8 @@ class _Value(ub.NiceRepr):
 
         type (type | None):
             DEPRECATED alias kept for back-compat. Sets the argparse ``type``
-            and the legacy smartcast coercion. Prefer ``coerce=`` for new code;
-            mutually exclusive with ``coerce``.
+            and the legacy smartcast coercion. Prefer ``parser=`` for new code;
+            mutually exclusive with ``parser``.
 
         parsekw (dict):
             kwargs for to argparse add_argument
@@ -168,15 +168,15 @@ class _Value(ub.NiceRepr):
                  tags: Optional[Any] = None,
                  *,
                  default_factory: Callable[[], Any] | None = None,
-                 coerce: Any = None,
+                 parser: Any = None,
                  validate: Optional[Union[bool, str]] = None) -> None:
 
         if default_factory is not None and default is not ub.NoParam:
             raise ValueError('Error: default_factory is mutually exclusive with default')
 
-        if coerce is not None and type is not None:
+        if parser is not None and type is not None:
             raise ValueError(
-                'Value: pass either `coerce` (preferred) or the deprecated '
+                'Value: pass either `parser` (preferred) or the deprecated '
                 '`type`, not both.')
 
         # Whether the user explicitly passed ``type=`` (deprecated). The
@@ -213,12 +213,12 @@ class _Value(ub.NiceRepr):
         # class with a matching annotation. ``None`` means no annotation
         # was associated, so validation is a no-op.
         self._annotation: Any = None
-        # New-style coercion spec (see kwconf.coerce). ``None`` means
+        # New-style parser spec (see kwconf.coerce). ``None`` means
         # "unset": fall back to the legacy ``type``/smartcast path. A
         # callable or registry-string (e.g. 'auto', 'yaml', 'csv') routes
         # string coercion through kwconf.coerce instead. This is the
         # forward-looking replacement for ``type=``; both coexist for now.
-        self._coerce_spec: Any = coerce
+        self._parser_spec: Any = parser
 
         # FIXME / TODO: Doesn't this defeat the purpose of the default factory
         # if we just immediately construct the instance?
@@ -270,7 +270,7 @@ class _Value(ub.NiceRepr):
         default, gated by the field annotation). kwconf intentionally departs
         from scriptconfig: comma-separated strings are NOT auto-split into lists
         -- ``"a,b"`` stays the literal string. To get a list use ``nargs`` or
-        ``coerce='csv'``/``'yaml'``.
+        ``parser='csv'``/``'yaml'``.
 
         Non-strings pass through untouched. The deprecated ``type=`` kwarg is
         mapped onto the same machinery; ``type='yaml'`` routes through the
@@ -278,11 +278,11 @@ class _Value(ub.NiceRepr):
         """
         if isinstance(value, str):
             from kwconf import coerce as _coerce_mod
-            if self._coerce_spec is not None:
-                # Explicit coerce= spec. 'auto' is gated by the field
+            if self._parser_spec is not None:
+                # Explicit parser= spec. 'auto' is gated by the field
                 # annotation; named/callable specs ignore it.
                 return _coerce_mod.coerce(value, annotation=self._annotation,
-                                          spec=self._coerce_spec)
+                                          spec=self._parser_spec)
             if self._user_gave_type:
                 # Deprecated explicit type= path, mapped onto kwconf.coerce
                 # (smartcast has been retired). Named parsers (e.g. 'yaml') and

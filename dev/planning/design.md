@@ -10,12 +10,12 @@ the pending ChatGPT report · **[TODO]** implementation work, direction agreed.
 
 1. removed `@dataclass_transform` (Option A)
 2. `kwconf/coerce.py` — the `auto` parser (additive)
-3. `Value(coerce=…)` kwarg → routes through `coerce.py`
+3. `Value(parser=…)` kwarg → routes through `coerce.py`
 4. `Config.coerce(**kwargs)` opt-in coercing constructor
 5. **boundary**: plain constructor trusts (no string coercion at the Python boundary)
 6. **static check**: public `Value`/`Flag` typed `-> T` via a function facade in
    `__init__.py` (no `.pyi`) — `x: int = Value(None)` errors on ty/mypy/pyright
-7. `coerce=` canonical, `type=` deprecated (mutually exclusive)
+7. `parser=` canonical, `type=` deprecated (mutually exclusive)
 8. `from_cli` / `from_yaml` / `from_env` named constructors
 9. **`auto` is the default parser** (annotation-gated; union & strict-bool honored)
 10. `argparse_ext` made kwconf-free (`_infer_scalar` helper) + AST guard test
@@ -51,11 +51,12 @@ master `kwconf_primatives` switch exists; granular ones are future work).
 
 ## 2. The `Value` API
 
-- **`type=` → `coerce=`.** The old `type` kwarg was overloaded (argparse type +
+- **`type=` → `parser=`.** (Renamed from `coerce=` -> `parser=` since it only
+  ever parses a string at the text boundary.) The old `type` kwarg was overloaded (argparse type +
   smartcast hint + container shape). `coerce` is a callable `str -> value` OR a
   string key into a registry (`'auto'`, `'yaml'`, `'csv'`, ...). Default `'auto'`.
   Precedence: **explicit `coerce` > annotation-derived auto > untyped auto.**
-  `coerce=str` is the escape hatch to keep a string verbatim. **[LOCKED]**
+  `parser=str` is the escape hatch to keep a string verbatim. **[LOCKED]**
 - **`default` is positional-allowed.** `Value(10)`, `Value((256, 256))`,
   `Value('soft2')` all valid. No keyword requirement. **[LOCKED]**
 - `default_factory=` (keyword) for mutable defaults. `required=True` with no
@@ -94,7 +95,7 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
 - **No comma-splitting:** `"1,2,3"` stays the literal string under every
   annotation. **[LOCKED]**
 - **Containers** (`list[int]`, `dict[...]`, ...): `auto` cannot build them from a
-  single token → **warn**, pointing at `coerce='csv'|'yaml'` or `nargs`. The
+  single token → **warn**, pointing at `parser='csv'|'yaml'` or `nargs`. The
   `str -> T` registry MUST special-case containers (never `list(str)`, which is
   the relocated original footgun). **[LOCKED policy; registry TODO]**
 
@@ -206,9 +207,9 @@ the typing spec so it works now or eventually. Separate transient checker gaps
 
 ## 7. Migration from scriptconfig
 
-- `type=` → `coerce=`, with `type=` kept as a **deprecated alias** for a long
+- `type=` → `parser=`, with `type=` kept as a **deprecated alias** for a long
   while. **[LOCKED intent]**
 - Comma-splitting removed: `"1,2,3"` no longer auto-splits → use `nargs` or
-  `coerce='csv'`. Call this out loudly in the migration guide. **[LOCKED]**
+  `parser='csv'`. Call this out loudly in the migration guide. **[LOCKED]**
 - Positional `Value(...)` idiom is preserved, which keeps migration low-churn.
   **[LOCKED]**

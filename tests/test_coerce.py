@@ -59,7 +59,7 @@ class TestAutoFallback:
         assert got == 'foo'
 
     def test_container_annotation_warns_and_falls_back(self):
-        with pytest.warns(UserWarning, match="coerce='csv'"):
+        with pytest.warns(UserWarning, match="parser='csv'"):
             got = auto('1,2,3', list[int])
         assert got == '1,2,3'
 
@@ -128,7 +128,7 @@ def test_cannot_coerce_is_exported():
 
 
 class TestValueCoerceKwarg:
-    """The new Value(coerce=...) kwarg routes string coercion through
+    """The new Value(parser=...) kwarg routes string coercion through
     kwconf.coerce; omitting it preserves the legacy type=/smartcast path."""
 
     def test_legacy_path_unchanged_when_coerce_unset(self):
@@ -139,29 +139,29 @@ class TestValueCoerceKwarg:
 
     def test_coerce_callable(self):
         from kwconf import Value
-        v = Value(None, coerce=str)
+        v = Value(None, parser=str)
         v.update('123')
         assert v.value == '123'   # explicit str escape hatch keeps the string
 
     def test_coerce_csv(self):
         from kwconf import Value
-        v = Value(None, coerce='csv')
+        v = Value(None, parser='csv')
         v.update('1,2,3')
         assert v.value == [1, 2, 3]
 
     def test_coerce_auto_gated_by_annotation(self):
         from kwconf import Value
-        v = Value(None, coerce='auto')
+        v = Value(None, parser='auto')
         v._annotation = str           # mimic a `: str` class annotation
         v.update('123')
         assert v.value == '123'
-        v2 = Value(None, coerce='auto')
+        v2 = Value(None, parser='auto')
         v2.update('123')              # no annotation -> full inference
         assert v2.value == 123
 
     def test_non_string_passthrough(self):
         from kwconf import Value
-        v = Value(None, coerce='csv')
+        v = Value(None, parser='csv')
         v.update([1, 2])              # already a list; not re-parsed
         assert v.value == [1, 2]
 
@@ -187,8 +187,8 @@ class TestConfigCoerceConstructor:
 def test_coerce_and_type_are_mutually_exclusive():
     import pytest
     from kwconf import Value
-    with pytest.raises(ValueError, match='either .coerce.* or the deprecated'):
-        Value(None, type=int, coerce='auto')
+    with pytest.raises(ValueError, match='either .parser.* or the deprecated'):
+        Value(None, type=int, parser='auto')
 
 
 class TestAutoIsDefaultParser:

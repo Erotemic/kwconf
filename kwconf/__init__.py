@@ -85,7 +85,7 @@ def Value(
     tags: Optional[Any] = None,
     *,
     default_factory: Optional[Callable[[], Any]] = None,
-    coerce: Any = None,
+    parser: Any = None,
     validate: Optional[Union[bool, str]] = None,
 ) -> _T:
     """
@@ -147,7 +147,7 @@ def Value(
             Zero-argument callable producing the default; mutually exclusive with
             ``default``. Use for mutable defaults (e.g. ``default_factory=list``).
 
-        coerce (Callable | str | None):
+        parser (Callable | str | None):
             How to parse a *string* input into a value (the text-boundary
             parser): a callable ``str -> value`` or a registry key such as
             ``'auto'`` (annotation-gated, the default), ``'yaml'``, or ``'csv'``.
@@ -175,7 +175,7 @@ def Value(
         default, type=type, help=help, choices=choices, position=position,
         isflag=isflag, nargs=nargs, alias=alias, required=required,
         short_alias=short_alias, group=group, mutex_group=mutex_group,
-        tags=tags, default_factory=default_factory, coerce=coerce,
+        tags=tags, default_factory=default_factory, parser=parser,
         validate=validate,
     ))
 
@@ -191,7 +191,7 @@ def Flag(
     required: bool = False,
     position: Optional[int] = None,
     tags: Optional[Any] = None,
-    coerce: Any = None,
+    parser: Any = None,
     validate: Optional[Union[bool, str]] = None,
 ) -> bool:
     """
@@ -202,7 +202,7 @@ def Flag(
     return cast(bool, FlagClass(
         default, help=help, alias=alias, short_alias=short_alias, group=group,
         mutex_group=mutex_group, required=required, position=position,
-        tags=tags, coerce=coerce, validate=validate,
+        tags=tags, parser=parser, validate=validate,
     ))
 
 __all__ = ['Config', 'Value', 'Flag',
