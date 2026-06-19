@@ -11,17 +11,23 @@ not lost. Status:
   token just goes through ``auto``). When the design lands they will XPASS and
   strict-mode will flag them, prompting removal of the marker.
 
-The intended design (see the design chat):
+The intended design (REVISED -- uniform, no special cases):
 
-* A parser has a *kind*. ``csv`` is **list-producing**; ``yaml``/``auto`` are
-  **value-producing**. Decisions are driven by the parser kind, NOT the
-  annotation (no nesting/depth-matching).
-* ``nargs`` + list-producing parser  -> parse each token, **concat** into one
-  flat list (this is the scriptconfig dual-form: ``--k a,b,c`` == ``--k a b c``).
-* ``nargs`` + value-producing parser -> parse each token, **collect** into a
-  list (``nargs`` always wraps; so a single structured yaml token nests one
-  level and a ``list|dict`` field's dict branch is unreachable under nargs).
-* For a rich/polymorphic ``list|dict`` value, use ``yaml`` WITHOUT ``nargs``.
+* ``nargs`` applies the field's parser to EACH token and **collects** the results
+  into a list. That's the whole rule -- we just stop forcing ``auto`` per token
+  and use the real parser; argparse already collects into a list. No concat, no
+  flatten, no parser-kind distinction, no annotation depth-matching.
+* Consequences (uniform across every parser -- result depth = parser-output
+  depth + 1 for the nargs wrapper):
+    - ``parser='yaml'``, ``--key '[1,2,3]' '[4,5,6]'`` -> ``[[1,2,3],[4,5,6]]``
+    - ``parser='csv'``,  ``--key=1,2,3``               -> ``[[1,2,3]]``
+    - ``parser='csv'``,  ``--key 1 2 3``               -> ``[[1],[2],[3]]``
+  So ``csv + nargs`` is *defined but not useful*: use csv (commas) OR nargs
+  (spaces), not both.
+* The scriptconfig dual-form (``--k a,b,c`` == ``--k a b c``) is intentionally
+  DROPPED -- it required a concat special-case and was ambiguous for structured
+  tokens (``--k [1,2,3] [4,5,6]`` -> flatten or group?). For a flat list use
+  csv or nargs; for a polymorphic ``list|dict`` use yaml WITHOUT nargs.
 
 If we decide to drop this niche, delete this file -- no harm done.
 """
@@ -32,8 +38,8 @@ import pytest
 import kwconf
 
 _PENDING = (
-    "pending nargs+parser design: parser is currently ignored under nargs "
-    "(concat rule for csv / collect rule for yaml not implemented)"
+    "pending nargs+parser fix: nargs currently ignores the field parser and "
+    "runs auto per token; target is parser-per-token + collect"
 )
 
 
@@ -42,7 +48,7 @@ def _cli(cls, cmd):
 
 
 # --------------------------------------------------------------------------
-# csv + nargs : the dual-form (concat rule)
+# csv + nargs : uniform collect (defined but not a useful combo)
 # --------------------------------------------------------------------------
 class CsvInt(kwconf.Config):
     __validate__ = False  # isolate parser/nargs behavior from validation
@@ -59,37 +65,33 @@ def test_csv_nargs_empty():
     assert _cli(CsvInt, '--key') == []
 
 
-def test_csv_nargs_space_form_works_today():
-    # Already works (auto-per-token happens to match the target for plain ints).
-    assert _cli(CsvInt, '--key 1 2 3') == [1, 2, 3]
+@pytest.mark.xfail(strict=True, reason=_PENDING)
+def test_csv_nargs_comma_token_wraps():
+    # The least-surprising case: one `=`-supplied comma token csv's to a list,
+    # which nargs wraps -> list-of-one-list.
+    assert _cli(CsvInt, '--key=1,2,3') == [[1, 2, 3]]
 
 
 @pytest.mark.xfail(strict=True, reason=_PENDING)
-def test_csv_nargs_comma_form():
-    # `=`-supplied single comma token should split + concat.
-    assert _cli(CsvInt, '--key=1,2,3') == [1, 2, 3]
+def test_csv_nargs_space_tokens_wrap_each():
+    # Uniform rule: each token csv'd then collected (so this combo nests and is
+    # not useful -- documented on purpose).
+    assert _cli(CsvInt, '--key 1 2 3') == [[1], [2], [3]]
 
 
 @pytest.mark.xfail(strict=True, reason=_PENDING)
-def test_csv_nargs_mixed_form():
-    # comma AND space tokens flatten into one list.
-    assert _cli(CsvInt, '--key 1,2 3') == [1, 2, 3]
-
-
-@pytest.mark.xfail(strict=True, reason=_PENDING)
-def test_csv_nargs_dual_form_equivalence():
-    # The headline scriptconfig nicety: both spellings agree.
-    assert _cli(CsvInt, '--key 1 2 3') == _cli(CsvInt, '--key=1,2,3') == [1, 2, 3]
+def test_csv_nargs_mixed_tokens():
+    assert _cli(CsvInt, '--key 1,2 3') == [[1, 2], [3]]
 
 
 @pytest.mark.xfail(strict=True, reason=_PENDING)
 def test_csv_nargs_element_gating():
-    # list[str] keeps each element a string (annotation-aware csv per token).
-    assert _cli(CsvStr, '--key 1,2 3o') == ['1', '2', '3o']
+    # csv is annotation-aware per token: list[str] keeps strings.
+    assert _cli(CsvStr, '--key 1,2 3o') == [['1', '2'], ['3o']]
 
 
 # --------------------------------------------------------------------------
-# yaml + nargs : collect rule (value-producing; nargs always wraps in a list)
+# yaml + nargs : same uniform collect rule
 # --------------------------------------------------------------------------
 class YamlNargs(kwconf.Config):
     __validate__ = False
@@ -114,8 +116,8 @@ def test_yaml_nargs_collects_dict_tokens():
 
 
 @pytest.mark.xfail(strict=True, reason=_PENDING)
-def test_yaml_nargs_single_structured_token_nests():
-    # nargs wraps: a single yaml-list token becomes a 1-element list-of-lists.
+def test_yaml_nargs_single_structured_token_wraps():
+    # nargs always wraps: a single yaml-list token becomes a 1-element list.
     pytest.importorskip('yaml')
     assert _cli(YamlNargs, "--key '[1,2,3]'") == [[1, 2, 3]]
 
