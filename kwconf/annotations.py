@@ -42,16 +42,13 @@ def annotation_eval_context(
         ...     '__module__': __name__,
         ...     'LocalAlias': int,
         ... })
-        >>> g['typing'] is typing and g['Any'] is Any and g['Union'] is Union
-        True
-        >>> l['LocalAlias'] is int
-        True
+        >>> assert g['typing'] is typing and g['Any'] is Any and g['Union'] is Union
+        >>> assert l['LocalAlias'] is int
 
         Missing or non-string ``__module__`` values are tolerated.
 
         >>> g, l = annotation_eval_context({'__module__': 42})
-        >>> g['typing'] is typing and l['__module__'] == 42
-        True
+        >>> assert g['typing'] is typing and l['__module__'] == 42
     """
     namespace = namespace or {}
     module_globals: Dict[str, Any] = {}
@@ -80,19 +77,16 @@ def resolve_annotation(
     populate ``Value.type``, argparse ``choices``, and validation metadata.
 
     Examples:
-        >>> resolve_annotation('int') is int
-        True
-        >>> resolve_annotation('typing.Optional[str]')
-        typing.Optional[str]
+        >>> from kwconf.annotations import *  # NOQA
+        >>> assert resolve_annotation('int') is int
+        >>> assert resolve_annotation('typing.Optional[str]') == typing.Optional[str]
         >>> resolve_annotation('MissingName')
         'MissingName'
-        >>> resolve_annotation(float) is float
-        True
+        >>> assert resolve_annotation(float) is float
 
         Local names from the class namespace are available while resolving.
 
-        >>> resolve_annotation('Alias', {'Alias': bytes}) is bytes
-        True
+        >>> assert resolve_annotation('Alias', {'Alias': bytes}) is bytes
     """
     if isinstance(annotation, str):
         globalns, localns = annotation_eval_context(namespace)
@@ -121,10 +115,8 @@ def resolve_annotations(
         ...     'count': 'typing.Optional[int]',
         ...     'unknown': 'NotImported',
         ... })
-        >>> resolved['name'] is str
-        True
-        >>> resolved['count']
-        typing.Optional[int]
+        >>> assert resolved['name'] is str
+        >>> assert resolved['count'] == typing.Optional[int]
         >>> resolved['unknown']
         'NotImported'
     """
