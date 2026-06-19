@@ -726,7 +726,9 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             argv = True  # parse sys.argv by default
         if default is None:
             default = {}
-        # Note: hack to avoid calling __post_init__ twice
+        # Two-phase init: construct with __post_init__ deferred, then run it
+        # exactly once at the end of load() after every source is merged
+        # (otherwise it would fire on the empty instance and again post-load).
         self = cls(_dont_call_post_init=True)
         next_stacklevel = None if stacklevel is None else stacklevel + 1
         self.load(data, argv=argv, default=default, strict=strict,

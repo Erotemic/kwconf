@@ -709,10 +709,11 @@ class ExtendedArgumentParser_PRE_GH_114180(CompatArgumentParser):
                 short_explicit_arg = option_string[2:]
                 if short_option_prefix in self._option_string_actions:
                     action = self._option_string_actions[short_option_prefix]
-                    # FIXME: An update to CPython 3.11 added a new "sep"
-                    # pararameter in the option tuple.
-                    # Commit that broke us is here:
-                    # https://github.com/python/cpython/commit/c02b7ae4dd367444aa6822d5fb73b61e8f5a4ff9
+                    # The 3-tuple shape is correct for pre-GH-114180 argparse.
+                    # CPython 3.11.9 / 3.12.3 added a "sep" field (making it a
+                    # 4-tuple); that variant lives in
+                    # ExtendedArgumentParser_POST_GH_114180, selected via
+                    # HAS_ARGPARSE_GH_114180. So this is version-correct, not a bug.
                     tup = action, short_option_prefix, short_explicit_arg
                     result.append(tup)
 
