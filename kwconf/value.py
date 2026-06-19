@@ -947,7 +947,6 @@ def _resolve_alias(name: str, _value: Optional[_Value], fuzzy_hyphens: int | boo
 
 def _maker_smart_parse_action(self):
     import argparse
-    from itertools import chain
 
     kwconf_object = self
 
@@ -965,14 +964,20 @@ def _maker_smart_parse_action(self):
             self.required = False  # hack
 
             if self.type is None:
-                # Route conversion through the field's coerce(). For nargs
-                # fields argparse calls the converter per token, so coerce each
-                # token as the container's element type rather than the
-                # (container) field annotation.
+                # Route conversion through the field's coerce(). argparse calls
+                # the converter once per token; for nargs fields it then collects
+                # the per-token results into a list (the uniform "apply the
+                # parser to each value" rule).
                 def _smart_type(value):
                     template = kwconf_object.__default__[self.dest]
                     if self.nargs is not None:
                         from kwconf import coerce as _coerce_mod
+                        # With an explicit parser, apply it per token (csv ->
+                        # list, yaml -> value); argparse collects the results.
+                        if getattr(template, '_parser_spec', None) is not None:
+                            return template.coerce(value)
+                        # Otherwise coerce each token as the container's element
+                        # type rather than the (container) field annotation.
                         elem = _coerce_mod.element_annotation(
                             getattr(template, '_annotation', None))
                         return _coerce_mod.auto(value, elem)
@@ -985,11 +990,11 @@ def _maker_smart_parse_action(self):
             # print('option_string = {!r}'.format(option_string))
             # print('values = {!r}'.format(values))
 
-            if isinstance(values, list) and len(values):
-                # We got a list of lists, which we hack into a flat list
-                if isinstance(values[0], list):
-                    values = list(chain(*values))
-
+            # No flattening: under nargs we apply the parser to each token and
+            # collect the results verbatim (the uniform rule). A list-producing
+            # parser like csv therefore yields a list-of-lists -- intended; the
+            # old concat hack is gone (it created ambiguity for structured
+            # tokens, e.g. csv 1,2 3,4 -> [1,2,3,4] vs [[1,2],[3,4]]).
             setattr(namespace, action.dest, values)
             if not hasattr(parser, '_explicitly_given'):
                 # We might be given a subparser / parent parser
