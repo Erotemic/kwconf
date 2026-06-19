@@ -79,7 +79,7 @@ import argparse as argparse_mod
 from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Union, cast
 from kwconf import _ubelt_repr_extension
 from collections.abc import Mapping as _ABCMapping
-from kwconf.file_like import FileLike
+from kwconf.util.util_fileio import open_text_input
 from kwconf.value import _Value as Value, _Flag as Flag
 from kwconf import diagnostics
 from collections.abc import Mapping, Sequence
@@ -267,7 +267,7 @@ def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any
                 mode = 'json'
             else:
                 mode = 'yaml'
-        with FileLike(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
+        with open_text_input(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
             if mode == 'yaml':
                 import yaml  # type: ignore[import-untyped]
                 return yaml.load(file, Loader=yaml.SafeLoader)
@@ -1588,12 +1588,12 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """ overloadable function called after each load """
         ...
 
-    def dump(self, stream: Optional[Union[FileLike, IO[str]]] = None, mode: Optional[str] = None):
+    def dump(self, stream: Optional[IO[str]] = None, mode: Optional[str] = None):
         """
         Write configuration file to a file or stream
 
         Args:
-            stream (FileLike | None): the stream to write to
+            stream (IO[str] | None): the writable stream to write to
             mode (str | None): can be 'yaml' or 'json' (defaults to 'yaml')
         """
         if mode is None:

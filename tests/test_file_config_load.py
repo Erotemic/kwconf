@@ -88,6 +88,38 @@ def test_json_load():
     assert dict(config2) == dict(config)
 
 
+def test_load_from_open_file_object():
+    # load() accepts an already-open readable file object; the loader must NOT
+    # close a caller-supplied stream (open_text_input only closes paths it
+    # opened itself). This branch was previously untested.
+    dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
+    class MyConfig(kwconf.Config):
+        option1: typing.Any = 'a'
+        option2: str = 'b'
+    config = MyConfig(option1=3, option2='baz')
+    fpath = dpath / 'test_load_fileobj.json'
+    with open(fpath, 'w') as file:
+        config.dump(file, mode='json')
+
+    config2 = MyConfig()
+    with open(fpath, 'r') as file:
+        config2.load(data=file, mode='json')
+        # The caller still owns the stream and it remains open.
+        assert not file.closed
+    assert dict(config2) == dict(config)
+
+
+def test_open_text_input_rejects_bad_input():
+    import pytest
+    from kwconf.util.util_fileio import open_text_input
+    with pytest.raises(ValueError):
+        with open_text_input('/this/path/does/not/exist.yaml', 'r'):
+            pass
+    with pytest.raises(TypeError):
+        with open_text_input(12345, 'r'):  # not a path or readable file
+            pass
+
+
 def test_config_dumps_load_cli():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()

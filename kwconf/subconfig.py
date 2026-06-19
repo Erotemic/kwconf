@@ -336,7 +336,7 @@ def coerce_data_updates(data, mode=None):
         return {}
 
     import os
-    from kwconf.file_like import FileLike
+    from kwconf.util.util_fileio import open_text_input
 
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
         if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
@@ -354,7 +354,7 @@ def coerce_data_updates(data, mode=None):
                     mode = 'json'
             if mode is None:
                 mode = 'yaml'
-            with FileLike(data, 'r') as file:
+            with open_text_input(data, 'r') as file:
                 if mode == 'yaml':
                     import yaml
                     user_config = yaml.load(file, Loader=yaml.SafeLoader)
