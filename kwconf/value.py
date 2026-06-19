@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import pprint
 from typing import Any, Callable, cast, Optional, TypeVar, Union, overload
 
 from collections.abc import MutableMapping, Sequence
@@ -813,9 +814,9 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: An
         parent.add_argument(*option_strings, required=required, **argkw)
     except Exception:
         print('ERROR: Failed to add argument (in _value_add_argument_to_parser / Config.argparse)')
-        print('argkw = {}'.format(ub.urepr(argkw, nl=1)))
-        print('required = {}'.format(ub.urepr(required, nl=1)))
-        print('option_strings = {}'.format(ub.urepr(option_strings, nl=1)))
+        print('argkw = {}'.format(pprint.pformat(argkw)))
+        print('required = {}'.format(pprint.pformat(required)))
+        print('option_strings = {}'.format(pprint.pformat(option_strings)))
         raise
 
 

@@ -72,6 +72,7 @@ import copy
 import inspect
 import os
 import sys
+import pprint
 import warnings
 import ubelt as ub
 import itertools as it
@@ -424,7 +425,7 @@ class MetaConfig(_ABCMeta):
             namespace['__default__'] = this_default
 
         if diagnostics.DEBUG_META_CONFIG:
-            print('FINAL namespace = {}'.format(ub.urepr(namespace, nl=2)))
+            print('FINAL namespace = {}'.format(pprint.pformat(vars(namespace))))
         cls = super().__new__(mcls, name, bases, namespace, *args, **kwargs)  # type: ignore
 
         # Modify the __init__ docstring to surface the valid keys to help().
@@ -752,9 +753,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 import rich
                 from rich.markup import escape
             except ImportError:
-                print('config = ' + ub.urepr(self, nl=1))  # type: ignore
+                print('config = ' + pprint.pformat(dict(self)))
             else:
-                rich.print('config = ' + escape(ub.urepr(self, nl=1)))  # type: ignore
+                rich.print('config = ' + escape(pprint.pformat(dict(self))))
         if diagnostics.DEBUG_CONFIG:
             print(f'[kwconf] Return {cls.__name__}.cli')
         return self

@@ -25,7 +25,6 @@ from __future__ import annotations
 import inspect
 from collections.abc import Mapping
 from typing import Any, IO
-import ubelt as ub
 
 from kwconf.util.util_misc import iterable
 from kwconf.config import Config

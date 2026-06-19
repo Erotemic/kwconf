@@ -65,6 +65,7 @@ Note:
 from __future__ import annotations
 
 import sys
+import pprint
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import ubelt as ub
@@ -676,9 +677,9 @@ class ModalCLI(metaclass=MetaModalCLI):
         unknown_args = parse_result.unknown_args
 
         if diagnostics.DEBUG_MODAL:
-            print(f'[kwconf.modal.ModalCLI.main] Modal main {self} parsed arguments: ' + ub.urepr(kw, nl=1))  # type: ignore
+            print(f'[kwconf.modal.ModalCLI.main] Modal main {self} parsed arguments: ' + pprint.pformat(kw))
             if unknown_args:
-                print(f'[kwconf.modal.ModalCLI.main] Modal main {self} unknown args: ' + ub.urepr(unknown_args, nl=1))  # type: ignore
+                print(f'[kwconf.modal.ModalCLI.main] Modal main {self} unknown args: ' + pprint.pformat(unknown_args))
 
         __opaque_main__ = kw.pop('__opaque_main__', None)
         if __opaque_main__ is not None:
