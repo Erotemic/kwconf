@@ -1,0 +1,3 @@
+# Optional: enables the ubelt-backed niceties (rich repr extension,
+# Config.__json__, and port_to_argparse codegen).
+ubelt>=1.3.6

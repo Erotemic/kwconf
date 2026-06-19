@@ -13,7 +13,7 @@ Preferred usage:
     import kwconf as kw
 
 
-    class MyConfig(kw.DataConfig):
+    class MyConfig(kw.Config):
         x: int = 1
         y: str = 'foo'
         tags: list[str] = kw.Value(default_factory=list)
@@ -32,7 +32,7 @@ Ignore:
     mkinit ~/code/kwconf/kwconf/__init__.py --nomods --relative -w
 """
 
-__version__ = '0.9.2'
+__version__ = '0.10.0'
 
 __submodules__ = {
     'modal': None,
@@ -40,14 +40,18 @@ __submodules__ = {
     'value': None,
     'cli': None,
     'dataconfig': None,
+    'annotations': None,
 }
 
 from . import diagnostics  # NOQA
 from .modal import (ModalCLI, ModalValue)
-from .config import (DataConfig, define,)
-from .value import (Value, Flag)
+from .config import (Config, define,)
+# Value / Flag are factory FUNCTIONS defined in kwconf.value (typed to
+# return the field value type T). _Value / _Flag are the runtime wrapper
+# classes, re-exported as ValueClass / FlagClass for isinstance / subclassing.
+from .value import (Value, Flag, _Value as ValueClass, _Flag as FlagClass)
 from .dataconfig import (dataconf,)
 from .subconfig import (SubConfig,)
 
-__all__ = ['DataConfig', 'Value', 'Flag',
+__all__ = ['Config', 'Value', 'Flag',
            'dataconf', 'define', 'ModalCLI', 'ModalValue', 'SubConfig']

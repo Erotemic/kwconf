@@ -3,7 +3,7 @@ Write simple configs and update from CLI, kwargs, json, and yaml.
 
 ``kwconf`` provides a simple way to make configurable scripts that combine
 config files, command-line arguments, and Python keyword arguments. A
-config is defined by subclassing :class:`DataConfig` and declaring fields
+config is defined by subclassing :class:`Config` and declaring fields
 as typed class variables. The instance behaves like a dict (it supports
 ``config['x']``) and like a namespace (``config.x``).
 
@@ -14,7 +14,7 @@ The future-facing schema style uses typed class variables. Use
 Example:
     >>> import kwconf as kw
     >>> # The simplest config: typed fields with raw defaults.
-    >>> class ExampleConfig(kw.DataConfig):
+    >>> class ExampleConfig(kw.Config):
     ...     num: int = 1
     ...     mode: str = 'bar'
     ...     tags: list = kw.Value(default_factory=list, help='free-form tags')
@@ -52,7 +52,7 @@ Note:
 Example:
     >>> # Comma strings stay strings; lists are explicit.
     >>> import kwconf as kw
-    >>> class ListConfig(kw.DataConfig):
+    >>> class ListConfig(kw.Config):
     ...     plain: str = ''
     ...     tags: list = kw.Value(default_factory=list, nargs='+')
     >>> config = ListConfig.cli(argv=['--plain=a,b,c', '--tags', 'x', 'y'])
@@ -62,7 +62,7 @@ Example:
     >>> assert config['tags'] == ['x', 'y']
 
 Note:
-    The ``__default__`` dict form remains supported on ``DataConfig`` for
+    The ``__default__`` dict form remains supported on ``Config`` for
     compatibility with existing code, but new code should prefer typed
     class variables.
 """
@@ -71,29 +71,41 @@ from __future__ import annotations
 import copy
 import inspect
 import os
+import sys
+import pprint
 import warnings
-import ubelt as ub
 import itertools as it
 import argparse as argparse_mod
-import types
 from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Union, cast
 from kwconf import _ubelt_repr_extension
 from collections.abc import Mapping as _ABCMapping
-from kwconf.file_like import FileLike
-from kwconf.value import Value, Flag
+from collections import Counter
+from kwconf.util.util_fileio import open_text_input
+from kwconf.util.util_yaml import import_yaml
+from kwconf.util.util_text import codeblock, paragraph, indent
+from kwconf.util.util_misc import iterable, import_ubelt
+from kwconf.util.util_repr import NiceRepr
+from kwconf.value import _Value as Value, _Flag as Flag
 from kwconf import diagnostics
-import typing
-
 from collections.abc import Mapping, Sequence
 from typing import Any
+from abc import ABCMeta as _ABCMeta
+from kwconf.annotations import (
+    choices_from_annotation as _choices_from_annotation,
+    format_annotation as _format_annotation,
+    get_class_namespace_annotations as _get_class_namespace_annotations,
+    runtime_type_from_annotation as _runtime_type_from_annotation,
+    value_matches_annotation as _value_matches_annotation,
+)
 # from kwconf.util.util_class import class_or_instancemethod
 
-__all__ = ['DataConfig', 'define']
+
+__all__ = ['Config', 'define']
 
 
 def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
     """
-    Alternate method for defining a custom :class:`DataConfig` type from a
+    Alternate method for defining a custom :class:`Config` type from a
     dict of defaults.
 
     Example:
@@ -108,121 +120,17 @@ def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
     from textwrap import dedent
     if name is None:
         hashid = str(uuid.uuid4()).replace('-', '_')
-        name = 'DataConfig_{}'.format(hashid)
+        name = 'Config_{}'.format(hashid)
     vals: Dict[str, Any] = {'default': default}
     code = dedent(
         '''
         import kwconf
-        class {name}(kwconf.DataConfig):
+        class {name}(kwconf.Config):
             __default__ = default
         '''.strip('\n').format(name=name))
     exec(code, vals)
     cls = vals[name]
-    return cast(Type["DataConfig"], cls)
-
-
-def _runtime_type_from_annotation(annotation: Any) -> type | None:
-    if annotation is None or annotation is Any or isinstance(annotation, str):
-        return None
-    origin = typing.get_origin(annotation)
-    if origin is typing.Literal:
-        # ``Literal['a', 'b']`` -> infer the type of the choices.
-        choice_types = {type(arg) for arg in typing.get_args(annotation)}
-        if len(choice_types) == 1:
-            (only_type,) = choice_types
-            return only_type
-        return None
-    if origin in {Union, types.UnionType}:
-        args = [arg for arg in typing.get_args(annotation) if arg is not type(None)]
-        for arg in args:
-            runtime_type = _runtime_type_from_annotation(arg)
-            if runtime_type is not None:
-                return runtime_type
-        return None
-    if origin is not None:
-        return cast(type | None, origin)
-    if isinstance(annotation, type):
-        return annotation
-    return None
-
-
-def _choices_from_annotation(annotation: Any) -> tuple | None:
-    """
-    Return the choices implied by ``annotation`` if it is (or wraps via
-    ``Optional``/``Union``) a :data:`typing.Literal`, otherwise None.
-    """
-    if annotation is None or isinstance(annotation, str):
-        return None
-    origin = typing.get_origin(annotation)
-    if origin is typing.Literal:
-        return typing.get_args(annotation)
-    if origin in {Union, types.UnionType}:
-        for arg in typing.get_args(annotation):
-            if arg is type(None):
-                continue
-            ch = _choices_from_annotation(arg)
-            if ch is not None:
-                return ch
-    return None
-
-
-def _value_matches_annotation(value: Any, annotation: Any) -> bool:
-    """
-    Return True if ``value`` is consistent with ``annotation``.
-
-    Supports plain runtime types (int, str, bool, None), ``Literal[...]``,
-    unions (``X | Y``, ``Optional[X]``, ``Union[...]``), and parameterized
-    collections (``list[T]``, ``tuple[T, ...]``, ``dict[K, V]``, ``set[T]``)
-    with a one-level element-type check. Annotations the helper cannot
-    reason about (custom generics, callables, ``TypeVar``, etc.) return
-    True so we under-validate rather than misvalidate.
-    """
-    if annotation is None or annotation is Any or isinstance(annotation, str):
-        return True
-    if annotation is type(None):
-        return value is None
-    origin = typing.get_origin(annotation)
-    if origin is typing.Literal:
-        return value in typing.get_args(annotation)
-    if origin in {Union, types.UnionType}:
-        return any(_value_matches_annotation(value, arg)
-                   for arg in typing.get_args(annotation))
-    if origin in {list, set, frozenset}:
-        if not isinstance(value, origin):
-            return False
-        (elem_t,) = typing.get_args(annotation) or (Any,)
-        return all(_value_matches_annotation(v, elem_t) for v in value)
-    if origin is tuple:
-        if not isinstance(value, tuple):
-            return False
-        args = typing.get_args(annotation)
-        if len(args) == 2 and args[1] is Ellipsis:
-            return all(_value_matches_annotation(v, args[0]) for v in value)
-        if len(args) != len(value):
-            return False
-        return all(_value_matches_annotation(v, t) for v, t in zip(value, args))
-    if origin is dict:
-        if not isinstance(value, dict):
-            return False
-        args = typing.get_args(annotation) or (Any, Any)
-        kt, vt = args
-        return all(_value_matches_annotation(k, kt) and _value_matches_annotation(v, vt)
-                   for k, v in value.items())
-    if origin is not None:
-        # Some other parameterized generic; check the origin only.
-        try:
-            return isinstance(value, origin)
-        except TypeError:
-            return True
-    if isinstance(annotation, type):
-        return isinstance(value, annotation)
-    return True
-
-
-def _format_annotation(annotation: Any) -> str:
-    if hasattr(annotation, '__name__'):
-        return cast(str, annotation.__name__)
-    return str(annotation)
+    return cast(Type["Config"], cls)
 
 
 def _maybe_apply_annotation_to_value(key, value, annotations):
@@ -291,20 +199,28 @@ def _maybe_apply_annotation_to_value(key, value, annotations):
             value.parsekw['type'] = runtime_type
         value._annotation = annotation
         return value
-    new_value = Value(value, type=runtime_type, isflag=isinstance(value, bool))
+    # Set the annotation-derived runtime type as an attribute rather than
+    # passing ``type=`` to the constructor, so the Value is NOT marked as
+    # "user gave type=" (which would route coercion through the legacy smartcast
+    # path instead of the annotation-gated 'auto' default).
+    new_value = Value(value, isflag=isinstance(value, bool))
+    new_value.type = runtime_type
+    new_value.parsekw = dict(new_value.parsekw)
+    new_value.parsekw['type'] = runtime_type
     new_value._annotation = annotation
     return new_value
 
 
-def _collect_declared_config_attrs(namespace: Dict[str, Any]) -> Dict[str, Any]:
-    annotations = namespace.get('__annotations__', {})
+def _collect_declared_config_attrs(namespace: Dict[str, Any],
+                                   annotations: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    annotations = annotations or {}
     attr_default = {}
     for k, v in namespace.items():
         if k.startswith('_') or k == 'default':
             continue
         if isinstance(v, classmethod) or isinstance(v, staticmethod):
             continue
-        if callable(v) and not (inspect.isclass(v) and issubclass(v, DataConfig)):
+        if callable(v) and not (inspect.isclass(v) and issubclass(v, Config)):
             continue
         attr_default[k] = _maybe_apply_annotation_to_value(k, v, annotations)
     return attr_default
@@ -322,13 +238,13 @@ def _materialize_default_items(defaults: Mapping[str, Any]) -> Dict[str, Any]:
 
 def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any]:
     """
-    Normalize a ``data`` argument (None, dict, DataConfig, file/path/string) into
-    a plain dict ready for DataConfig.load.
+    Normalize a ``data`` argument (None, dict, Config, file/path/string) into
+    a plain dict ready for Config.load.
 
     Supports:
 
       * ``None`` -> ``{}``
-      * a :class:`DataConfig` instance -> ``data.asdict()``
+      * a :class:`Config` instance -> ``data.asdict()``
       * a :class:`dict` -> returned as-is
       * a file path (str / os.PathLike) or readable file -> parsed by
         ``mode`` (auto-detected from file extension; defaults to yaml).
@@ -336,7 +252,7 @@ def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any
     """
     if data is None:
         return {}
-    if isinstance(data, DataConfig):
+    if isinstance(data, Config):
         return data.asdict()
     if isinstance(data, dict):
         return data
@@ -346,8 +262,8 @@ def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any
             try:
                 return json.loads(data)
             except Exception:
-                import yaml  # type: ignore[import-untyped]
                 import io
+                yaml = import_yaml('YAML parsing')
                 return yaml.load(io.StringIO(data), Loader=yaml.SafeLoader)
         if mode is None:
             if isinstance(data, str) and data.lower().endswith('.json'):
@@ -356,15 +272,15 @@ def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any
                 mode = 'json'
             else:
                 mode = 'yaml'
-        with FileLike(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
+        with open_text_input(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
             if mode == 'yaml':
-                import yaml  # type: ignore[import-untyped]
+                yaml = import_yaml('YAML file loading')
                 return yaml.load(file, Loader=yaml.SafeLoader)
             if mode == 'json':
                 import json
                 return json.load(file)
             raise KeyError(mode)
-    raise TypeError(f'Expected path, dict, or DataConfig; got {type(data)!r}')
+    raise TypeError(f'Expected path, dict, or Config; got {type(data)!r}')
 
 
 def _normalize_class_defaults(defaults, annotations=None):
@@ -373,14 +289,14 @@ def _normalize_class_defaults(defaults, annotations=None):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': Inner, 'flag': False, 'leaf': 3}
         >>> norms = _normalize_class_defaults(Outer.__default__)
         >>> assert isinstance(norms['inner'], kwconf.SubConfig)
-        >>> assert isinstance(norms['flag'], kwconf.Value) and norms['flag'].isflag is True
-        >>> assert isinstance(norms['leaf'], kwconf.Value)
+        >>> assert isinstance(norms['flag'], kwconf.value._Value) and norms['flag'].isflag is True
+        >>> assert isinstance(norms['leaf'], kwconf.value._Value)
     """
     normalized = {}
     if defaults is None:
@@ -393,19 +309,26 @@ def _normalize_class_defaults(defaults, annotations=None):
             normalized_value = value
         elif isinstance(value, Value):
             value = _maybe_apply_annotation_to_value(key, value, annotations)
+            if value.default_factory is not None:
+                # A default_factory cannot wrap a SubConfig/Config, and reading
+                # ``value.value`` here would force the factory to run at
+                # class-definition time. Skip the SubConfig detection so the
+                # factory stays deferred until first use.
+                normalized[key] = value
+                continue
             inner = value.value
             if isinstance(inner, SubConfig):
                 if value.help and not inner.help:
                     inner.parsekw['help'] = value.help
                 normalized_value = inner
-            elif isinstance(inner, DataConfig) or (
-                inspect.isclass(inner) and issubclass(inner, DataConfig)
+            elif isinstance(inner, Config) or (
+                inspect.isclass(inner) and issubclass(inner, Config)
             ):
                 normalized_value = SubConfig(inner, help=value.help)
             else:
                 normalized_value = value
-        elif isinstance(value, DataConfig) or (
-            inspect.isclass(value) and issubclass(value, DataConfig)
+        elif isinstance(value, Config) or (
+            inspect.isclass(value) and issubclass(value, Config)
         ):
             normalized_value = SubConfig(value)
         else:
@@ -420,25 +343,22 @@ def _normalize_class_defaults(defaults, annotations=None):
     return normalized
 
 
-from abc import ABCMeta as _ABCMeta
-
-from typing import dataclass_transform as _dataclass_transform
-
-
-@_dataclass_transform(field_specifiers=(Value, Flag))
+# NOTE: kwconf intentionally does NOT apply @dataclass_transform here (Option A,
+# see dev/planning/design.md §6.1). With positional ``Value(...)`` defaults the
+# typing spec forces the synthesized ``__init__`` to treat every wrapped field as
+# *required*, producing spurious "missing field" errors under mypy/pyright. Static
+# checking of field defaults is delivered instead by typing ``Value(...) -> T``.
 class MetaConfig(_ABCMeta):
     """
-    A metaclass for Config to help make usage between Config and DataConfig
-    consistent.
+    Metaclass that collects declarative config fields and normalizes
+    compatibility metadata.
 
     Ensures that class attributes are mirrored:
         * __default__ mirrors default
         * __post_init__ mirrors normalize
 
     Also reserves the ``__class__`` key for SubConfig selector metadata and
-    warns on the common ``key = Value(...),`` trailing-comma typo. These
-    checks were previously only applied by :class:`MetaDataConfig` and now
-    apply uniformly to all kwconf config classes.
+    warns on the common ``key = Value(...),`` trailing-comma typo. These checks apply uniformly to all kwconf config classes.
     """
 
     @staticmethod
@@ -451,14 +371,16 @@ class MetaConfig(_ABCMeta):
         if diagnostics.DEBUG_META_CONFIG:
             print(f'MetaConfig.__new__ called: {mcls=} {name=} {bases=} {namespace=} {args=} {kwargs=}')
 
-        # Skip class-attr collection on DataConfig itself (the root); all
+        # Skip class-attr collection on Config itself (the root); all
         # subclasses (user classes) participate.
         is_root_config = (
-            name == 'DataConfig' and namespace.get('__module__') == __name__
+            name == 'Config' and namespace.get('__module__') == __name__
         )
 
+        annotations = _get_class_namespace_annotations(namespace)
+
         if not is_root_config:
-            attr_default = _collect_declared_config_attrs(namespace)
+            attr_default = _collect_declared_config_attrs(namespace, annotations)
             if attr_default:
                 for key in attr_default:
                     namespace.pop(key, None)
@@ -471,7 +393,7 @@ class MetaConfig(_ABCMeta):
             this_default = namespace.get('__default__', {})
             if this_default is None:
                 this_default = {}
-            this_default = ub.udict(this_default)
+            this_default = dict(this_default)
 
             inheritence_default: Dict[str, Any] = {}
             for base in reversed(bases):
@@ -484,32 +406,32 @@ class MetaConfig(_ABCMeta):
                 # Reserve "__class__" for nested SubConfig selector metadata.
                 if '__class__' in this_default:
                     raise ValueError(
-                        'The name "__class__" is reserved for nested DataConfig meta keys'
+                        'The name "__class__" is reserved for nested Config meta keys'
                     )
 
                 # Warn on the common ``key = Value(...),`` trailing-comma typo.
                 for k, v in this_default.items():
                     if isinstance(v, tuple) and len(v) == 1 and isinstance(v[0], Value):
-                        warnings.warn(ub.paragraph(
+                        warnings.warn(paragraph(
                             f'''
                             It looks like you have a trailing comma in your
-                            {name} DataConfig.  The variable {k!r} has a value of
+                            {name} Config.  The variable {k!r} has a value of
                             {v!r}, which is a Tuple[Value]. Typically it should be
                             a Value.
                             '''), UserWarning)
 
                 this_default = _normalize_class_defaults(
-                    this_default, namespace.get('__annotations__', {}))
+                    this_default, annotations)
             namespace['__default__'] = this_default
 
         if diagnostics.DEBUG_META_CONFIG:
-            print('FINAL namespace = {}'.format(ub.urepr(namespace, nl=2)))
+            print('FINAL namespace = {}'.format(pprint.pformat(vars(namespace))))
         cls = super().__new__(mcls, name, bases, namespace, *args, **kwargs)  # type: ignore
 
         # Modify the __init__ docstring to surface the valid keys to help().
         if getattr(cls, '__init__', None) is not None and cls.__init__.__doc__ == '__autogenerateme__':
             valid_keys = list(cls.__default__.keys())
-            cls.__init__.__doc__ = ub.codeblock(
+            cls.__init__.__doc__ = codeblock(
                 f'''
                 Valid options: {valid_keys}
 
@@ -520,7 +442,7 @@ class MetaConfig(_ABCMeta):
         return cls
 
 
-class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
+class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     """
     Primary configuration base class for kwconf.
 
@@ -559,7 +481,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     Example:
         >>> import kwconf as kw
-        >>> class MyConfig(kw.DataConfig):
+        >>> class MyConfig(kw.Config):
         ...     option1: tuple = kw.Value((1, 2, 3))
         ...     option2: str = 'bar'
         ...     option3: list = kw.Value(default_factory=list)
@@ -584,10 +506,11 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         self._init_state(_dont_call_post_init=_dont_call_post_init)
 
         argkeys = list(self._default.keys())[0:len(args)]
-        new_values = ub.dzip(argkeys, args)
+        new_values = dict(zip(argkeys, args))
         kwargs = self._normalize_alias_dict(kwargs)
         new_values.update(kwargs)
-        unknown_args: Dict[str, Any] = ub.dict_diff(new_values, self._default)  # type: ignore[arg-type]
+        unknown_args: Dict[str, Any] = {
+            k: v for k, v in new_values.items() if k not in self._default}
         if unknown_args:
             raise ValueError((
                 "Unknown Arguments: {}. Expected arguments are: {}"
@@ -611,7 +534,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         Initialize per-instance attribute storage from the class-level defaults.
 
-        Shared between :class:`DataConfig` and :class:`DataConfig` constructors.
+        Shared between :class:`Config` and :class:`Config` constructors.
         Builds ``self._default`` (a fresh per-instance copy), populates
         ``self._data`` with raw values, and instantiates any SubConfig nodes.
         """
@@ -621,6 +544,14 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         self._has_subconfigs = False
         self._kwconf_post_init_done = False
         self._alias_map = None
+        # Provenance: canonical keys that were explicitly supplied on argv
+        # during the most recent :func:`_read_argv`. Empty for configs that
+        # were never populated from the command line. This is intentionally
+        # private and argv-scoped; it is *not* a general "was this key set by
+        # any source" flag. Populated authoritatively by ``_read_argv`` (never
+        # by ``__setitem__``, since that funnel also handles default/config
+        # writes).
+        self._explicit_argv_keys: frozenset = frozenset()
         cls_default = getattr(self, '__default__', None)
         if cls_default:
             self._default.update(_materialize_default_items(cls_default))
@@ -632,6 +563,80 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         }
         from kwconf.subconfig import wrap_subconfig_defaults
         wrap_subconfig_defaults(self, _dont_call_post_init=_dont_call_post_init)
+
+    @classmethod
+    def coerce(cls, **kwargs: Any) -> "Config":
+        """
+        Construct a config, coercing string-valued arguments through each
+        field's parser (the text-boundary path).
+
+        This is the opt-in counterpart to the plain constructor. ``cls(**kwargs)``
+        is the *trusted* Python path; ``cls.coerce(**kwargs)`` is for argv/env-like
+        string inputs and for tests that want CLI-style parsing without argv.
+        Only string values are parsed; real Python objects pass through.
+
+        Example:
+            >>> import kwconf
+            >>> class MyConfig(kwconf.Config):
+            >>>     __default__ = {'num': kwconf.Value(0, type=int)}
+            >>> cfg = MyConfig.coerce(num='42')
+            >>> assert cfg['num'] == 42
+        """
+        defaults = getattr(cls, '__default__', {}) or {}
+        coerced: Dict[str, Any] = {}
+        for key, value in kwargs.items():
+            template = defaults.get(key)
+            if isinstance(value, str) and isinstance(template, Value):
+                coerced[key] = template.coerce(value)
+            else:
+                coerced[key] = value
+        return cls(**coerced)
+
+    @classmethod
+    def from_cli(cls, argv: Sequence[str] | str | bool | None = None,
+                 **kwargs: Any) -> "Config":
+        """Construct from command-line arguments (a named alias for :meth:`cli`)."""
+        return cls.cli(argv=argv, **kwargs)
+
+    @classmethod
+    def from_yaml(cls, path: Any, **kwargs: Any) -> "Config":
+        """
+        Construct from a YAML (or JSON) file path. Values keep the file
+        format's own typing -- no extra string coercion is applied (a quoted
+        ``"123"`` stays a string), consistent with the text-boundary rule.
+        """
+        return cls.cli(data=path, argv=False, **kwargs)
+
+    @classmethod
+    def from_env(cls, prefix: str = '', **kwargs: Any) -> "Config":
+        """
+        Construct from environment variables.
+
+        Each declared field ``name`` is read from
+        ``os.environ[f'{prefix}{name}']`` (the suffix after ``prefix`` is matched
+        case-insensitively against declared fields). Environment values are
+        strings, so they pass through the text-boundary parser via
+        :meth:`coerce`. Explicit ``kwargs`` override environment values.
+
+        Example:
+            >>> import os, kwconf
+            >>> class MyConfig(kwconf.Config):
+            >>>     __default__ = {'num': kwconf.Value(0, type=int)}
+            >>> os.environ['MYAPP_NUM'] = '7'
+            >>> assert MyConfig.from_env(prefix='MYAPP_')['num'] == 7
+            >>> del os.environ['MYAPP_NUM']
+        """
+        import os
+        fields = getattr(cls, '__default__', {}) or {}
+        collected: Dict[str, Any] = {}
+        for env_key, env_val in os.environ.items():
+            if prefix and not env_key.startswith(prefix):
+                continue
+            field = env_key[len(prefix):].lower()
+            if field in fields:
+                collected[field] = env_val
+        collected.update(kwargs)
+        return cls.coerce(**collected)
 
     @classmethod
     def cli(
@@ -647,7 +652,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
-    ) -> DataConfig:
+    ) -> Config:
         """
         Create a command-line aware config instance.
 
@@ -710,7 +715,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         Example:
             >>> import kwconf
-            >>> class MyConfig(kwconf.DataConfig):
+            >>> class MyConfig(kwconf.Config):
             >>>     __default__ = {
             >>>         'option1': kwconf.Value((1, 2, 3), tuple),
             >>>         'option2': 'bar',
@@ -727,7 +732,9 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             argv = True  # parse sys.argv by default
         if default is None:
             default = {}
-        # Note: hack to avoid calling __post_init__ twice
+        # Two-phase init: construct with __post_init__ deferred, then run it
+        # exactly once at the end of load() after every source is merged
+        # (otherwise it would fire on the empty instance and again post-load).
         self = cls(_dont_call_post_init=True)
         next_stacklevel = None if stacklevel is None else stacklevel + 1
         self.load(data, argv=argv, default=default, strict=strict,
@@ -746,36 +753,38 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 import rich
                 from rich.markup import escape
             except ImportError:
-                print('config = ' + ub.urepr(self, nl=1))  # type: ignore
+                print('config = ' + pprint.pformat(dict(self)))
             else:
-                rich.print('config = ' + escape(ub.urepr(self, nl=1)))  # type: ignore
+                rich.print('config = ' + escape(pprint.pformat(dict(self))))
         if diagnostics.DEBUG_CONFIG:
             print(f'[kwconf] Return {cls.__name__}.cli')
         return self
 
     @classmethod
-    def demo(cls) -> "DataConfig":
+    def demo(cls) -> "Config":
         """
         Create an example config class for test cases
 
         CommandLine:
-            xdoctest -m kwconf.config DataConfig.demo
-            xdoctest -m kwconf.config DataConfig.demo --cli --option1 fo
+            xdoctest -m kwconf.config Config.demo
+            xdoctest -m kwconf.config Config.demo --cli --option1 fo
 
         Example:
             >>> from kwconf.config import *
-            >>> self = DataConfig.demo()
+            >>> self = Config.demo()
             >>> print('self = {}'.format(self))
             self = <DemoConfig({...'option1': ...}...)...>...
             >>> self.argparse().print_help()
             >>> # xdoc: +REQUIRES(--cli)
             >>> self.load(argv=True)
+            >>> # xdoctest: +REQUIRES(module:ubelt)
+            >>> import ubelt as ub
             >>> print(ub.urepr(self, nl=1))
         """
         import kwconf
-        class DemoConfig(kwconf.DataConfig):
+        class DemoConfig(kwconf.Config):
             """
-            This was generated by kwconf.DataConfig.demo
+            This was generated by kwconf.Config.demo
             """
             __default__ = {
                 'option1': kwconf.Value('bar', help='an option'),
@@ -800,7 +809,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             dict
 
         Example:
-            >>> self = DataConfig.demo()
+            >>> self = Config.demo()
             >>> self.__json__()
             >>> self['option1'] = {1, 2, 3}
             >>> self['option2'] = {(1, 2): 'fds'}
@@ -817,7 +826,8 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         BUILTIN_VECTOR_TYPES = (set, frozenset, list, tuple)
 
         # The walker method should be more efficient.
-        walker = cast(Any, ub.IndexableWalker(data, list_cls=BUILTIN_VECTOR_TYPES))
+        ub = import_ubelt('Config.__json__')
+        walker = ub.IndexableWalker(data, list_cls=BUILTIN_VECTOR_TYPES)
         for path, item in walker:
             if item is None or isinstance(item, BUILTIN_SCALAR_TYPES):
                 ...
@@ -890,22 +900,22 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     def __delitem__(self, key: str) -> None:
         raise TypeError(
-            'cannot delete items from a kwconf.DataConfig'
+            'cannot delete items from a kwconf.Config'
         )
 
     def pop(self, *args: Any, **kwargs: Any) -> Any:
         raise TypeError(
-            'pop is not supported on kwconf.DataConfig'
+            'pop is not supported on kwconf.Config'
         )
 
     def popitem(self) -> Any:
         raise TypeError(
-            'popitem is not supported on kwconf.DataConfig'
+            'popitem is not supported on kwconf.Config'
         )
 
     def clear(self) -> None:
         raise TypeError(
-            'clear is not supported on kwconf.DataConfig'
+            'clear is not supported on kwconf.Config'
         )
 
     def __getitem__(self, key: str) -> Any:
@@ -913,7 +923,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             parts = key.split('.')
             node: Any = self
             for part in parts:
-                if not isinstance(node, DataConfig):
+                if not isinstance(node, Config):
                     raise KeyError(key)
                 try:
                     value = node._data[part]
@@ -936,19 +946,28 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return value
 
     def __setitem__(self, key: str, value: Any) -> None:
+        self._setitem(key, value)
+
+    def _setitem(self, key: str, value: Any, validate: bool = True) -> None:
+        """
+        Core assignment. ``validate=False`` stores a *trusted* value (the
+        field's own default during the argv merge) without running annotation
+        validation -- defaults are the author's baseline, checked statically,
+        not runtime-supplied (design.md §4).
+        """
         if isinstance(key, str) and '.' in key and getattr(self, '_has_subconfigs', False):
             parts = key.split('.')
             parent_key, leaf = parts[:-1], parts[-1]
             from kwconf.subconfig import _ensure_parent_node
             parent = _ensure_parent_node(self, parent_key)
-            parent[leaf] = value
+            parent._setitem(leaf, value, validate=validate)
             return
         if key not in self._data:
             key = self._normalize_alias_key(key)
             if key not in self._data:
                 if not getattr(self, '__allow_newattr__', False):
                     raise Exception(
-                        'Cannot add keys to kwconf.DataConfig objects unless '
+                        'Cannot add keys to kwconf.Config objects unless '
                         'self.__allow_newattr__ is True'
                     )
         if isinstance(value, Value):
@@ -957,10 +976,13 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         else:
             template = self.__default__.get(key, None)
             if template is not None and isinstance(template, Value):
-                # If the new value is raw data, and we have a underlying Value
-                # object update it.
-                coerced = template.coerce(value)
-                self._validate_assignment(key, coerced, template)
+                # BOUNDARY (design.md §4): the Python assignment path TRUSTS the
+                # user and does NOT coerce strings. Coercion only happens at the
+                # text boundary (argv pre-coerces in argparse; Config.coerce()/
+                # from_cli/from_env parse explicitly). So store the value as-is.
+                coerced = value
+                if validate:
+                    self._validate_assignment(key, coerced, template)
                 self._data[key] = coerced
             else:
                 # If we don't have an underlying Value object simply set the
@@ -974,12 +996,19 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Run optional annotation-based validation on an assignment.
 
         Mode is resolved from ``template.validate`` first, falling back to
-        the class-level ``__validate__`` attribute (default ``False``).
+        the class-level ``__validate__`` attribute (default ``'warn'``).
 
         Modes:
-          * ``False`` / ``None`` (default) -- no validation.
-          * ``'warn'`` -- emit a ``UserWarning`` on mismatch.
+          * ``'warn'`` (default) -- emit a ``UserWarning`` on mismatch.
+          * ``False`` -- no validation.
           * ``'error'`` / ``True`` -- raise ``TypeError`` on mismatch.
+
+        This is the single place kwconf reports annotation mismatches; the
+        ``coerce``/``auto`` parsers no longer warn on a value-level no-match
+        (they best-effort and keep the string), so there is one voice. It
+        runs on user-supplied values (constructor/data/assignment and parsed
+        argv/env), but NOT on the field's own trusted default (design.md §4),
+        so a WYSIWYG default like ``Value('512')`` never warns about itself.
 
         Validation is skipped when the template has no associated
         annotation (e.g. fields declared without a class-level type hint).
@@ -989,7 +1018,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             return
         mode = template.validate
         if mode is None:
-            mode = getattr(self, '__validate__', False)
+            mode = getattr(self, '__validate__', 'warn')
         if not mode:
             return
         if _value_matches_annotation(value, annotation):
@@ -1045,7 +1074,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
-    ) -> DataConfig:
+    ) -> Config:
         """
         Updates the configuration from a given data source.
 
@@ -1113,7 +1142,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Example:
             >>> # Test load works correctly in argv True and False mode
             >>> import kwconf
-            >>> class MyConfig(kwconf.DataConfig):
+            >>> class MyConfig(kwconf.Config):
             >>>     __default__ = {
             >>>         'src': kwconf.Value(None, help=('some help msg')),
             >>>     }
@@ -1130,7 +1159,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Example:
             >>> # Test load works correctly with alias
             >>> import kwconf
-            >>> class MyConfig(kwconf.DataConfig):
+            >>> class MyConfig(kwconf.Config):
             >>>     __default__ = {
             >>>         'opt1': kwconf.Value(None),
             >>>         'opt2': kwconf.Value(None, alias=['arg2']),
@@ -1142,7 +1171,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> assert 'arg2' not in config2
         """
         if diagnostics.DEBUG_CONFIG:
-            print(f'[kwconf.config.DataConfig] Call {self.__class__.__name__}.load',
+            print(f'[kwconf.config.Config] Call {self.__class__.__name__}.load',
                   f'argv={argv}, strict={strict}, special_options={special_options}')
 
         if special_options is None:
@@ -1176,7 +1205,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             if unknown_keys:
                 if strict:
                     if diagnostics.DEBUG_CONFIG:
-                        print(f'[kwconf.config.DataConfig] Error: data={data}')
+                        print(f'[kwconf.config.Config] Error: data={data}')
 
                     raise KeyError(f'Unknown data options {unknown_keys}')
                 else:
@@ -1207,7 +1236,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             import shlex
             argv = shlex.split(os.path.expandvars(argv))
 
-        if argv or ub.iterable(argv):
+        if argv or iterable(argv):
             next_stacklevel = None if stacklevel is None else stacklevel + 1
             read_argv_kwargs: Dict[str, Any] = {
                 'special_options': special_options,
@@ -1220,7 +1249,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 'localns': localns,
                 'stacklevel': next_stacklevel,
             }
-            if ub.iterable(argv):
+            if iterable(argv):
                 read_argv_kwargs['argv'] = argv
             self._read_argv(**read_argv_kwargs)
 
@@ -1265,7 +1294,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         for k, v in self._default.items():
             alias = getattr(v, 'alias', None)
             if alias:
-                if not ub.iterable(alias):
+                if not iterable(alias):
                     alias = [alias]
                 for a in alias:
                     _alias_map[a] = k
@@ -1277,7 +1306,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         Example:
             >>> import kwconf
-            >>> class MyConfig(kwconf.DataConfig):
+            >>> class MyConfig(kwconf.Config):
             >>>     'my CLI description'
             >>>     __default__ = {
             >>>         'src':  kwconf.Value(['foo'], position=1, nargs='+'),
@@ -1334,7 +1363,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Example:
             >>> import kwconf
             >>> import pytest
-            >>> class EmptyConfig(kwconf.DataConfig):
+            >>> class EmptyConfig(kwconf.Config):
             >>>     ...
             >>> self = EmptyConfig()
             >>> with pytest.raises(Exception) as ex:
@@ -1366,11 +1395,11 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> # SubConfig case: staged parsing + dotted overrides
             >>> import kwconf
             >>> import pytest
-            >>> class Adam(kwconf.DataConfig):
+            >>> class Adam(kwconf.Config):
             ...     __default__ = {'lr': 1e-3}
-            >>> class Sgd(kwconf.DataConfig):
+            >>> class Sgd(kwconf.Config):
             ...     __default__ = {'momentum': 0.9}
-            >>> class TrainCfg(kwconf.DataConfig):
+            >>> class TrainCfg(kwconf.Config):
             ...     __default__ = {
             ...         'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd}),
             ...     }
@@ -1383,6 +1412,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> print(f'Got expected error: {ex}')
             >>> print('Test success case:')
             >>> cfg._read_argv(argv='--optim=sgd --optim.momentum=0.8')
+            >>> # xdoctest: +REQUIRES(module:yaml)
             >>> print(cfg.dumps())
             >>> assert isinstance(cfg['optim'], Sgd) and cfg['optim']['momentum'] == 0.8
         """
@@ -1423,17 +1453,20 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 argcomplete_mod.autocomplete(parser)
 
         try:
+            from kwconf import argparse_ext
             if strict:
-                ns = parser.parse_args(argv).__dict__
+                parse_result = argparse_ext.parse_result(parser, argv)
             else:
-                ns = parser.parse_known_args(argv)[0].__dict__
+                parse_result = argparse_ext.parse_known_result(parser, argv)
+            ns = parse_result.values
+            explicit_keys = set(parse_result.explicit_keys)
         except (ValueError, TypeError, KeyError) as ex:
             # For errors (like ValueError) where its probably a programmer
             # error and not a user error, give the debugger some information
             # about the kwconf object.
             from kwconf.util import util_exception
             # TODO: figure out argv that triggers a value error so we can add a test
-            note = ub.codeblock(
+            note = codeblock(
                 f'''
                 Error while attempting to parse arguments in _read_argv
 
@@ -1456,13 +1489,12 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         if has_subconfigs:
             # Subconfig selectors need special handling, but regular values
-            # can use the standard DataConfig setitem logic.
+            # can use the standard Config setitem logic.
             from kwconf import subconfig as _subcfg_mod
-            explicit: set[str] = getattr(parser, '_explicitly_given', set())
             subconfig_paths = set(_subcfg_mod.find_subconfig_paths(self))
-            if explicit:
+            if explicit_keys:
                 selector_keys = {
-                    k for k in explicit
+                    k for k in explicit_keys
                     if k.endswith('.__class__') or k in subconfig_paths
                 }
                 if selector_keys:
@@ -1476,20 +1508,19 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     )
                     for key in selector_keys:
                         ns.pop(key, None)
-                    parser._explicitly_given = explicit - selector_keys  # type: ignore
+                    explicit_keys = explicit_keys - selector_keys
             if subconfig_paths:
                 for key in subconfig_paths:
                     ns.pop(key, None)
-                parser._explicitly_given = {  # type: ignore
-                    key for key in parser._explicitly_given  # type: ignore
+                explicit_keys = {
+                    key for key in explicit_keys
                     if key not in subconfig_paths
                 }
         # First load argparse defaults in first
-        _not_given = set(ns.keys()) - parser._explicitly_given  # type: ignore
+        _not_given = set(ns.keys()) - explicit_keys
         # print('_not_given = {!r}'.format(_not_given))
         # print('parser._explicitly_given = {!r}'.format(parser._explicitly_given))
         for key in _not_given:
-            value = ns[key]
             if key not in self.__default__:
                 # Skip dotted selector keys or unknown argparse entries.
                 continue
@@ -1498,14 +1529,20 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             # attributes can all be Value objects, but this gets messy when the
             # "default" constructor argument is used. We should refactor so
             # _data and _default only store the raw current values,
-            # post-casting. Until then we trust the parser action to have
-            # already coerced the value.
+            # post-casting.
             default_value = self.__default__[key].value
-            # Preserve any data/default overrides that were already applied
-            # before argparse defaults are merged in.
+            # BOUNDARY (design.md §4): for keys not supplied on argv, use the
+            # kwconf default verbatim rather than ``ns[key]``. argparse coerces
+            # *string* defaults through the action's ``type=`` (e.g. a default
+            # of ``'512'`` would come back as ``512``); the Python-boundary
+            # default must stay WYSIWYG.
             if self._data.get(key, default_value) != default_value:
+                # Preserve any data/default overrides already applied before
+                # argparse defaults are merged in.
                 continue
-            self[key] = value
+            # Trusted default (not runtime-supplied): skip validation so a
+            # WYSIWYG default never warns about itself.
+            self._setitem(key, default_value, validate=False)
 
         # Then load config file defaults
         if special_options:
@@ -1516,12 +1553,24 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         # Finally load explicit CLI values. The parser action has already
         # coerced the raw token; we just need to store it.
-        for key in parser._explicitly_given:  # type: ignore
+        for key in explicit_keys:
             if key not in special_ns:
                 self[key] = ns[key]
 
+        # Record argv provenance once values (and any subconfig class swaps)
+        # are finalized. Use the raw ParseResult set so the snapshot faithfully
+        # reflects what argv supplied -- including ``.__class__`` selectors --
+        # then distribute the dotted keys to the realized subconfig children.
+        # Only the special-options destinations (config/dump/dumps) are
+        # dropped, since those are CLI plumbing rather than config fields.
+        from kwconf import subconfig as _subcfg_mod
+        recorded_keys = {
+            key for key in parse_result.explicit_keys
+            if key not in special_ns_keys
+        }
+        _subcfg_mod.distribute_explicit_argv_keys(self, recorded_keys)
+
         if special_options:
-            import sys
             dump_fpath = special_ns['dump']
             do_dumps = special_ns['dumps']
             if dump_fpath or do_dumps:
@@ -1549,12 +1598,12 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """ overloadable function called after each load """
         ...
 
-    def dump(self, stream: Optional[Union[FileLike, IO[str]]] = None, mode: Optional[str] = None):
+    def dump(self, stream: Optional[IO[str]] = None, mode: Optional[str] = None):
         """
         Write configuration file to a file or stream
 
         Args:
-            stream (FileLike | None): the stream to write to
+            stream (IO[str] | None): the writable stream to write to
             mode (str | None): can be 'yaml' or 'json' (defaults to 'yaml')
         """
         if mode is None:
@@ -1565,7 +1614,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         else:
             payload = dict(self.items())
         if mode == 'yaml':
-            import yaml  # type: ignore
+            yaml = import_yaml("dump(mode='yaml')")
             def order_rep(dumper, data):
                 return dumper.represent_mapping('tag:yaml.org,2002:map', data.items(), flow_style=False)
             yaml.add_representer(dict, order_rep, Dumper=yaml.SafeDumper)
@@ -1634,7 +1683,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
     @classmethod
     def parse_args(cls,
                    args: Optional[List[str]] = None,
-                   namespace: Optional[Any] = None) -> "DataConfig":
+                   namespace: Optional[Any] = None) -> "Config":
         """
         Mimics :meth:`argparse.ArgumentParser.parse_args`.
         """
@@ -1645,7 +1694,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
     @classmethod
     def parse_known_args(cls,
                          args: Sequence[str] | None = None,
-                         namespace: Any = None) -> "DataConfig":
+                         namespace: Any = None) -> "Config":
         """
         Mimics :meth:`argparse.ArgumentParser.parse_known_args`.
         """
@@ -1680,7 +1729,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             import kwconf
             description = f'argparse CLI generated by kwconf {kwconf.__version__}'
         if description is not None:
-            description = ub.codeblock(description)
+            description = codeblock(description)
         return description
 
     @property
@@ -1697,7 +1746,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         epilog = getattr(self, '__epilog__', None)
         if epilog is not None:
-            epilog = ub.codeblock(epilog)
+            epilog = codeblock(epilog)
         return epilog
 
     @property
@@ -1735,21 +1784,17 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             parserkw['allow_abbrev'] = self.__allow_abbrev__
         return parserkw
 
-    def port_to_dataconf(self, style: str = 'dataconf') -> str:
+    def port_to_config(self, style: str = 'config') -> str:
         """
         Helper that writes kwconf source code for this config.
 
-        TODO: In the future perhaps rename to something that indicates we can
-        write a code representation of this object in either config or data
-            config style?
-
         CommandLine:
-            xdoctest -m kwconf.config DataConfig.port_to_dataconf
+            xdoctest -m kwconf.config Config.port_to_config
 
         Example:
             >>> import kwconf
-            >>> self = kwconf.DataConfig.demo()
-            >>> print(self.port_to_dataconf())
+            >>> self = kwconf.Config.demo()
+            >>> print(self.port_to_config())
         """
         entries = []
         for key, value in self.__default__.items():
@@ -1767,24 +1812,23 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
     def _write_code(self,
                     entries: Iterable[tuple[str, Mapping[str, Any]]],
                     name: str = 'MyConfig',
-                    style: str = 'dataconf',
+                    style: str = 'config',
                     description: Optional[str] = None) -> str:
 
-        if style == 'dataconf':
-            indent = ' ' * 4
+        if style == 'config':
+            pad = ' ' * 4
         else:
-            indent = ' ' * 8
+            pad = ' ' * 8
 
         if style == 'orig':
             raise Exception('no longer supported')
-        elif style == 'dataconf':
+        elif style == 'config':
             recon_str = [
-                'import ubelt as ub',
                 'import kwconf',
                 '',
-                'class ' + name + '(kwconf.DataConfig):',
+                'class ' + name + '(kwconf.Config):',
                 '    """',
-                ub.indent(description or ''),
+                indent(description or ''),
                 '    """',
             ]
         else:
@@ -1801,15 +1845,15 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             val_body = ', '.join(value_args)
 
             if style == 'orig':
-                recon_str.append("{}'{}': kwconf.Value({}),".format(indent, key, val_body))
-            elif style ==  'dataconf':
-                recon_str.append("{}{} = kwconf.Value({})".format(indent, key, val_body))
+                recon_str.append("{}'{}': kwconf.Value({}),".format(pad, key, val_body))
+            elif style == 'config':
+                recon_str.append("{}{} = kwconf.Value({})".format(pad, key, val_body))
             else:
                 raise KeyError(style)
 
         if style == 'orig':
             recon_str.append('    }')
-        elif style ==  'dataconf':
+        elif style == 'config':
             ...
         else:
             raise KeyError(style)
@@ -1825,7 +1869,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return text
 
     @classmethod
-    def port_from_click(cls, click_main, name=None, style='dataconf') -> str:
+    def port_from_click(cls, click_main, name=None, style='config') -> str:
         """
         Prints kwconf code that roughly implements some click CLI.
 
@@ -1835,13 +1879,13 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             name (str | None): the name of the new class, if None then
                uses the name of the CLI command.
 
-            style (str): either dataconf or orig
+            style (str): either 'config' or 'orig'
 
         Returns:
             str : The code that roughly implements the config class.
 
         CommandLine:
-            xdoctest -m kwconf.config DataConfig.port_from_click
+            xdoctest -m kwconf.config Config.port_from_click
 
         Example:
             >>> # xdoctest: +REQUIRES(module:click)
@@ -1855,19 +1899,18 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> @click.option('--key2', default='456', help='another key')
             >>> def click_main(dataset, deployed, key1, key2):
             >>>     ...
-            >>> text = kwconf.DataConfig.port_from_click(click_main)
+            >>> text = kwconf.Config.port_from_click(click_main)
             >>> print(text)
-            import ubelt as ub
             import kwconf
             ...
-            class click_main(kwconf.DataConfig):
+            class click_main(kwconf.Config):
                 ...
                 argparse CLI generated by kwconf ...
                 ...
                 dataset = kwconf.Value(None, required=True, help='input dataset')
                 deployed = kwconf.Value(None, required=True, help='weights file')
                 key1 = kwconf.Value(123, help='some key')
-                key2 = kwconf.Value(456, help='another key')
+                key2 = kwconf.Value('456', help='another key')
         """
         import click
         ctx = click.Context(click.Command(''))
@@ -1885,13 +1928,13 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             name = info_dict['name'].replace('-', '_')
         config_cls = define(default, name)
         instance = config_cls(_dont_call_post_init=True)
-        return instance.port_to_dataconf(style=style)
+        return instance.port_to_config(style=style)
 
     @classmethod
     def port_from_argparse(cls,
                            parser: "argparse_mod.ArgumentParser",
                            name: str = 'MyConfig',
-                           style: str = 'dataconf') -> str:
+                           style: str = 'config') -> str:
         """
         Generate the corresponding kwconf code from an existing argparse
         instance.
@@ -1900,7 +1943,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             parser (argparse.ArgumentParser):
                 existing argparse parser we want to port
             name (str): the name of the config class
-            style (str): either 'orig' or 'dataconf'
+            style (str): either 'orig' or 'config'
 
         Returns:
             str :
@@ -1940,7 +1983,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> mutex_group3 = parser.add_mutually_exclusive_group()
             >>> mutex_group3.add_argument('--mgroup3_opt1')
             >>> mutex_group3.add_argument('--mgroup3_opt2')
-            >>> text = kwconf.DataConfig.port_from_argparse(parser, name='PortedConfig', style='dataconf')
+            >>> text = kwconf.Config.port_from_argparse(parser, name='PortedConfig', style='config')
             >>> print(text)
             >>> # Make an instance of the ported class
             >>> vals = {}
@@ -1948,6 +1991,8 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> cls = vals['PortedConfig']
             >>> self = cls(**{'true_dataset': 1, 'pred_dataset': 1})
             >>> recon = self.argparse()
+            >>> # xdoctest: +REQUIRES(module:ubelt)
+            >>> import ubelt as ub
             >>> print('recon._actions = {}'.format(ub.urepr(recon._actions, nl=1)))
         """
         entries = cls._values_from_argparse(parser)
@@ -1971,15 +2016,15 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 if specified override the description from the parser.
 
         Returns:
-            Config: a subclass of the Config or DataConfig class.
+            Config: a subclass of the Config class.
 
         SeeAlso:
-            :func:`DataConfig.port_from_argparse` - like this function, but returns
+            :func:`Config.port_from_argparse` - like this function, but returns
                 the text that could be executed to define the new class
                 statically.  In constrat this creates the clas dynamically.
 
         CommandLine:
-            xdoctest -m kwconf.config DataConfig.cls_from_argparse
+            xdoctest -m kwconf.config Config.cls_from_argparse
 
         Example:
             >>> import kwconf
@@ -2003,7 +2048,9 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> mutex_group3 = parser.add_mutually_exclusive_group()
             >>> mutex_group3.add_argument('--mgroup3_opt1')
             >>> mutex_group3.add_argument('--mgroup3_opt2')
-            >>> DynamicClass = kwconf.DataConfig.cls_from_argparse(parser)
+            >>> DynamicClass = kwconf.Config.cls_from_argparse(parser)
+            >>> # xdoctest: +REQUIRES(module:ubelt)
+            >>> import ubelt as ub
             >>> print(f'DynamicClass.__default__ = {ub.urepr(DynamicClass.__default__, nl=1)}')
             >>> self = DynamicClass()
             >>> print(f'self = {ub.urepr(self, nl=1)}')
@@ -2089,12 +2136,10 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 entries.append((key, value))
         return entries
 
-    # Backwards compatibility, deprecate and remove
-    port_argparse = port_from_argparse
-
     def port_to_argparse(self,
                          fuzzy_hyphens: bool = False,
-                         flag_value_mode: bool = False) -> str:
+                         flag_value_mode: bool = False,
+                         kwconf_primatives: bool = False) -> str:
         """
         Attempt to make code for a nearly-equivalent argparse object.
 
@@ -2124,18 +2169,29 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 ``--flag`` and ``--flag=value`` forms for boolean / counter
                 flags).
 
+            kwconf_primatives (bool):
+                If True, emit the 1-to-1 experience that *depends on kwconf*:
+                the generated code imports ``kwconf.argparse_ext`` and
+                ``kwconf.coerce`` and wires each argument with the real
+                argparse_ext actions and our annotation-gated coerce as
+                ``type=``. This reproduces kwconf's CLI behavior exactly at the
+                cost of a small kwconf dependency, bypassing the vendored
+                lightweight reconstructions. When False (default), the generated
+                code is plain argparse with lightweight approximations (opt into
+                individual QoL features via ``flag_value_mode`` etc.).
+
         SeeAlso:
-            :meth:`DataConfig.argparse` - creates a real argparse object
+            :meth:`Config.argparse` - creates a real argparse object
 
         Returns:
             str: code to construct a similar argparse object
 
         CommandLine:
-            xdoctest -m kwconf.config DataConfig.port_to_argparse
+            xdoctest -m kwconf.config Config.port_to_argparse
 
         Example:
             >>> import kwconf
-            >>> class DemoCLI(kwconf.DataConfig):
+            >>> class DemoCLI(kwconf.Config):
             >>>     my_opt = kwconf.Value('v1', help='demo option')
             >>>     flag = kwconf.Value(False, isflag=True, help='demo flag')
             >>> text = DemoCLI().port_to_argparse(
@@ -2148,7 +2204,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         Example:
             >>> import kwconf
-            >>> class SimpleCLI(kwconf.DataConfig):
+            >>> class SimpleCLI(kwconf.Config):
             >>>     data = kwconf.Value(None, help='input data', position=1)
             >>> self = SimpleCLI()
             >>> text = self.port_to_argparse()
@@ -2173,15 +2229,34 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>>     got_port = vars(parser.parse_args(argv))
             >>>     assert got_orig == got_port
         """
+        ub = import_ubelt('port_to_argparse')
         parserkw = self._parserkw()
         to_pop = {k for k, v in parserkw.items() if v is None}
-        parserkw = ub.udict(parserkw) - to_pop  # type: ignore
+        parserkw = {k: v for k, v in parserkw.items() if k not in to_pop}
         parserkw.pop('formatter_class', None)
 
-        constructor_body = ub.indent(ub.urepr(parserkw, explicit=True, nobr=1))  # type: ignore
+        constructor_body = indent(ub.urepr(parserkw, explicit=True, nobr=1))  # type: ignore
+
+        def _annotation_to_code(ann: Any) -> str:
+            # Render an annotation as code for the emitted coerce partial.
+            # Builtins/types use their name; typing / PEP 604 forms repr cleanly
+            # (``str | int | None``, ``list[int]``, ``typing.Optional[int]``).
+            if ann is None:
+                return 'None'
+            if isinstance(ann, type):
+                return ann.__name__
+            return repr(ann)
 
         lines = []
-        lines.append(ub.codeblock(
+        if kwconf_primatives:
+            lines.append(codeblock(
+                '''
+                import functools
+                import typing  # noqa: F401  (used by emitted annotations)
+                from kwconf import argparse_ext
+                from kwconf import coerce as _kwconf_coerce
+                '''))
+        lines.append(codeblock(
             '''
             import argparse
             parser = argparse.ArgumentParser(
@@ -2196,14 +2271,14 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         need_ported_bool_action = False
         need_ported_counter_action = False
         for key, _value in self._data.items():
-            if isinstance(_value, value_mod.Value):
+            if isinstance(_value, value_mod._Value):
                 value = _value.value
             else:
                 value = _value
                 _value = self._default[key]
-                if not isinstance(_value, value_mod.Value):
+                if not isinstance(_value, value_mod._Value):
                     # hack
-                    _value = value_mod.Value(_value)
+                    _value = value_mod._Value(_value)
 
             invocations = value_mod._value_add_argument_kw(
                 value, _value, self, key, fuzzy_hyphens=fuzzy_hyphens)
@@ -2220,9 +2295,16 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     # positional argument is omitted.
                     kwargs['default'] = value_mod.CodeRepr('argparse.SUPPRESS')
                 action = kwargs.get('action')
+                action_name = (getattr(action, '__name__', '')
+                               if not isinstance(action, str) else '')
+                is_flag_action = action_name in (
+                    'BooleanFlagOrKeyValAction', 'CounterOrKeyValAction')
                 if not isinstance(action, str):
-                    action_name = getattr(action, '__name__', '')
-                    if flag_value_mode and action_name == 'BooleanFlagOrKeyValAction':
+                    if kwconf_primatives and is_flag_action:
+                        # Use the real argparse_ext actions (1-to-1; depends on kwconf).
+                        kwargs['action'] = value_mod.CodeRepr(
+                            f'argparse_ext.{action_name}')
+                    elif flag_value_mode and action_name == 'BooleanFlagOrKeyValAction':
                         kwargs['action'] = value_mod.CodeRepr(
                             '_PortedBooleanFlagOrKeyValAction')
                         need_ported_bool_action = True
@@ -2233,10 +2315,21 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                         need_ported_bool_action = True
                     else:
                         kwargs.pop('action', None)
-                if kwargs.get('type', None) is not None:
+                if kwconf_primatives and not is_flag_action:
+                    # Emit our annotation-gated coerce as the type= converter,
+                    # matching the live kwconf CLI behavior.
+                    ann = getattr(_value, '_annotation', None)
+                    base_ann = ann if ann is not None else kwargs.get('type')
+                    if kwargs.get('nargs', None) is not None:
+                        from kwconf import coerce as _cm
+                        base_ann = _cm.element_annotation(base_ann)
+                    kwargs['type'] = value_mod.CodeRepr(
+                        'functools.partial(_kwconf_coerce.auto, '
+                        f'annotation={_annotation_to_code(base_ann)})')
+                elif kwargs.get('type', None) is not None:
                     kwargs['type'] = value_mod.CodeRepr(kwargs['type'].__name__)
                 to_pop = {k for k, v in kwargs.items() if v is None}
-                kwargs = ub.udict(kwargs) - to_pop  # type: ignore
+                kwargs = {k: v for k, v in kwargs.items() if k not in to_pop}
                 args_body = ub.urepr(args, explicit=1, nobr=1, trailsep=0).strip().strip(',')  # type: ignore
                 kwargs_body = ub.urepr(kwargs, explicit=1, nobr=1, trailsep=0, nl=0).strip(',')  # type: ignore
                 if args_body and kwargs_body:
@@ -2245,7 +2338,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         ported_action_blocks = []
         if need_ported_bool_action:
-            ported_action_blocks.append(ub.codeblock(
+            ported_action_blocks.append(codeblock(
                 '''
                 def _ported_smartcast(value):
                     if not isinstance(value, str):
@@ -2300,7 +2393,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 '''))
 
         if need_ported_counter_action:
-            ported_action_blocks.append(ub.codeblock(
+            ported_action_blocks.append(codeblock(
                 '''
                 class _PortedCounterOrKeyValAction(_PortedBooleanFlagOrKeyValAction):
                     def __call__(self, parser, namespace, values, option_string=None):
@@ -2363,8 +2456,8 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             argparse.ArgumentParser : a new or updated argument parser
 
         CommandLine:
-            xdoctest -m kwconf.config DataConfig.argparse:0
-            xdoctest -m kwconf.config DataConfig.argparse:1
+            xdoctest -m kwconf.config Config.argparse:0
+            xdoctest -m kwconf.config Config.argparse:1
 
         TODO:
             A good CLI spec for lists might be
@@ -2395,7 +2488,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Example:
             >>> # You can now make instances of this class
             >>> import kwconf
-            >>> self = kwconf.DataConfig.demo()
+            >>> self = kwconf.Config.demo()
             >>> parser = self.argparse()
             >>> parser.print_help()
             >>> # xdoctest: +REQUIRES(PY3)
@@ -2405,7 +2498,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Example:
             >>> # You can now make instances of this class
             >>> import kwconf
-            >>> class MyConfig(kwconf.DataConfig):
+            >>> class MyConfig(kwconf.Config):
             >>>     __description__ = 'my CLI description'
             >>>     __default__ = {
             >>>         'path1':  kwconf.Value(None, position=1, alias='src'),
@@ -2424,7 +2517,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Example:
             >>> # Test required option
             >>> import kwconf
-            >>> class MyConfig(kwconf.DataConfig):
+            >>> class MyConfig(kwconf.Config):
             >>>     __description__ = 'my CLI description'
             >>>     __default__ = {
             >>>         'path1':  kwconf.Value(None, position=1, alias='src'),
@@ -2451,7 +2544,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Example:
             >>> # Is it possible to the CLI as a key/val pair or an exist bool flag?
             >>> import kwconf
-            >>> class MyConfig(kwconf.DataConfig):
+            >>> class MyConfig(kwconf.Config):
             >>>     __default__ = {
             >>>         'path1':  kwconf.Value(None, position=1, alias='src'),
             >>>         'path2':  kwconf.Value(None, position=2, alias='dst'),
@@ -2481,7 +2574,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Example:
             >>> # Test groups
             >>> import kwconf
-            >>> class MyConfig(kwconf.DataConfig):
+            >>> class MyConfig(kwconf.Config):
             >>>     __description__ = 'my CLI description'
             >>>     __default__ = {
             >>>         'arg1':  kwconf.Value(None, group='a'),
@@ -2494,7 +2587,7 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> self = MyConfig()
             >>> parser = self.argparse()
             >>> parser.print_help()
-            >>> print(self.port_argparse(parser))
+            >>> print(self.port_from_argparse(parser))
             >>> import pytest
             >>> import argparse
             >>> with pytest.raises(SystemExit):
@@ -2528,16 +2621,24 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         _positions = {k: v.position for k, v in self._default.items()
                       if v.position is not None}
         if _positions:
-            if ub.find_duplicates(_positions.values()):
-                # TODO: make this a warning in 3.7+ and ensure there is a good
-                # API for just indicating that a value is supposed to be
-                # positional, and using its order in the dictionary as that
-                # position. Need to account for inheritance though.
-                raise Exception('two values have the same position')
-            _keyorder = ub.oset(ub.argsort(cast(Any, _positions)))
-            _keyorder |= (ub.oset(self._default) - _keyorder)
+            dup_positions = [p for p, n in Counter(_positions.values()).items()
+                             if n > 1]
+            if dup_positions:
+                # Build a {position: [keys...]} report so the error names the
+                # offending fields rather than just saying a clash exists.
+                conflicts = {
+                    pos: sorted(k for k, p in _positions.items() if p == pos)
+                    for pos in dup_positions
+                }
+                raise ValueError(
+                    f'Multiple fields declare the same CLI position: {conflicts}')
+            # NOTE: _keyorder is currently computed but unused downstream (the
+            # build loop iterates self._data); kept ubelt-free, pending review.
+            _keyorder = sorted(_positions, key=_positions.__getitem__)
+            _seen = set(_keyorder)
+            _keyorder = _keyorder + [k for k in self._default if k not in _seen]
         else:
-            _keyorder = ub.oset(self._default.keys())
+            _keyorder = list(self._default.keys())
 
         FUZZY_HYPHENS = getattr(self, '__fuzzy_hyphens__', 1)
 
@@ -2552,20 +2653,20 @@ class DataConfig(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if special_options:
             special_group = parser.add_argument_group(
                 'kwconf options')
-            special_group.add_argument('--config', default=None, help=ub.codeblock(
+            special_group.add_argument('--config', default=None, help=codeblock(
                 '''
                 special kwconf option that accepts the path to a on-disk
                 configuration file, and loads that into this {!r} object.
                 ''').format(self.__class__.__name__))
 
-            special_group.add_argument('--dump', default=None, help=ub.codeblock(
+            special_group.add_argument('--dump', default=None, help=codeblock(
                 '''
                 If specified, dump this config to disk.
                 ''').format(self.__class__.__name__))
 
             special_group.add_argument(
                 '--dumps', action=argparse_ext.BooleanFlagOrKeyValAction,
-                help=ub.codeblock(
+                help=codeblock(
                     '''
                     If specified, dump this config stdout
                     ''').format(self.__class__.__name__))

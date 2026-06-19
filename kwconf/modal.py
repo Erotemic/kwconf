@@ -13,7 +13,7 @@ Example
 
     >>> import kwconf
     >>> #
-    >>> class DoFooCLI(kwconf.DataConfig):
+    >>> class DoFooCLI(kwconf.Config):
     >>>     __command__ = 'do_foo'
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
@@ -22,7 +22,7 @@ Example
     >>>         self = cls.cli(argv=argv, data=kwargs)
     >>>         print('Called Foo with: ' + str(self))
     >>> #
-    >>> class DoBarCLI(kwconf.DataConfig):
+    >>> class DoBarCLI(kwconf.Config):
     >>>     __command__ = 'do_bar'
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
@@ -65,10 +65,11 @@ Note:
 from __future__ import annotations
 
 import sys
+import pprint
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-import ubelt as ub
-
+from kwconf.util.util_text import codeblock, paragraph
+from kwconf.util.util_repr import NiceRepr
 from kwconf.util.util_class import class_or_instancemethod
 from kwconf import diagnostics
 # from kwconf.config import MetaConfig
@@ -77,13 +78,13 @@ from kwconf import diagnostics
 DEFAULT_GROUP = 'commands'
 
 
-class ModalValue(ub.NiceRepr):
+class ModalValue(NiceRepr):
     """
     Declarative wrapper for registering a modal subcommand with extra metadata.
 
     Example:
         >>> import kwconf
-        >>> class Child(kwconf.DataConfig):
+        >>> class Child(kwconf.Config):
         ...     @classmethod
         ...     def main(cls, argv=1, **kwargs):
         ...         ...
@@ -160,19 +161,21 @@ class MetaModalCLI(type):
 
 class ModalCLI(metaclass=MetaModalCLI):
     """
-    Contains multiple kwconf.DataConfig items with corresponding `main`
+    Contains multiple kwconf.Config items with corresponding `main`
     functions.
 
     CommandLine:
         xdoctest -m kwconf.modal ModalCLI
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
+        >>> import ubelt as ub
         >>> from kwconf.modal import *  # NOQA
         >>> import kwconf
         >>> self = ModalCLI(description='A modal CLI')
         >>> #
         >>> @self.register
-        >>> class Command1Config(kwconf.DataConfig):
+        >>> class Command1Config(kwconf.Config):
         >>>     __command__ = 'command1'
         >>>     __default__ = {
         >>>         'foo': 'spam'
@@ -183,7 +186,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> @self.register
-        >>> class Command2Config(kwconf.DataConfig):
+        >>> class Command2Config(kwconf.Config):
         >>>     __command__ = 'command2'
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
@@ -215,11 +218,13 @@ class ModalCLI(metaclass=MetaModalCLI):
         xdoctest -m kwconf.modal ModalCLI:1
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
+        >>> import ubelt as ub
         >>> # Declarative modal CLI (new in 0.7.9)
         >>> import kwconf
         >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     #
-        >>>     class Command1(kwconf.DataConfig):
+        >>>     class Command1(kwconf.Config):
         >>>         __command__ = 'command1'
         >>>         foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>         @classmethod
@@ -227,7 +232,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>             config = cls.cli(argv=argv, data=kwargs)
         >>>             print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>>     #
-        >>>     class Command2(kwconf.DataConfig):
+        >>>     class Command2(kwconf.Config):
         >>>         __command__ = 'command2'
         >>>         foo = 'eggs'
         >>>         baz = 'biz'
@@ -240,13 +245,15 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> MyModalCLI.main(argv=['command2', '--baz=buz'])
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
+        >>> import ubelt as ub
         >>> # Declarative modal CLI (new in 0.7.9)
         >>> import kwconf
         >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     ...
         >>> #
         >>> @MyModalCLI.register(command='command1')
-        >>> class Command1(kwconf.DataConfig):
+        >>> class Command1(kwconf.Config):
         >>>     foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>     @classmethod
         >>>     def main(cls, argv=1, **kwargs):
@@ -254,7 +261,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
         >>> @MyModalCLI.register(command='command2')
-        >>> class Command2(kwconf.DataConfig):
+        >>> class Command2(kwconf.Config):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
@@ -266,17 +273,19 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> MyModalCLI.main(argv=['command2', '--baz=buz'])
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
+        >>> import ubelt as ub
         >>> # Key/value modal CLI (uses names as commands)
         >>> import kwconf
         >>> #
-        >>> class Command1(kwconf.DataConfig):
+        >>> class Command1(kwconf.Config):
         >>>     foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>     @classmethod
         >>>     def main(cls, argv=1, **kwargs):
         >>>         config = cls.cli(argv=argv, data=kwargs)
         >>>         print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>> #
-        >>> class Command2(kwconf.DataConfig):
+        >>> class Command2(kwconf.Config):
         >>>     foo = 'eggs'
         >>>     baz = 'biz'
         >>>     @classmethod
@@ -301,7 +310,7 @@ class ModalCLI(metaclass=MetaModalCLI):
             sub_clis = []
 
         if self.__class__.__name__ != 'ModalCLI':
-            self.description = description or ub.codeblock(self.__doc__ or '')
+            self.description = description or codeblock(self.__doc__ or '')
         else:
             self.description = description
 
@@ -360,7 +369,7 @@ class ModalCLI(metaclass=MetaModalCLI):
             return
 
         if not hasattr(cli_cls, 'main'):
-            raise ValueError(ub.paragraph(
+            raise ValueError(paragraph(
                 f'''
                 The ModalCLI expects that registered subconfigs have a
                 ``main`` classmethod with the signature
@@ -373,7 +382,7 @@ class ModalCLI(metaclass=MetaModalCLI):
             if command is None:
                 command = cli_cls.__name__
             if command is None:
-                raise ValueError(ub.paragraph(
+                raise ValueError(paragraph(
                     f'''
                     The ModalCLI expects that registered subconfigs have a
                     ``__command__: str`` attribute, but {cli_cls} is missing one.
@@ -439,7 +448,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         Add a sub-CLI to this modal CLI
 
         Args:
-            cli_cls (kwconf.DataConfig | None):
+            cli_cls (kwconf.Config | None):
                 A CLI-aware config object to register as a sub CLI.
                 If None, then this is called as a wrapped closure
 
@@ -662,19 +671,21 @@ class ModalCLI(metaclass=MetaModalCLI):
         if isinstance(argv, (int, bool)) and argv:
             argv = None
         try:
-            ns, unknown_args = parser.parse_known_args(args=argv)
+            from kwconf import argparse_ext
+            parse_result = argparse_ext.parse_known_result(parser, args=argv)
         except SystemExit as ex:
             if diagnostics.DEBUG_MODAL:
                 print(f'[kwconf.modal.ModalCLI.main] Modal main {self} caught an SystemExit error {ex}')
             if _noexit:
                 return 1
             raise
-        kw = ns.__dict__
+        kw = parse_result.values
+        unknown_args = parse_result.unknown_args
 
         if diagnostics.DEBUG_MODAL:
-            print(f'[kwconf.modal.ModalCLI.main] Modal main {self} parsed arguments: ' + ub.urepr(kw, nl=1))  # type: ignore
+            print(f'[kwconf.modal.ModalCLI.main] Modal main {self} parsed arguments: ' + pprint.pformat(kw))
             if unknown_args:
-                print(f'[kwconf.modal.ModalCLI.main] Modal main {self} unknown args: ' + ub.urepr(unknown_args, nl=1))  # type: ignore
+                print(f'[kwconf.modal.ModalCLI.main] Modal main {self} unknown args: ' + pprint.pformat(unknown_args))
 
         __opaque_main__ = kw.pop('__opaque_main__', None)
         if __opaque_main__ is not None:
@@ -697,9 +708,7 @@ class ModalCLI(metaclass=MetaModalCLI):
                 if getattr(parser, 'exit_on_error', True):
                     # Also use the extended deepest parser logic we added to
                     # the extended parser here.
-                    deepest = parser._deepest_subparser_for_argv(argv)
-                    if deepest is None:
-                        deepest = self
+                    deepest = parse_result.selected_parser
                     # deepest.print_usage()
                     deepest.error(msg)  # type: ignore
                 else:
@@ -718,6 +727,11 @@ class ModalCLI(metaclass=MetaModalCLI):
         version_request = kw.pop('__modal_version_request__', None)
         sub_modal = kw.pop('__submodal__', None)
         sub_main = kw.pop('__main_function__', None)
+        explicit_kw = {
+            key: kw[key]
+            for key in parse_result.explicit_keys
+            if key in kw
+        }
         if version_request:
             if sub_modal is None:
                 if diagnostics.DEBUG_MODAL:
@@ -763,7 +777,7 @@ class ModalCLI(metaclass=MetaModalCLI):
             control_kw['argv'] = False
 
         try:
-            ret = sub_main(**control_kw, **kw)
+            ret = sub_main(**control_kw, **explicit_kw)
         except Exception as ex:
             print('ERROR ex = {!r}'.format(ex))
             raise

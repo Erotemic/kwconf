@@ -64,11 +64,11 @@ def build_modal():
     modal = ModalCLI()
 
     import kwconf
-    # FIXME: doesn't work when you use Config instead of DataConfig.
-    cli1 = kwconf.DataConfig.cls_from_argparse(setup_args1(), name="mode1")
+    # FIXME: doesn't work when you use Config instead of Config.
+    cli1 = kwconf.Config.cls_from_argparse(setup_args1(), name="mode1")
     cli1.main = main2  # ty: ignore[unresolved-attribute]
 
-    cli2 = kwconf.DataConfig.cls_from_argparse(setup_args2(), name="mode2")
+    cli2 = kwconf.Config.cls_from_argparse(setup_args2(), name="mode2")
     cli2.main = main2  # ty: ignore[unresolved-attribute]
 
     modal.register(cli1)

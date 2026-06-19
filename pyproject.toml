@@ -2,19 +2,31 @@
 build-backend = "setuptools.build_meta"
 requires = [
   "setuptools>=41.0.1",
+  "setuptools>=77",
 ]
 
 [project]
 name = "kwconf"
-description = "The kwconf module"
-license.text = "Apache 2"
+description = "Typed, dependency-free configuration objects with CLI, environment, and file parsing (a scriptconfig successor)."
+keywords = [
+  "configuration",
+  "config",
+  "cli",
+  "argparse",
+  "scriptconfig",
+  "yaml",
+]
+license = "Apache-2.0"
+license-files = [
+  "LICENSE",
+]
 authors = [
   { name = "Kitware Inc.", email = "kitware@kitware.com" },
-  { name = "Jon Crall", email = "jon.crall@kitware.com" },
+  { name = "Jon Crall", email = "jon.crall@kitware.com" }
 ]
 requires-python = ">=3.10"
 classifiers = [
-  "Development Status :: 1 - Planning",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -23,17 +35,52 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Topic :: Utilities",
+  "Typing :: Typed",
 ]
 dynamic = [
-  "version",
-  "readme",
   "dependencies",
   "optional-dependencies",
+  "readme",
+  "version",
 ]
 urls.Homepage = "https://github.com/Erotemic/kwconf"
+urls.Repository = "https://github.com/Erotemic/kwconf"
+urls.Documentation = "https://kwconf.readthedocs.io"
+urls.Issues = "https://github.com/Erotemic/kwconf/issues"
+scripts.kwconf = "kwconf._cli.main:main"
 
 [tool.setuptools]
 include-package-data = true
+dynamic.dependencies.file = [
+  "requirements/runtime.txt",
+]
+dynamic.optional-dependencies.all.file = [
+  "requirements/runtime.txt",
+  "requirements/tests.txt",
+  "requirements/optional.txt",
+  "requirements/docs.txt",
+  "requirements/linting.txt",
+  "requirements/yaml.txt",
+  "requirements/ubelt.txt",
+]
+dynamic.optional-dependencies.docs.file = [
+  "requirements/docs.txt",
+]
+dynamic.optional-dependencies.linting.file = [
+  "requirements/linting.txt",
+]
+dynamic.optional-dependencies.optional.file = [
+  "requirements/optional.txt",
+]
+dynamic.optional-dependencies.tests.file = [
+  "requirements/tests.txt",
+]
+dynamic.optional-dependencies.ubelt.file = [
+  "requirements/ubelt.txt",
+]
+dynamic.optional-dependencies.yaml.file = [
+  "requirements/yaml.txt",
+]
 dynamic.readme.file = [
   "README.rst",
 ]
@@ -49,18 +96,8 @@ packages.find.include = [
   "kwconf*",
 ]
 
-
-[tool.setuptools.dynamic.dependencies]
-file = [
-  "requirements/runtime.txt",
-]
-
-[tool.setuptools.dynamic.optional-dependencies]
-tests = { file = ["requirements/tests.txt"] }
-optional = { file = ["requirements/optional.txt"] }
-docs = { file = ["requirements/docs.txt"] }
-linting = { file = ["requirements/linting.txt"] }
-all = { file = ["requirements/runtime.txt", "requirements/tests.txt", "requirements/optional.txt", "requirements/docs.txt", "requirements/linting.txt"] }
+[tool.uv]
+exclude-newer = "2026-06-18"
 
 [tool.ruff]
 target-version = "py310"
@@ -151,16 +188,17 @@ os = [
   "win",
 ]
 min_python = "3.10"
-version = "0.0.1"
+version = "0.10.0"
 url = "https://github.com/Erotemic/kwconf"
 author = "Kitware Inc., Jon Crall"
 author_email = "kitware@kitware.com, jon.crall@kitware.com"
-description = "The kwconf module"
-license = "Apache 2"
-dev_status = "planning"
+description = "Typed, dependency-free configuration objects with CLI, environment, and file parsing (a scriptconfig successor)."
+license = "Apache-2.0"
+dev_status = "beta"
 remote_host = "github.com"
 remote_group = "Erotemic"
 use_pyproject_requirements = true
 use_setup_py = false
 ci_gpg_secret_transport = "direct_ci"
 enable_gpg = true
+ci_pypy_versions = []

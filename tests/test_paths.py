@@ -6,7 +6,7 @@ def test_paths_with_commas():
     (a deliberate departure from scriptconfig). A path that contains commas
     must round-trip as a string both with and without an explicit type.
     """
-    from kwconf.value import Value
+    from kwconf.value import _Value as Value
 
     self = Value('key')
     self.update('/path/with,commas')
@@ -21,7 +21,7 @@ def test_paths_with_commas():
 
 def test_paths_with_commas_in_config():
     import kwconf
-    class TestConfig(kwconf.DataConfig):
+    class TestConfig(kwconf.Config):
         __default__ = {
             'key': kwconf.Value(None, type=str),
         }
@@ -50,7 +50,7 @@ def test_globstr_with_nargs():
     ub.touch(join(dpath, 'file2.txt'))
     ub.touch(join(dpath, 'file3.txt'))
 
-    class TestConfig(kwconf.DataConfig):
+    class TestConfig(kwconf.Config):
         __default__ = {
             'paths': kwconf.Value(None, nargs='+'),
         }

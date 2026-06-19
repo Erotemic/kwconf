@@ -1,0 +1,7 @@
+title: weekly status
+limit: 20
+format: html
+output: report.html
+metadata:
+  owner: alice
+  priority: 2

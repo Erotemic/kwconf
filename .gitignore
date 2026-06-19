@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Local scratch / agent / build artifacts (not part of the package)
+kwconf-source-*.tar.gz
+notes.md
+galwah_sheet/
+memory/
+
 # C extensions
 *.so
 
@@ -96,3 +102,4 @@ _skbuild
 pip-wheel-metadata/
 
 wheelhouse
+.venv-pkg/

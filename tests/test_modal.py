@@ -9,7 +9,7 @@ def test_modal_fuzzy_hyphens():
 
     callnums = defaultdict(lambda: 0)
 
-    class _TestCommandTemplate(kwconf.DataConfig):
+    class _TestCommandTemplate(kwconf.Config):
         # not a normal pattern, just make tests more concise.
         __command__ = '_base_'
         common_option = kwconf.Flag(None, help='an option with an underscore')
@@ -105,7 +105,7 @@ def test_modal_customize_command_classlevel():
         ...
 
     @MyModalCLI.register(command='command1')
-    class Command1(kwconf.DataConfig):
+    class Command1(kwconf.Config):
         __alias__ = ['alias1']  # should be used because alias not given in the decorator
         foo = kwconf.Value('spam', help='spam spam spam spam')
 
@@ -114,7 +114,7 @@ def test_modal_customize_command_classlevel():
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     @MyModalCLI.register(command='command2', alias=['alias2', 'alias3'])
-    class Command2(kwconf.DataConfig):
+    class Command2(kwconf.Config):
         bar = 'biz'
         __alias__ = ['overwritten']  # wil not be used because alias is given in the decorator
 
@@ -145,7 +145,7 @@ def test_modal_customize_command_instancelevel():
     modal = MyModalCLI()
 
     @modal.register(command='command1')
-    class Command1(kwconf.DataConfig):
+    class Command1(kwconf.Config):
         __alias__ = 'alias1'
         foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
@@ -153,7 +153,7 @@ def test_modal_customize_command_instancelevel():
             cls.cli(argv=argv, data=kwargs, verbose=True)
 
     @modal.register(command='command2', alias=['alias2', 'alias3'])
-    class Command2(kwconf.DataConfig):
+    class Command2(kwconf.Config):
         __alias__ = ['overwritten']
         bar = 'biz'
         @classmethod
@@ -191,7 +191,7 @@ def test_customized_modals():
     modal1 = Modal1()
     modal2 = Modal2()
 
-    class Command1(kwconf.DataConfig):
+    class Command1(kwconf.Config):
         foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
         def main(cls, argv=None, **kwargs):
@@ -238,7 +238,7 @@ def test_submodals():
     class Modal3(kwconf.ModalCLI):
         ...
 
-    class Command(kwconf.DataConfig):
+    class Command(kwconf.Config):
         __command__ = 'command'
         foo = kwconf.Value('spam', help='spam spam spam spam')
         @classmethod
@@ -341,13 +341,13 @@ def test_modal_command_name_resolution():
     """
     import kwconf
 
-    class Command1(kwconf.DataConfig):
+    class Command1(kwconf.Config):
         __command__ = 'command1'
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
 
-    class Command2(kwconf.DataConfig):
+    class Command2(kwconf.Config):
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
@@ -386,7 +386,7 @@ def test_submodal_usage_improvement():
 
             class Modal3(kwconf.ModalCLI):
 
-                class Command1(kwconf.DataConfig):
+                class Command1(kwconf.Config):
                     arg1 = 'foobar'
 
                     @classmethod
@@ -433,7 +433,7 @@ def test_submodal_usage_improvement():
 
 
 def test_modal_value_declarative_registration():
-    class Command1(kwconf.DataConfig):
+    class Command1(kwconf.Config):
         foo = 'spam'
 
         @classmethod
@@ -455,7 +455,7 @@ def test_modal_value_declarative_registration():
 
 
 def test_modal_value_command_override():
-    class Command1(kwconf.DataConfig):
+    class Command1(kwconf.Config):
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
@@ -475,7 +475,7 @@ def test_modal_value_command_override():
 
 
 def test_modal_value_alias_fuzzy_hyphens():
-    class Command1(kwconf.DataConfig):
+    class Command1(kwconf.Config):
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
@@ -563,7 +563,7 @@ def test_modal_with_positional_arguments_variant1():
         """Nested modal with positional command"""
         __command__ = 'nested'
 
-    class NestedCommand(kwconf.DataConfig):
+    class NestedCommand(kwconf.Config):
         """A nested command with positional args"""
         pos_arg = kwconf.Value('default_pos', position=1, help='A positional argument')
         opt_arg = kwconf.Value('default_opt', help='An optional argument')
@@ -574,7 +574,7 @@ def test_modal_with_positional_arguments_variant1():
 
     NestedModalCLI.register(NestedCommand, command='nested_cmd')
 
-    class SimpleCommand(kwconf.DataConfig):
+    class SimpleCommand(kwconf.Config):
         """Command with a positional argument"""
         filename = kwconf.Value('input.txt', position=1, help='Input filename')
         verbose = kwconf.Flag(False, help='Verbose mode')
@@ -624,7 +624,7 @@ def test_modal_with_positional_arguments_variant2():
     including nested modals. Second variant using algernative declarations
     """
 
-    class NestedCommand(kwconf.DataConfig):
+    class NestedCommand(kwconf.Config):
         """A nested command with positional args"""
         pos_arg = kwconf.Value('default_pos', position=1, help='A positional argument')
         opt_arg = kwconf.Value('default_opt', help='An optional argument')
@@ -633,7 +633,7 @@ def test_modal_with_positional_arguments_variant2():
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=False)
 
-    class SimpleCommand(kwconf.DataConfig):
+    class SimpleCommand(kwconf.Config):
         """Command with a positional argument"""
         filename = kwconf.Value('input.txt', position=1, help='Input filename')
         verbose = kwconf.Flag(False, help='Verbose mode')
@@ -686,7 +686,7 @@ def test_modal_with_config_field_special_options():
     when __special_options__ = False is set as a class attribute.
     """
 
-    class NestedCommand(kwconf.DataConfig):
+    class NestedCommand(kwconf.Config):
         """A nested command with a config field"""
         __special_options__ = False  # Disable special options at class level
         
@@ -697,7 +697,7 @@ def test_modal_with_config_field_special_options():
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs, verbose=False)
 
-    class SimpleCommand(kwconf.DataConfig):
+    class SimpleCommand(kwconf.Config):
         """Command with a config field"""
         __special_options__ = False  # Disable special options at class level
         
@@ -748,6 +748,46 @@ def test_modal_with_config_field_special_options():
     # Test 7: test via modal main with config override
     exit_code = TopModalCLI.main(argv=['simple_cmd', '--config', 'alt.yaml'])
     assert exit_code == 0
+
+
+def test_modal_forwards_only_explicit_kwargs():
+    """
+    Modal dispatch should not make omitted child defaults look explicit.
+    """
+
+    repo_defaults = {'depth': '0'}
+    calls = []
+
+    class ArchiveSource(kwconf.Config):
+        __command__ = 'archive_source'
+
+        depth = kwconf.Value('full')
+        format = kwconf.Value('auto')
+        verbose = kwconf.Flag(False)
+
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append({'argv': argv, 'kwargs': dict(kwargs)})
+            return cls.cli(argv=argv, data=kwargs, default=repo_defaults)
+
+    class App(kwconf.ModalCLI):
+        archive_source = ArchiveSource
+
+    direct = ArchiveSource.main(argv=['--verbose'])
+    modal = App.main(argv=['archive_source', '--verbose'])
+    explicit_modal = App.main(
+        argv=['archive_source', '--verbose', '--depth=full']
+    )
+
+    assert direct.depth == '0'
+    assert modal.depth == '0'
+    assert explicit_modal.depth == 'full'
+    assert calls[0] == {'argv': ['--verbose'], 'kwargs': {}}
+    assert calls[1] == {'argv': False, 'kwargs': {'verbose': True}}
+    assert calls[2] == {
+        'argv': False,
+        'kwargs': {'verbose': True, 'depth': 'full'},
+    }
 
 
 if __name__ == '__main__':

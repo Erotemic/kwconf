@@ -1,17 +1,55 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, cast, Optional, Union
+import pprint
+from typing import Any, Callable, cast, Optional, TypeVar, Union, overload
 
-from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import MutableMapping, Sequence
 
-import ubelt as ub
-
-from . import smartcast as smartcast_mod
+from kwconf.util.util_misc import NoParam
+from kwconf.util.util_repr import NiceRepr
 
 
 long_prefix_pat: re.Pattern[str] = re.compile('--[^-].*')
 short_prefix_pat: re.Pattern[str] = re.compile('-[^-].*')
+
+
+class _FactoryUnset:
+    """
+    Sentinel for a ``default_factory`` Value whose representative template
+    value has not been materialized yet.
+
+    The factory is intentionally *not* run at class-definition time (see
+    ``_Value.__init__``); it is invoked lazily on the first read of
+    ``Value.value`` and cached on the template. Per-instance freshness is a
+    separate guarantee provided by ``clone_default``. The sentinel is a
+    copy/deepcopy-safe singleton and is falsy so attribute-introspection code
+    (e.g. ``_to_value_kw``) skips it.
+    """
+    _instance: "Optional[_FactoryUnset]" = None
+
+    def __new__(cls) -> "_FactoryUnset":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return '<FACTORY_UNSET>'
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __copy__(self) -> "_FactoryUnset":
+        return self
+
+    def __deepcopy__(self, memo: Any) -> "_FactoryUnset":
+        return self
+
+    def __reduce__(self) -> Any:
+        return (_FactoryUnset, ())
+
+
+_FACTORY_UNSET = _FactoryUnset()
 
 
 def normalize_option_str(s: str) -> str:
@@ -20,12 +58,8 @@ def normalize_option_str(s: str) -> str:
 
 def _yaml_safe_load(value: str) -> Any:
     """Parse a string as YAML, used as the callable for ``type='yaml'``."""
-    try:
-        import yaml  # type: ignore[import-untyped]
-    except ImportError as exc:
-        raise ImportError(
-            "type='yaml' requires PyYAML. Install with `pip install pyyaml`."
-        ) from exc
+    from kwconf.util.util_yaml import import_yaml
+    yaml = import_yaml("type='yaml'")
     return yaml.safe_load(value)
 
 
@@ -65,7 +99,7 @@ TODO:
 """
 
 
-class Value(ub.NiceRepr):
+class _Value(NiceRepr):
     """
     You may set any item in the config's default to an instance of this class.
     Using this class allows you to declare the desired default value as well as
@@ -75,10 +109,17 @@ class Value(ub.NiceRepr):
         value (Any):
             A float, int, etc...
 
+        parser (Callable | str | None):
+            How to parse a *string* input into a value (the text-boundary
+            parser). Either a callable ``str -> value``, or a registry key such
+            as ``'auto'`` (annotation-gated; the eventual default), ``'yaml'``,
+            or ``'csv'``. See :mod:`kwconf.coerce`. Preferred over ``type``;
+            mutually exclusive with it.
+
         type (type | None):
-            the "type" of the value. This is usually used if the value
-            specified is not the type that `self.value` would usually be set
-            to.
+            DEPRECATED alias kept for back-compat. Sets the argparse ``type``
+            and the legacy smartcast coercion. Prefer ``parser=`` for new code;
+            mutually exclusive with ``parser``.
 
         parsekw (dict):
             kwargs for to argparse add_argument
@@ -111,12 +152,35 @@ class Value(ub.NiceRepr):
         tags (Any):
             for external program use
 
+        help (str | None):
+            CLI help text shown for this option.
+
+        choices (Sequence | None):
+            Restrict accepted CLI values to this set (argparse ``choices``).
+
+        nargs (int | str | None):
+            argparse ``nargs`` for this option (e.g. ``'+'``, ``'*'``, ``'?'``,
+            or an integer count).
+
+        required (bool):
+            If True, the CLI requires this option to be supplied.
+
+        default_factory (Callable[[], Any] | None):
+            A zero-argument callable that produces the default value; mutually
+            exclusive with a positional ``default``. Use for mutable defaults
+            (e.g. ``default_factory=list``).
+
+        validate (bool | str | None):
+            Opt into post-coerce annotation validation for this field. ``None``
+            inherits the owning class's ``__validate__``; ``'warn'`` warns on a
+            mismatch; ``'error'`` / ``True`` raises; ``False`` disables it.
+
     CommandLine:
-        xdoctest -m /home/joncrall/code/kwconf/kwconf/value.py Value
-        xdoctest -m kwconf.value Value
+        xdoctest -m kwconf.value _Value
 
     Example:
-        >>> self = Value(None, type=float)
+        >>> from kwconf.value import _Value
+        >>> self = _Value(None, type=float)
         >>> print('self.value = {!r}'.format(self.value))
         self.value = None
         >>> self.update('3.3')
@@ -125,7 +189,7 @@ class Value(ub.NiceRepr):
     """
 
     def __init__(self,
-                 default: Any = ub.NoParam,
+                 default: Any = NoParam,
                  type: Any = None,
                  help: Optional[str] = None,
                  choices: Sequence[Any] | None = None,
@@ -140,10 +204,22 @@ class Value(ub.NiceRepr):
                  tags: Optional[Any] = None,
                  *,
                  default_factory: Callable[[], Any] | None = None,
+                 parser: Any = None,
                  validate: Optional[Union[bool, str]] = None) -> None:
 
-        if default_factory is not None and default is not ub.NoParam:
+        if default_factory is not None and default is not NoParam:
             raise ValueError('Error: default_factory is mutually exclusive with default')
+
+        if parser is not None and type is not None:
+            raise ValueError(
+                'Value: pass either `parser` (preferred) or the deprecated '
+                '`type`, not both.')
+
+        # Whether the user explicitly passed ``type=`` (deprecated). The
+        # metaclass also populates ``self.type`` from a field annotation, so we
+        # capture user intent here, before that happens, to decide whether
+        # coerce() should use the legacy ``type`` path or the default 'auto'.
+        self._user_gave_type: bool = type is not None
 
         type = _resolve_named_type(type)
 
@@ -173,14 +249,30 @@ class Value(ub.NiceRepr):
         # class with a matching annotation. ``None`` means no annotation
         # was associated, so validation is a no-op.
         self._annotation: Any = None
+        # New-style parser spec (see kwconf.coerce). ``None`` means
+        # "unset": fall back to the legacy ``type``/smartcast path. A
+        # callable or registry-string (e.g. 'auto', 'yaml', 'csv') routes
+        # string coercion through kwconf.coerce instead. This is the
+        # forward-looking replacement for ``type=``; both coexist for now.
+        self._parser_spec: Any = parser
 
+        # default_factory is deferred, NOT run here: invoking it at
+        # class-definition time would be wasteful (the result is only ever a
+        # representative template value) and would prematurely trigger any
+        # cost/side-effects of the factory. It is materialized lazily on the
+        # first read of ``.value`` (see the ``value`` property) and, crucially,
+        # re-invoked per Config instance by ``clone_default`` so mutable
+        # defaults are never shared.
         if default_factory is not None:
-            initial = default_factory()
-        elif default is not ub.NoParam:
-            initial = default
+            self._value: Any = _FACTORY_UNSET
+        elif default is not NoParam:
+            # BOUNDARY (design.md §4): the default is a Python-boundary value and
+            # is stored verbatim (WYSIWYG). It is NOT run through coerce(), so
+            # ``Value('512')`` keeps the string ``'512'``. Coercion happens only
+            # at the text boundary (argv/env/Config.coerce()).
+            self._value = default
         else:
-            initial = None
-        self.update(initial)
+            self._value = None
 
         # if __debug__:
         #     self._check_values()
@@ -209,7 +301,27 @@ class Value(ub.NiceRepr):
         # return '{!r}: {!r}'.format(self.type, self.value)
         return f'{self.value!r}'
 
-    def update(self, value: Any) -> "Value":
+    @property
+    def value(self) -> Any:
+        """
+        The template's current value. For ``default_factory`` fields this
+        materializes the factory lazily on first access and caches the result
+        (per-instance fresh values are produced separately by
+        ``clone_default``).
+        """
+        val = self._value
+        if val is _FACTORY_UNSET:
+            # Invariant: _value is _FACTORY_UNSET only when a factory was given
+            # (set in __init__), so default_factory is non-None here.
+            assert self.default_factory is not None
+            val = self._value = self.default_factory()
+        return val
+
+    @value.setter
+    def value(self, val: Any) -> None:
+        self._value = val
+
+    def update(self, value: Any) -> "_Value":
         self.value = self.coerce(value)
         return self
 
@@ -218,35 +330,51 @@ class Value(ub.NiceRepr):
         Best-effort coercion of ``value`` toward this Value's expected runtime
         type. The name is deliberate: this is not a clean type-cast.
 
-        Strings delegate to ``smartcast`` for type inference. kwconf
-        intentionally departs from scriptconfig: comma-separated strings are
-        NOT auto-split into lists -- a value like ``"a,b"`` stays the literal
-        string. To get a list, declare ``Value(..., type=list)`` or use
-        ``nargs='+'`` for CLI input.
+        Strings are parsed via :mod:`kwconf.coerce` (the ``'auto'`` parser by
+        default, gated by the field annotation). kwconf intentionally departs
+        from scriptconfig: comma-separated strings are NOT auto-split into lists
+        -- ``"a,b"`` stays the literal string. To get a list use ``nargs`` or
+        ``parser='csv'``/``'yaml'``.
 
-        Named-type sentinels like ``type='yaml'`` route strings through
-        the registered parser instead of smartcast. ``type='yaml'`` calls
-        ``yaml.safe_load`` so ``"[1,2,3]"`` becomes ``[1, 2, 3]`` and
-        ``"true"`` becomes ``True``.
+        Non-strings pass through untouched. The deprecated ``type=`` kwarg is
+        mapped onto the same machinery; ``type='yaml'`` routes through the
+        registered yaml parser.
         """
         if isinstance(value, str):
-            if self.type in _NAMED_TYPE_PARSER_SET:
+            from kwconf import coerce as _coerce_mod
+            if self._parser_spec is not None:
+                # Explicit parser= spec. 'auto' is gated by the field
+                # annotation; named/callable specs ignore it.
+                return _coerce_mod.coerce(value, annotation=self._annotation,
+                                          spec=self._parser_spec)
+            if self._user_gave_type:
+                # Deprecated explicit type= path, mapped onto kwconf.coerce
+                # (smartcast has been retired). Named parsers (e.g. 'yaml') and
+                # plain types go through the annotation-gated parser; any other
+                # callable is invoked directly.
+                if self.type in _NAMED_TYPE_PARSER_SET:
+                    return self.type(value)
+                if isinstance(self.type, type):
+                    return _coerce_mod.auto(value, self.type)
                 return self.type(value)
-            value = smartcast_mod.smartcast(value, self.type)
+            # Default: the annotation-gated 'auto' parser.
+            return _coerce_mod.auto(value, self._annotation)
         return value
 
-    def copy(self) -> "Value":
+    def copy(self) -> "_Value":
         import copy
         return copy.copy(self)
 
-    def clone_default(self) -> "Value":
+    def clone_default(self) -> "_Value":
         """
         Create a fresh per-instance copy of this value template.
         """
         import copy
         new = self.copy()
         if self.default_factory is not None:
-            new.value = new.coerce(self.default_factory())
+            # BOUNDARY (design.md §4): factory output is a Python-boundary value
+            # and is stored verbatim, consistent with __init__.
+            new.value = self.default_factory()
         else:
             new.value = copy.deepcopy(self.value)
         return new
@@ -258,13 +386,18 @@ class Value(ub.NiceRepr):
 
     def _to_value_kw(self) -> MutableMapping[str, Any]:
         """
-        Used in port-to-dataconf and port-to-argparse
+        Used in port-to-config and port-to-argparse
         """
 
         value = self
         orig_help = cast(Optional[str], self.parsekw['help'])
         orig_type = cast(Optional[Union[str, type]], self.parsekw['type'])
         value_kw: MutableMapping[str, Any] = {k: v for k, v in self.__dict__.items() if v}
+        # The value is stored under the private ``_value`` attribute (it is a
+        # lazily-materialized property); expose it under ``value`` so the
+        # ordering/pop logic below treats it as before.
+        if '_value' in value_kw:
+            value_kw['value'] = value_kw.pop('_value')
         value_kw.pop('parsekw')
         value_kw.update(value.parsekw)
         value_kw['help'] = CodeRepr(repr(orig_help))
@@ -275,30 +408,19 @@ class Value(ub.NiceRepr):
             else:
                 value_kw['type'] = CodeRepr(orig_type.__name__)
 
-        value_kw = ub.udict(value_kw)
-        order = value_kw & ['value', 'nargs', 'type', 'isflag', 'position', 'required',  # type: ignore
-                            'choices', 'alias', 'short_alias', 'group', 'mutex_group',
-                            'help']
-        value_kw = order | (value_kw - order)
+        # Move the "known" keys to the front (keeping their existing relative
+        # order), then any extra keys after -- matching the prior udict dance.
+        _order_keys = {'value', 'nargs', 'type', 'isflag', 'position', 'required',
+                       'choices', 'alias', 'short_alias', 'group', 'mutex_group',
+                       'help'}
+        order = {k: v for k, v in value_kw.items() if k in _order_keys}
+        rest = {k: v for k, v in value_kw.items() if k not in _order_keys}
+        value_kw = {**order, **rest}
         if value_kw.get('nargs', None) in {None, 'None'}:
             value_kw.pop('nargs', None)
 
-        HACKS = 1
-        if HACKS:
-
-            if orig_help and len(orig_help) > 40:
-                import textwrap
-                wrapped = ub.indent('\n'.join(textwrap.wrap(orig_help, width=60)), ' ' * 4)
-                block = ub.codeblock(
-                    """
-                    ub.paragraph(
-                        '''
-                    {}
-                        ''')
-                    """
-                ).format(wrapped)
-                value_kw['help'] = CodeRepr(ub.indent(block, ' ' * 8).lstrip())
-                # "ub.paragraph(\n'''\n{}\n''')".format(ub.indent(value.help, ' ' * 16))
+        # help stays a plain repr string literal (set above) so emitted code is
+        # dependency-free; we no longer wrap it in a ``ub.paragraph(...)`` call.
         value_kw['default'] = value.value
         value_kw.pop('value', None)
         return value_kw
@@ -313,10 +435,10 @@ class Value(ub.NiceRepr):
             import argparse
             from kwconf.value import *  # NOQA
             action = argparse._StoreAction('foo', 'bar', default=3)
-            value = Value._from_action(action, {}, {}, 0)
+            value = _Value._from_action(action, {}, {}, 0)
 
             action = argparse._CountAction('foo', 'bar')
-            value = Value._from_action(action, {}, {}, 0)
+            value = _Value._from_action(action, {}, {}, 0)
         """
         import argparse
         key = action.dest
@@ -330,13 +452,13 @@ class Value(ub.NiceRepr):
             if short_prefix_pat.match(s)
         ]
 
-        alias_set = ub.oset(normalize_option_str(s)
-                            for s in long_option_strings)
-        alias: list[str] = list(alias_set - {key})
+        alias_seen = list(dict.fromkeys(
+            normalize_option_str(s) for s in long_option_strings))
+        alias: list[str] = [a for a in alias_seen if a != key]
 
-        short_alias_set = ub.oset(normalize_option_str(s)
-                                  for s in short_option_strings)
-        short_alias: list[str] = list(short_alias_set - {key})
+        short_alias_seen = list(dict.fromkeys(
+            normalize_option_str(s) for s in short_option_strings))
+        short_alias: list[str] = [a for a in short_alias_seen if a != key]
 
         real_value_kw = {
             'default': action.default,
@@ -363,11 +485,11 @@ class Value(ub.NiceRepr):
             real_value_kw['mutex_group'] = repr(actionid_to_mgroupkey[action_id])
         if len(action.option_strings) == 0:
             real_value_kw['position'] = next(pos_counter)
-        value = Value(**real_value_kw)  # type: ignore
+        value = _Value(**real_value_kw)  # type: ignore
         return value
 
 
-class Flag(Value):
+class _Flag(_Value):
     """
     Exactly the same as a Value except isflag default to True
     """
@@ -378,7 +500,193 @@ class Flag(Value):
         super().__init__(default=default, **kwargs)
 
 
-def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
+_T = TypeVar('_T')
+
+
+# The classes above (``_Value`` / ``_Flag``) are the runtime field-metadata
+# wrappers. The PUBLIC API is these factory *functions*: they construct one of
+# those classes but are typed to return the field's value type ``T`` (the attrs
+# ``field()`` pattern), so ``x: int = Value(None)`` is a static type error and
+# ``cfg.x`` reads as ``int``. Two overloads give precise inference: from a
+# positional/keyword ``default`` (``T`` = the default's type), or from
+# ``default_factory`` (``T`` = the factory's return type, even with no
+# annotation). Internals keep constructing / isinstance-checking ``_Value`` /
+# ``_Flag`` directly.
+@overload
+def Value(
+    default: _T = ...,
+    type: Any = ...,
+    help: Optional[str] = ...,
+    choices: Sequence[Any] | None = ...,
+    position: Optional[int] = ...,
+    isflag: Union[bool, str] = ...,
+    nargs: Optional[Any] = ...,
+    alias: Sequence[str] | None = ...,
+    required: bool = ...,
+    short_alias: Sequence[str] | None = ...,
+    group: Optional[str] = ...,
+    mutex_group: Optional[str] = ...,
+    tags: Optional[Any] = ...,
+    *,
+    default_factory: None = ...,
+    parser: Any = ...,
+    validate: Optional[Union[bool, str]] = ...,
+) -> _T: ...
+@overload
+def Value(
+    *,
+    default_factory: Callable[[], _T],
+    type: Any = ...,
+    help: Optional[str] = ...,
+    choices: Sequence[Any] | None = ...,
+    position: Optional[int] = ...,
+    isflag: Union[bool, str] = ...,
+    nargs: Optional[Any] = ...,
+    alias: Sequence[str] | None = ...,
+    required: bool = ...,
+    short_alias: Sequence[str] | None = ...,
+    group: Optional[str] = ...,
+    mutex_group: Optional[str] = ...,
+    tags: Optional[Any] = ...,
+    parser: Any = ...,
+    validate: Optional[Union[bool, str]] = ...,
+) -> _T: ...
+def Value(
+    default: Any = NoParam,
+    type: Any = None,
+    help: Optional[str] = None,
+    choices: Sequence[Any] | None = None,
+    position: Optional[int] = None,
+    isflag: Union[bool, str] = False,
+    nargs: Optional[Any] = None,
+    alias: Sequence[str] | None = None,
+    required: bool = False,
+    short_alias: Sequence[str] | None = None,
+    group: Optional[str] = None,
+    mutex_group: Optional[str] = None,
+    tags: Optional[Any] = None,
+    *,
+    default_factory: Optional[Callable[[], Any]] = None,
+    parser: Any = None,
+    validate: Optional[Union[bool, str]] = None,
+) -> Any:
+    """
+    Declare a config field, attaching CLI / parsing metadata to a default value.
+
+    Returns a :class:`_Value` wrapper at runtime, but is *typed* as the field's
+    value type ``T`` so the default is checked against the field annotation
+    (``x: int = Value(None)`` is a static error) and ``cfg.x`` reads as ``int``.
+    Use a bare attribute (``x: int = 5``) when you need no metadata.
+
+    Args:
+        default (T):
+            The default value. Omit for a required field (``required=True``) or
+            when using ``default_factory``. A *string* default is parsed only at
+            the text boundary, never on plain Python assignment.
+
+        type (type | str | Callable | None):
+            DEPRECATED alias for ``parser`` (kept for back-compat); mutually
+            exclusive with it. Also sets the argparse ``type``.
+
+        help (str | None):
+            CLI help text for this option.
+
+        choices (Sequence | None):
+            Restrict accepted CLI values to this set (argparse ``choices``).
+
+        position (int | None):
+            Allow this field as a positional CLI argument at this 1-based index.
+
+        isflag (bool | str):
+            If True, parse as a boolean flag; ``'counter'`` for a count flag.
+            Prefer :func:`Flag` for boolean flags.
+
+        nargs (int | str | None):
+            argparse ``nargs`` (e.g. ``'+'``, ``'*'``, ``'?'``, or an int). For
+            container fields each token is coerced as the element type.
+
+        alias (Sequence[str] | None):
+            Additional long option names (each prefixed with ``--``).
+
+        required (bool):
+            If True, the CLI requires this option. Mutually exclusive with a
+            supplied default.
+
+        short_alias (Sequence[str] | None):
+            Short option names (each prefixed with ``-``), e.g. ``['n']``.
+
+        group (str | None):
+            Display-only: group options together in CLI help.
+
+        mutex_group (str | None):
+            Mark options mutually exclusive on the command line.
+
+        tags (Any):
+            Free-form metadata for external program use.
+
+        default_factory (Callable[[], T] | None):
+            Zero-argument callable producing the default; mutually exclusive with
+            ``default``. Use for mutable defaults (e.g. ``default_factory=list``).
+            ``T`` is inferred from the factory's return type.
+
+        parser (Callable | str | None):
+            How to parse a *string* input into a value (the text-boundary
+            parser): a callable ``str -> value`` or a registry key such as
+            ``'auto'`` (annotation-gated, the default), ``'yaml'``, or ``'csv'``.
+            See :mod:`kwconf.coerce`. Preferred over ``type``.
+
+        validate (bool | str | None):
+            Opt into post-coerce annotation validation. ``None`` inherits the
+            class ``__validate__``; ``'warn'`` warns; ``'error'`` / ``True``
+            raises; ``False`` disables.
+
+    Returns:
+        T: typed as the field value type (a ``_Value`` wrapper at runtime).
+
+    Example:
+        >>> import kwconf
+        >>> class Cfg(kwconf.Config):
+        >>>     epochs: int = kwconf.Value(10, help='number of epochs')
+        >>>     name: str | None = kwconf.Value(None, alias=['n'])
+        >>>     tags: list = kwconf.Value(default_factory=list)
+        >>> assert Cfg(epochs=3)['epochs'] == 3
+    """
+    return _Value(
+        default, type=type, help=help, choices=choices, position=position,
+        isflag=isflag, nargs=nargs, alias=alias, required=required,
+        short_alias=short_alias, group=group, mutex_group=mutex_group,
+        tags=tags, default_factory=default_factory, parser=parser,
+        validate=validate,
+    )
+
+
+def Flag(
+    default: bool = False,
+    help: Optional[str] = None,
+    *,
+    alias: Sequence[str] | None = None,
+    short_alias: Sequence[str] | None = None,
+    group: Optional[str] = None,
+    mutex_group: Optional[str] = None,
+    required: bool = False,
+    position: Optional[int] = None,
+    tags: Optional[Any] = None,
+    parser: Any = None,
+    validate: Optional[Union[bool, str]] = None,
+) -> bool:
+    """
+    Declare a boolean flag field: like :func:`Value` but with flag semantics
+    (supports both ``--flag`` and ``--flag=value`` on the CLI). Typed to return
+    ``bool``. See :func:`Value` for the shared keyword arguments.
+    """
+    return cast(bool, _Flag(
+        default, help=help, alias=alias, short_alias=short_alias, group=group,
+        mutex_group=mutex_group, required=required, position=position,
+        tags=tags, parser=parser, validate=validate,
+    ))
+
+
+def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
     """
     POC for a new simplified way for a value to add itself as an argument to a
     parser.
@@ -438,6 +746,15 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any
     argkw['default'] = value
     argkw['action'] = _maker_smart_parse_action(self)
 
+    if not isflag:
+        # Route CLI conversion through the field's coerce() (the annotation-
+        # gated 'auto' parser / deprecated type= / coerce=), so CLI parsing
+        # matches Config.coerce() and honors unions. With no argparse ``type``
+        # set, the ParseAction installs a _smart_type that calls
+        # template.coerce() for scalars and per-element coercion for nargs
+        # fields. Flag fields keep their own (argparse_ext) handling.
+        argkw.pop('type', None)
+
     if positional:
         parent.add_argument(name, **argkw)
 
@@ -480,13 +797,13 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[Value], self: Any
         parent.add_argument(*option_strings, required=required, **argkw)
     except Exception:
         print('ERROR: Failed to add argument (in _value_add_argument_to_parser / Config.argparse)')
-        print('argkw = {}'.format(ub.urepr(argkw, nl=1)))
-        print('required = {}'.format(ub.urepr(required, nl=1)))
-        print('option_strings = {}'.format(ub.urepr(option_strings, nl=1)))
+        print('argkw = {}'.format(pprint.pformat(argkw)))
+        print('required = {}'.format(pprint.pformat(required)))
+        print('option_strings = {}'.format(pprint.pformat(option_strings)))
         raise
 
 
-def _value_add_argument_kw(value: Any, _value: Optional[Value], self: Any, key: str, fuzzy_hyphens: int = 0) -> dict[str, tuple]:
+def _value_add_argument_kw(value: Any, _value: Optional[_Value], self: Any, key: str, fuzzy_hyphens: int = 0) -> dict[str, tuple]:
     """
     TODO: resolve with :func:`_value_add_argument_to_parser`. This just creates
     one or more kwargs for add_argument. (Depending on how many variants of the
@@ -589,7 +906,7 @@ def _value_add_argument_kw(value: Any, _value: Optional[Value], self: Any, key: 
     return invocations
 
 
-def _resolve_alias(name: str, _value: Optional[Value], fuzzy_hyphens: int | bool) -> list[str]:
+def _resolve_alias(name: str, _value: Optional[_Value], fuzzy_hyphens: int | bool) -> list[str]:
     aliases: Optional[Sequence[str]]
     short_aliases: Optional[Sequence[str]]
     if _value is None:
@@ -620,14 +937,11 @@ def _resolve_alias(name: str, _value: Optional[Value], fuzzy_hyphens: int | bool
 
 def _maker_smart_parse_action(self):
     import argparse
-    from itertools import chain
 
     kwconf_object = self
 
-    ### TODO: be slightly less smart
     class ParseAction(argparse._StoreAction):
         def __init__(self, *args, **kwargs):
-            # required/= kwargs.pop('required', False)
             super().__init__(*args, **kwargs)
             # with script config nothing should be required by default
             # (unless specified) all positional arguments should have
@@ -638,26 +952,33 @@ def _maker_smart_parse_action(self):
             self.required = False  # hack
 
             if self.type is None:
-                # If a type isn't explicitly declared, we will either use
-                # the template (if it exists) or try using a smartcast.
+                # Route conversion through the field's coerce(). argparse calls
+                # the converter once per token; for nargs fields it then collects
+                # the per-token results into a list (the uniform "apply the
+                # parser to each value" rule).
                 def _smart_type(value):
-                    key = self.dest
-                    template = kwconf_object.__default__[key]
-                    value = template.coerce(value)
-                    return value
+                    template = kwconf_object.__default__[self.dest]
+                    if self.nargs is not None:
+                        from kwconf import coerce as _coerce_mod
+                        # With an explicit parser, apply it per token (csv ->
+                        # list, yaml -> value); argparse collects the results.
+                        if getattr(template, '_parser_spec', None) is not None:
+                            return template.coerce(value)
+                        # Otherwise coerce each token as the container's element
+                        # type rather than the (container) field annotation.
+                        elem = _coerce_mod.element_annotation(
+                            getattr(template, '_annotation', None))
+                        return _coerce_mod.auto(value, elem)
+                    return template.coerce(value)
 
                 self.type = _smart_type
 
         def __call__(action, parser, namespace, values, option_string=None):
-            # print('CALL action = {!r}'.format(action))
-            # print('option_string = {!r}'.format(option_string))
-            # print('values = {!r}'.format(values))
-
-            if isinstance(values, list) and len(values):
-                # We got a list of lists, which we hack into a flat list
-                if isinstance(values[0], list):
-                    values = list(chain(*values))
-
+            # No flattening: under nargs we apply the parser to each token and
+            # collect the results verbatim (the uniform rule). A list-producing
+            # parser like csv therefore yields a list-of-lists -- intended; the
+            # old concat hack is gone (it created ambiguity for structured
+            # tokens, e.g. csv 1,2 3,4 -> [1,2,3,4] vs [[1,2],[3,4]]).
             setattr(namespace, action.dest, values)
             if not hasattr(parser, '_explicitly_given'):
                 # We might be given a subparser / parent parser

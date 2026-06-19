@@ -7,10 +7,10 @@ def test_config_aliases():
         'opt2': kwconf.Value(None, alias=['option2', 'old_name']),
     }
 
-    class Config1(kwconf.DataConfig):
+    class Config1(kwconf.Config):
         __default__ = __common_default__
 
-    class Config3(kwconf.DataConfig):
+    class Config3(kwconf.Config):
         __default__ = __common_default__
 
     config1 = Config1()

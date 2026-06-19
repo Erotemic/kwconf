@@ -1,19 +1,19 @@
 """
-Helpers for nested configuration nodes built from Config / DataConfig objects.
+Helpers for nested configuration nodes built from Config objects.
 
-The :class:`SubConfig` wrapper marks a nested :class:`DataConfig` (or subclass)
+The :class:`SubConfig` wrapper marks a nested :class:`Config` (or subclass)
 and optionally exposes a registry of valid choices or a permissive import
 mechanism for dynamically specified class paths.
 
-The rest of this module contains utilities that both :class:`DataConfig` and
-:class:`DataConfig` can use to realize nested configuration trees from
-defaults, files, kwargs, and staged CLI parsing.
+The rest of this module contains utilities that :class:`Config` uses to
+realize nested configuration trees from defaults, files, kwargs, and staged
+CLI parsing.
 
 Example:
     >>> import kwconf
-    >>> class Inner(kwconf.DataConfig):
+    >>> class Inner(kwconf.Config):
     ...     depth = 1
-    >>> class Outer(kwconf.DataConfig):
+    >>> class Outer(kwconf.Config):
     ...     inner = kwconf.SubConfig(Inner, choices={'inner': Inner})
     >>> cfg = Outer.cli(argv=['--inner.depth=3'])
     >>> assert cfg.inner.depth == 3
@@ -25,10 +25,11 @@ from __future__ import annotations
 import inspect
 from collections.abc import Mapping
 from typing import Any, IO
-import ubelt as ub
 
-from kwconf.config import DataConfig
-from kwconf.value import Value
+from kwconf.util.util_misc import iterable
+from kwconf.util.util_yaml import import_yaml
+from kwconf.config import Config
+from kwconf.value import _Value as Value
 
 __all__ = [
     'SubConfig',
@@ -124,9 +125,9 @@ def add_forbidden_selector_args(parser, cfg):
     Example:
         >>> import argparse
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> parser = argparse.ArgumentParser()
         >>> add_forbidden_selector_args(parser, Outer())
@@ -147,18 +148,18 @@ def add_forbidden_selector_args(parser, cfg):
 
 class SubConfig(Value):
     """
-    Wrapper used to declare nested :class:`DataConfig` / :class:`DataConfig` nodes.
+    Wrapper used to declare nested :class:`Config` / :class:`Config` nodes.
 
     Args:
-        default (Type[DataConfig] | Config): a DataConfig subclass or instance.
+        default (Type[Config] | Config): a Config subclass or instance.
         choices (dict | None): optional registry mapping selector keys to
-            DataConfig subclasses.
+            Config subclasses.
         allow_import (bool): if True, allow class-path selectors
             (``module.qualname.Class``) to be dynamically imported.
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
         >>> meta = SubConfig(Inner)
         >>> inst = meta.instantiate()
@@ -171,21 +172,21 @@ class SubConfig(Value):
                  help: str | None = None) -> None:
         default_inst: Any
         if inspect.isclass(default):
-            if not issubclass(default, DataConfig):
-                raise TypeError('SubConfig default must be a DataConfig subclass or instance')
+            if not issubclass(default, Config):
+                raise TypeError('SubConfig default must be a Config subclass or instance')
             default_inst = default
-        elif isinstance(default, DataConfig):
+        elif isinstance(default, Config):
             default_inst = default
         else:
-            raise TypeError('SubConfig default must be a DataConfig subclass or instance')
+            raise TypeError('SubConfig default must be a Config subclass or instance')
 
         super().__init__(default=default_inst, help=help)
         self.allow_import = allow_import
         self.choices = dict(choices) if choices is not None else None
         if self.choices is not None:
             for key, cls in self.choices.items():
-                if not inspect.isclass(cls) or not issubclass(cls, DataConfig):
-                    raise TypeError(f'SubConfig choices must map to DataConfig subclasses. {key!r} -> {cls!r}')
+                if not inspect.isclass(cls) or not issubclass(cls, Config):
+                    raise TypeError(f'SubConfig choices must map to Config subclasses. {key!r} -> {cls!r}')
 
     def __nice__(self):
         default_cls = self.value if inspect.isclass(self.value) else self.value.__class__
@@ -207,18 +208,18 @@ class SubConfig(Value):
 
 def wrap_subconfig_defaults(cfg, _dont_call_post_init=False):
     """
-    Normalize any SubConfig / Config defaults into tracked metadata.
+    Normalize any SubConfig defaults into tracked metadata.
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': Inner()}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> assert cfg._has_subconfigs
-        >>> class OuterValue(kwconf.DataConfig):
+        >>> class OuterValue(kwconf.Config):
         ...     __default__ = {'inner': kwconf.Value(Inner())}
         >>> cfg = OuterValue(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -236,16 +237,16 @@ def wrap_subconfig_defaults(cfg, _dont_call_post_init=False):
                 if v.help and not inner.help:
                     inner.parsekw['help'] = v.help
                 meta = inner
-            elif isinstance(inner, DataConfig):
+            elif isinstance(inner, Config):
                 meta = SubConfig(inner, help=v.help)
                 cfg._default[k] = meta
-            elif inspect.isclass(inner) and issubclass(inner, DataConfig):
+            elif inspect.isclass(inner) and issubclass(inner, Config):
                 meta = SubConfig(inner, help=v.help)
                 cfg._default[k] = meta
-        elif isinstance(v, DataConfig):
+        elif isinstance(v, Config):
             meta = SubConfig(v)
             cfg._default[k] = meta
-        elif inspect.isclass(v) and issubclass(v, DataConfig):
+        elif inspect.isclass(v) and issubclass(v, Config):
             meta = SubConfig(v)
             cfg._default[k] = meta
         if meta is not None:
@@ -260,9 +261,9 @@ def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> cfg._data['inner'] = None
@@ -272,7 +273,7 @@ def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
     if not getattr(cfg, '_has_subconfigs', False):
         return
     for key, meta in getattr(cfg, '_subconfig_meta', {}).items():
-        if not isinstance(cfg._data.get(key), DataConfig):
+        if not isinstance(cfg._data.get(key), Config):
             cfg._data[key] = meta.instantiate(_dont_call_post_init=_dont_call_post_init)
 
 
@@ -294,7 +295,7 @@ def coerce_argv(cmdline: Any) -> tuple[list[str], bool]:
         argv = sys.argv[1:]
     elif isinstance(cmdline, str):
         argv = shlex.split(cmdline)
-    elif ub.iterable(cmdline):
+    elif iterable(cmdline):
         argv = list(cmdline)
     else:
         raise TypeError(f'Unsupported argv={cmdline!r}')
@@ -336,7 +337,7 @@ def coerce_data_updates(data, mode=None):
         return {}
 
     import os
-    from kwconf.file_like import FileLike
+    from kwconf.util.util_fileio import open_text_input
 
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
         if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
@@ -344,8 +345,8 @@ def coerce_data_updates(data, mode=None):
             try:
                 user_config = json.loads(data)
             except Exception:
-                import yaml  # type: ignore[import-untyped]
                 import io
+                yaml = import_yaml('YAML parsing')
                 stream: IO[Any] = io.StringIO(data)
                 user_config = yaml.load(stream, Loader=yaml.SafeLoader)
         else:
@@ -354,9 +355,9 @@ def coerce_data_updates(data, mode=None):
                     mode = 'json'
             if mode is None:
                 mode = 'yaml'
-            with FileLike(data, 'r') as file:
+            with open_text_input(data, 'r') as file:
                 if mode == 'yaml':
-                    import yaml
+                    yaml = import_yaml('YAML file loading')
                     user_config = yaml.load(file, Loader=yaml.SafeLoader)
                 elif mode == 'json':
                     import json
@@ -365,7 +366,7 @@ def coerce_data_updates(data, mode=None):
                     raise KeyError(mode)
     elif isinstance(data, Mapping):
         user_config = data
-    elif isinstance(data, DataConfig):
+    elif isinstance(data, Config):
         user_config = data.to_dict()
     else:
         raise TypeError(f'Expected path or dict, but got {type(data)}')
@@ -429,9 +430,9 @@ def _path_is_subconfig(cfg, parts):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -442,17 +443,17 @@ def _path_is_subconfig(cfg, parts):
     for idx, part in enumerate(parts):
         if part == '__class__':
             return False
-        if not isinstance(node, DataConfig):
+        if not isinstance(node, Config):
             return False
         if part in getattr(node, '_subconfig_meta', {}):
             if idx == len(parts) - 1:
                 return True
             child = node._data.get(part)
-            if isinstance(child, DataConfig):
+            if isinstance(child, Config):
                 node = child
             else:
                 return False
-        elif part in node._data and isinstance(node._data[part], DataConfig):
+        elif part in node._data and isinstance(node._data[part], Config):
             node = node._data[part]
         else:
             return False
@@ -465,11 +466,11 @@ def extract_selector_overrides(cfg, argv, allow_import=True, localns=None, stack
 
     Example:
         >>> import kwconf
-        >>> class Adam(kwconf.DataConfig):
+        >>> class Adam(kwconf.Config):
         ...     __default__ = {'lr': 1e-3}
-        >>> class Sgd(kwconf.DataConfig):
+        >>> class Sgd(kwconf.Config):
         ...     __default__ = {'momentum': 0.9}
-        >>> class Train(kwconf.DataConfig):
+        >>> class Train(kwconf.Config):
         ...     __default__ = {'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
         >>> cfg = Train(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -536,9 +537,9 @@ def _ensure_parent_node(cfg, parts):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -547,15 +548,15 @@ def _ensure_parent_node(cfg, parts):
     """
     node = cfg
     for part in parts:
-        if not isinstance(node, DataConfig):
+        if not isinstance(node, Config):
             raise KeyError('.'.join(parts))
         if part in getattr(node, '_subconfig_meta', {}):
             child = node._data.get(part)
-            if not isinstance(child, DataConfig):
+            if not isinstance(child, Config):
                 child = node._subconfig_meta[part].instantiate(_dont_call_post_init=True)
                 node._data[part] = child
             node = child
-        elif part in node._data and isinstance(node._data[part], DataConfig):
+        elif part in node._data and isinstance(node._data[part], Config):
             node = node._data[part]
         else:
             raise KeyError('.'.join(parts))
@@ -564,7 +565,7 @@ def _ensure_parent_node(cfg, parts):
 
 def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
     """
-    Resolve a selector spec into a DataConfig subclass.
+    Resolve a selector spec into a Config subclass.
 
     Precedence:
         1. SubConfig registry choices (if provided)
@@ -574,19 +575,19 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
         >>> meta = SubConfig(Inner, choices={'inner': Inner})
         >>> assert _resolve_class_spec(meta, 'inner', True) is Inner
     """
     if meta.choices and spec in meta.choices:
         return meta.choices[spec]
-    if inspect.isclass(spec) and issubclass(spec, DataConfig):
+    if inspect.isclass(spec) and issubclass(spec, Config):
         return spec
     if isinstance(spec, str):
         if localns is not None and spec.isidentifier():
             candidate = localns.get(spec)
-            if inspect.isclass(candidate) and issubclass(candidate, DataConfig):
+            if inspect.isclass(candidate) and issubclass(candidate, Config):
                 return candidate
         if not (meta.allow_import or allow_import):
             raise ValueError(f'Importing {spec!r} not allowed for this SubConfig')
@@ -601,8 +602,8 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
         if not hasattr(mod, clsname):
             raise ValueError(f'Module {modname!r} has no attribute {clsname!r}')
         cls = getattr(mod, clsname)
-        if not inspect.isclass(cls) or not issubclass(cls, DataConfig):
-            raise TypeError(f'Specified class {cls!r} is not a Config/DataConfig')
+        if not inspect.isclass(cls) or not issubclass(cls, Config):
+            raise TypeError(f'Specified class {cls!r} is not a Config/Config')
         return cls
     raise ValueError(f'Unknown selector spec {spec!r}')
 
@@ -613,11 +614,11 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
 
     Example:
         >>> import kwconf
-        >>> class Adam(kwconf.DataConfig):
+        >>> class Adam(kwconf.Config):
         ...     __default__ = {'lr': 1e-3}
-        >>> class Sgd(kwconf.DataConfig):
+        >>> class Sgd(kwconf.Config):
         ...     __default__ = {'momentum': 0.9}
-        >>> class Train(kwconf.DataConfig):
+        >>> class Train(kwconf.Config):
         ...     __default__ = {'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
         >>> cfg = Train(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -642,7 +643,7 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
                 parent = _ensure_parent_node(cfg, parent_parts)
             except KeyError:
                 continue
-            if not isinstance(parent, DataConfig):
+            if not isinstance(parent, Config):
                 continue
             meta = getattr(parent, '_subconfig_meta', {}).get(leaf, None)
             if meta is None:
@@ -657,13 +658,13 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
 
 def apply_dot_updates(cfg, updates, *, allow_import=True, localns=None, stacklevel=None):
     """
-    Apply dotted-path updates and selectors to a nested Config / DataConfig.
+    Apply dotted-path updates and selectors to a nested Config.
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -700,7 +701,7 @@ def apply_dot_updates(cfg, updates, *, allow_import=True, localns=None, stacklev
             parent = _ensure_parent_node(cfg, parts[:-1])
         except KeyError:
             continue
-        if isinstance(parent, DataConfig) and parts[-1] in getattr(parent, '_subconfig_meta', {}):
+        if isinstance(parent, Config) and parts[-1] in getattr(parent, '_subconfig_meta', {}):
             if key not in selectors:
                 sugar[key] = value
                 leaf_updates.pop(key, None)
@@ -727,9 +728,9 @@ def has_selector_overrides(cfg, updates):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -758,9 +759,9 @@ def flatten_defaults(cfg, prefix=(), include_class_options=False):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -775,9 +776,9 @@ def flatten_defaults(cfg, prefix=(), include_class_options=False):
                 class_key = '.'.join(prefix + (key, '__class__'))
                 flat[selector_key] = Value(None, help=f'{key} implementation selector')
                 flat[class_key] = Value(None, help=f'{key} implementation selector')
-            if isinstance(value, DataConfig):
+            if isinstance(value, Config):
                 flat.update(flatten_defaults(value, prefix + (key,), include_class_options))
-        elif isinstance(value, DataConfig):
+        elif isinstance(value, Config):
             flat.update(flatten_defaults(value, prefix + (key,), include_class_options))
         else:
             meta = cfg._default.get(key)
@@ -791,13 +792,13 @@ def flatten_defaults(cfg, prefix=(), include_class_options=False):
 
 def flat_config_from_tree(cfg, include_class_options=False):
     """
-    Build a temporary DataConfig instance to parse realized leaf arguments.
+    Build a temporary Config instance to parse realized leaf arguments.
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -806,7 +807,7 @@ def flat_config_from_tree(cfg, include_class_options=False):
     """
     defaults = flatten_defaults(cfg, include_class_options=include_class_options)
     name = f'_Flat_{cfg.__class__.__name__}'
-    FlatCls = type(name, (DataConfig,), {'__default__': defaults})
+    FlatCls = type(name, (Config,), {'__default__': defaults})
     return FlatCls(_dont_call_post_init=True)
 
 
@@ -823,9 +824,9 @@ def expand_multipass_parser(cfg, parser, argv=None, special_options=True,
     Example:
         >>> import argparse
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -897,21 +898,21 @@ def finalize_post_init(cfg):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> finalize_post_init(cfg)
     """
-    if isinstance(cfg, DataConfig):
+    if isinstance(cfg, Config):
         if not getattr(cfg, '_kwconf_post_init_done', False):
             cfg.__post_init__()
             cfg._kwconf_post_init_done = True
-    if isinstance(cfg, DataConfig):
+    if isinstance(cfg, Config):
         for value in cfg._data.values():
-            if isinstance(value, DataConfig):
+            if isinstance(value, Config):
                 finalize_post_init(value)
 
 
@@ -921,7 +922,7 @@ def _class_identifier(cls):
 
     Example:
         >>> import kwconf
-        >>> assert _class_identifier(kwconf.DataConfig).endswith('.DataConfig')
+        >>> assert _class_identifier(kwconf.Config).endswith('.Config')
     """
     return f'{cls.__module__}.{cls.__name__}'
 
@@ -932,25 +933,64 @@ def find_subconfig_paths(cfg):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> assert 'inner' in find_subconfig_paths(cfg)
     """
     paths: list[str] = []
-    stack: list[tuple[list[str], DataConfig]] = [([], cfg)]
+    stack: list[tuple[list[str], Config]] = [([], cfg)]
     while stack:
         prefix, node = stack.pop()
         for key, value in node._data.items():
             next_prefix = prefix + [key]
             if key in getattr(node, '_subconfig_meta', {}):
                 paths.append('.'.join(next_prefix))
-            if isinstance(value, DataConfig):
+            if isinstance(value, Config):
                 stack.append((next_prefix, value))
     return paths
+
+
+def distribute_explicit_argv_keys(cfg, keys):
+    """
+    Record argv-explicit provenance across a realized config tree.
+
+    ``keys`` is the set of canonical (possibly dotted) destinations that were
+    explicitly supplied on argv for ``cfg``. The full set is stored on
+    ``cfg._explicit_argv_keys``; dotted keys are additionally distributed to
+    the matching SubConfig children with their leading segment stripped,
+    recursing into the realized tree so each node carries the keys relevant to
+    it (e.g. the parent records ``inner.x`` while ``inner`` records ``x``).
+
+    Example:
+        >>> import kwconf
+        >>> class Inner(kwconf.Config):
+        ...     __default__ = {'x': 1}
+        >>> class Outer(kwconf.Config):
+        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
+        >>> cfg = Outer(_dont_call_post_init=True)
+        >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
+        >>> distribute_explicit_argv_keys(cfg, {'inner.x'})
+        >>> assert cfg._explicit_argv_keys == frozenset({'inner.x'})
+        >>> assert cfg._data['inner']._explicit_argv_keys == frozenset({'x'})
+    """
+    keys = frozenset(keys)
+    cfg._explicit_argv_keys = keys
+    # Group dotted keys by their first segment so each subconfig child receives
+    # the remainder of the path.
+    child_keys: dict = {}
+    for key in keys:
+        head, sep, tail = key.partition('.')
+        if not sep or not tail:
+            continue
+        child = cfg._data.get(head)
+        if isinstance(child, Config):
+            child_keys.setdefault(head, set()).add(tail)
+    for head, subkeys in child_keys.items():
+        distribute_explicit_argv_keys(cfg._data[head], subkeys)
 
 
 def config_to_nested_dict(cfg, include_class=True):
@@ -959,9 +999,9 @@ def config_to_nested_dict(cfg, include_class=True):
 
     Example:
         >>> import kwconf
-        >>> class Inner(kwconf.DataConfig):
+        >>> class Inner(kwconf.Config):
         ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.DataConfig):
+        >>> class Outer(kwconf.Config):
         ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
@@ -977,7 +1017,7 @@ def config_to_nested_dict(cfg, include_class=True):
     meta_map = getattr(cfg, '_subconfig_meta', {})
     for key, value in cfg._data.items():
         meta = meta_map.get(key)
-        if isinstance(value, DataConfig):
+        if isinstance(value, Config):
             child = config_to_nested_dict(value, include_class=include_class)
             selector = None
             if meta is not None and meta.choices:

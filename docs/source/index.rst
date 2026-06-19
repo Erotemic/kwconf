@@ -21,14 +21,23 @@ Welcome to kwconf's documentation!
    :caption: Manual
    :maxdepth: 2
 
+   manual/core_contract
+   manual/coercion_and_cli
+   manual/nested_configs
+   manual/modal_cli
    manual/migration_from_scriptconfig
    manual/ADRs
+
+.. toctree::
+   :caption: Tutorial
+   :maxdepth: 2
+
+   tutorial/quickstart
 
 .. toctree::
    :caption: API reference
    :maxdepth: 5
 
-   auto/kwconf
    auto/modules
 
 

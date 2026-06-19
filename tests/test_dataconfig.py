@@ -5,11 +5,11 @@ import kwconf
 def test_dataconfig_setattr_simple():
     import pytest
 
-    class ExampleDataConfig(kwconf.DataConfig):
+    class ExampleConfig(kwconf.Config):
         x: int = 0
         y: str = '3'
 
-    self = ExampleDataConfig()
+    self = ExampleConfig()
 
     print(f'self.__dict__={self.__dict__}')
     print(f'self.x={self.x}')
@@ -50,11 +50,11 @@ def test_dataconfig_setattr_simple():
 
 def test_dataconfig_setattr_combos():
 
-    class ExampleDataConfig(kwconf.DataConfig):
+    class ExampleConfig(kwconf.Config):
         x: int = 0
         y: str = '3'
 
-    self = ExampleDataConfig()
+    self = ExampleConfig()
 
     def setmethod_item(self, key, value):
         # Test setting the value by using __setitem__
@@ -103,14 +103,14 @@ def test_dataconfig_warning():
     import kwconf
     import pytest
     with pytest.warns(Warning):
-        class ExampleDataConfig(kwconf.DataConfig):
+        class ExampleConfig(kwconf.Config):
             x = kwconf.Value(None),
 
 
 def test_dataconfig_with_funcs():
     import kwconf
 
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         __default__ = {
             'a': 1,
             'b': 1,
@@ -141,10 +141,10 @@ def test_dataconfig_with_funcs():
 def test_dataconfig_docstring():
     import kwconf
 
-    class MyConfig1(kwconf.DataConfig):
+    class MyConfig1(kwconf.Config):
         ...
 
-    class MyConfig2(kwconf.DataConfig):
+    class MyConfig2(kwconf.Config):
         """
         Hello World
         """
@@ -160,7 +160,7 @@ def test_dataconfig_docstring():
 
 
 def test_config_is_typed_first_too():
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         x: int = 0
         y: str = '3'
 
@@ -171,7 +171,7 @@ def test_config_is_typed_first_too():
 
 
 def test_value_default_factory():
-    class MyConfig(kwconf.DataConfig):
+    class MyConfig(kwconf.Config):
         tags: list[str] = kwconf.Value(default_factory=list)
 
     cfg1 = MyConfig()

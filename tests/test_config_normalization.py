@@ -4,19 +4,21 @@ import kwconf
 
 
 def test_leaf_defaults_are_normalized():
-    class LeafConfig(kwconf.DataConfig):
+    class LeafConfig(kwconf.Config):
         __default__ = {
             'alpha': 1,
             'beta': kwconf.Value(2),
         }
 
-    assert isinstance(LeafConfig.__default__['alpha'], kwconf.Value)
+    # kwconf.Value is now a factory function; the runtime wrapper class is
+    # kwconf.value._Value (a.k.a. kwconf.ValueClass).
+    assert isinstance(LeafConfig.__default__['alpha'], kwconf.value._Value)
     assert LeafConfig.__default__['alpha'].value == 1
-    assert isinstance(LeafConfig.__default__['beta'], kwconf.Value)
+    assert isinstance(LeafConfig.__default__['beta'], kwconf.value._Value)
 
 
 def test_bool_defaults_become_flags():
-    class BoolConfig(kwconf.DataConfig):
+    class BoolConfig(kwconf.Config):
         __default__ = {
             'flag': False,
             'enabled': True,
@@ -33,10 +35,10 @@ def test_bool_defaults_become_flags():
 
 
 def test_subconfig_defaults_are_normalized():
-    class Inner(kwconf.DataConfig):
+    class Inner(kwconf.Config):
         __default__ = {'leaf': 1}
 
-    class Outer(kwconf.DataConfig):
+    class Outer(kwconf.Config):
         __default__ = {
             'inner_class': Inner,
             'inner_inst': Inner(),
@@ -50,15 +52,15 @@ def test_subconfig_defaults_are_normalized():
 
 
 def test_selector_override_remains_available():
-    class SGDConfig(kwconf.DataConfig):
+    class SGDConfig(kwconf.Config):
         lr = kwconf.Value(0.01, type=float)
         momentum = kwconf.Value(0.9, type=float)
 
-    class AdamConfig(kwconf.DataConfig):
+    class AdamConfig(kwconf.Config):
         lr = kwconf.Value(0.001, type=float)
         beta1 = kwconf.Value(0.9, type=float)
 
-    class TrainConfig(kwconf.DataConfig):
+    class TrainConfig(kwconf.Config):
         optim = kwconf.SubConfig(AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig})
         epochs = kwconf.Value(10, type=int)
 

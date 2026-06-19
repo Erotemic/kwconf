@@ -6,7 +6,7 @@ def test_newattr():
 
     import kwconf
     import pytest
-    class TestNewattrCLI(kwconf.DataConfig):
+    class TestNewattrCLI(kwconf.Config):
         ...
 
     config = TestNewattrCLI()

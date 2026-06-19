@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
 import kwconf
-import ubelt as ub
+from kwconf.util.util_text import codeblock
 
 
-class TemplateCLI(kwconf.DataConfig):
+class TemplateCLI(kwconf.Config):
     """
     Generate boilerplate for a template CLI script.
     """
@@ -33,21 +33,26 @@ class TemplateCLI(kwconf.DataConfig):
             text = _build_single_template(config)
         elif config.type == 'modal':
             text = _build_modal_template(config)
-        print(ub.highlight_code(text, 'python'))
+        try:
+            import ubelt as ub
+            text = ub.highlight_code(text, 'python')
+        except ImportError:
+            pass  # syntax highlighting is an optional (ubelt) nicety
+        print(text)
 
 
 def _build_single_template(config):
 
     classname = f'{config.name}Config'
 
-    text = ub.codeblock(
+    text = codeblock(
         f'''
         #!/usr/bin/env python3
         # PYTHON_ARGCOMPLETE_OK
         import kwconf
 
 
-        class {classname}(kwconf.DataConfig):
+        class {classname}(kwconf.Config):
             """
             Write your documentation here
             """
@@ -81,7 +86,7 @@ def _build_modal_template(config):
 
     classname = f'{config.name}Modal'
 
-    text = ub.codeblock(
+    text = codeblock(
         f'''
         #!/usr/bin/env python3
         # PYTHON_ARGCOMPLETE_OK

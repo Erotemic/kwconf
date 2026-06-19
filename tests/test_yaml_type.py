@@ -2,10 +2,10 @@
 """
 Tests for ``Value(type='yaml')``.
 
-YAML-typed fields parse string inputs via ``yaml.safe_load``. The same
-behavior applies whether the string came from argv, a config file, or
-a kwarg in the constructor -- consistent with how other typed Values
-already coerce strings.
+YAML-typed fields parse string inputs via ``yaml.safe_load`` at the text
+boundary: argv, or the explicit ``Config.coerce(...)`` constructor. The plain
+``Config(...)`` constructor trusts the user and does NOT coerce -- strings are
+kept verbatim (see dev/planning/design.md §4).
 """
 import typing
 
@@ -23,18 +23,20 @@ def test_yaml_type_parses_list_from_kwargs():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         items: typing.Any = kwconf.Value(None, type="yaml")
 
-    cfg = C(items='[1, 2, 3]')
-    assert cfg['items'] == [1, 2, 3]
+    # Plain constructor keeps the raw string (text boundary not crossed).
+    assert C(items='[1, 2, 3]')['items'] == '[1, 2, 3]'
+    # coerce() parses it via the yaml parser.
+    assert C.coerce(items='[1, 2, 3]')['items'] == [1, 2, 3]
 
 
 def test_yaml_type_parses_list_from_cli():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         items: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C.cli(argv=['--items=[1,2,3]'])
@@ -45,7 +47,7 @@ def test_yaml_type_parses_dict_from_cli():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         opts: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C.cli(argv=['--opts={a: 1, b: 2}'])
@@ -56,20 +58,26 @@ def test_yaml_type_parses_scalars():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         x: typing.Any = kwconf.Value(None, type="yaml")
 
-    assert C(x='1')['x'] == 1
-    assert C(x='true')['x'] is True
-    assert C(x='null')['x'] is None
+    # The plain constructor trusts the user: strings are kept verbatim.
+    assert C(x='1')['x'] == '1'
+    assert C(x='true')['x'] == 'true'
+    assert C(x='null')['x'] == 'null'
     assert C(x='auto')['x'] == 'auto'
+    # coerce() parses string inputs through the field's yaml parser.
+    assert C.coerce(x='1')['x'] == 1
+    assert C.coerce(x='true')['x'] is True
+    assert C.coerce(x='null')['x'] is None
+    assert C.coerce(x='auto')['x'] == 'auto'
 
 
 def test_yaml_type_passthrough_non_string():
     _require_yaml()
     import kwconf
 
-    class C(kwconf.DataConfig):
+    class C(kwconf.Config):
         x: typing.Any = kwconf.Value(None, type="yaml")
 
     cfg = C(x=[1, 2, 3])
