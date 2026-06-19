@@ -812,6 +812,7 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
     Example:
         >>> # Demonstrate how the default ArgumentParser does not interchange
         >>> # underscores and dashes, but kwconf can.
+        >>> # xdoctest: +REQUIRES(module:ubelt)
         >>> import argparse
         >>> import ubelt as ub
         >>> #parser = argparse.ArgumentParser(exit_on_error=False)
@@ -854,6 +855,7 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
         >>> assert res6 == {'my_option1': 'default', 'my_option2': 'foo-bar_baz'}
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
         >>> import argparse
         >>> import ubelt as ub
         >>> parser = ExtendedArgumentParser()

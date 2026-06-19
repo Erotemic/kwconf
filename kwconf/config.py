@@ -777,6 +777,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> self.argparse().print_help()
             >>> # xdoc: +REQUIRES(--cli)
             >>> self.load(argv=True)
+            >>> # xdoctest: +REQUIRES(module:ubelt)
+            >>> import ubelt as ub
             >>> print(ub.urepr(self, nl=1))
         """
         import kwconf
@@ -1989,6 +1991,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> cls = vals['PortedConfig']
             >>> self = cls(**{'true_dataset': 1, 'pred_dataset': 1})
             >>> recon = self.argparse()
+            >>> # xdoctest: +REQUIRES(module:ubelt)
+            >>> import ubelt as ub
             >>> print('recon._actions = {}'.format(ub.urepr(recon._actions, nl=1)))
         """
         entries = cls._values_from_argparse(parser)
@@ -2045,6 +2049,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> mutex_group3.add_argument('--mgroup3_opt1')
             >>> mutex_group3.add_argument('--mgroup3_opt2')
             >>> DynamicClass = kwconf.Config.cls_from_argparse(parser)
+            >>> # xdoctest: +REQUIRES(module:ubelt)
+            >>> import ubelt as ub
             >>> print(f'DynamicClass.__default__ = {ub.urepr(DynamicClass.__default__, nl=1)}')
             >>> self = DynamicClass()
             >>> print(f'self = {ub.urepr(self, nl=1)}')

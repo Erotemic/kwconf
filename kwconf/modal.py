@@ -170,6 +170,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         xdoctest -m kwconf.modal ModalCLI
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
+        >>> import ubelt as ub
         >>> from kwconf.modal import *  # NOQA
         >>> import kwconf
         >>> self = ModalCLI(description='A modal CLI')
@@ -218,6 +220,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         xdoctest -m kwconf.modal ModalCLI:1
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
+        >>> import ubelt as ub
         >>> # Declarative modal CLI (new in 0.7.9)
         >>> import kwconf
         >>> class MyModalCLI(kwconf.ModalCLI):
@@ -243,6 +247,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> MyModalCLI.main(argv=['command2', '--baz=buz'])
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
+        >>> import ubelt as ub
         >>> # Declarative modal CLI (new in 0.7.9)
         >>> import kwconf
         >>> class MyModalCLI(kwconf.ModalCLI):
@@ -269,6 +275,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> MyModalCLI.main(argv=['command2', '--baz=buz'])
 
     Example:
+        >>> # xdoctest: +REQUIRES(module:ubelt)
+        >>> import ubelt as ub
         >>> # Key/value modal CLI (uses names as commands)
         >>> import kwconf
         >>> #
