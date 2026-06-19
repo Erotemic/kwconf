@@ -30,9 +30,14 @@ design doc):
 * **Strict bool.** The ``'auto'`` parser accepts only ``0/1/true/false`` for a
   bool (never arbitrary ints like ``"123"``). Users wanting laxer behavior set
   an explicit ``parser``.
-* **Warn, never raise, on no-match.** If nothing in the candidate set matches and
-  ``str`` is not allowed, ``auto`` warns and falls back to the original string.
-  Annotations are statically binding but runtime-advisory.
+* **Best-effort, never raise, on no-match.** If nothing in the candidate set
+  matches and ``str`` is not allowed, ``auto`` silently falls back to the
+  original string. Reporting value/annotation mismatches is the job of the
+  single Config validation layer (``__validate__``, default ``'warn'``), not of
+  the parsers -- so there is one voice, consistent across ``auto``/``csv``/
+  ``yaml``/custom. (A ``CannotCoerce`` *shape* error -- e.g. ``parser='auto'``
+  on ``list[int]`` -- still warns, since it is a parser-usage hint validation
+  cannot give.) Annotations are statically binding but runtime-advisory.
 
 This is the default coercion path: ``Value.coerce()`` and ``Config.coerce()``
 route here, and the deprecated ``type=`` kwarg is mapped onto it.
@@ -210,12 +215,10 @@ def auto(token: str, annotation: Any = Any) -> Any:
         except (ValueError, TypeError):
             continue
 
-    # Nothing matched and ``str`` was not an allowed candidate. Per the design
-    # we warn and keep the string rather than raising.
-    warnings.warn(
-        f'could not parse {token!r} into any of {annotation!r}; keeping string',
-        stacklevel=2,
-    )
+    # Nothing matched and ``str`` was not an allowed candidate. Best-effort:
+    # keep the string and stay silent. The Config validation layer
+    # (``__validate__``, default 'warn') is the single voice that reports such
+    # value/annotation mismatches, so warning here too would double up.
     return token
 
 

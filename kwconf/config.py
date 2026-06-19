@@ -935,12 +935,21 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return value
 
     def __setitem__(self, key: str, value: Any) -> None:
+        self._setitem(key, value)
+
+    def _setitem(self, key: str, value: Any, validate: bool = True) -> None:
+        """
+        Core assignment. ``validate=False`` stores a *trusted* value (the
+        field's own default during the argv merge) without running annotation
+        validation -- defaults are the author's baseline, checked statically,
+        not runtime-supplied (design.md §4).
+        """
         if isinstance(key, str) and '.' in key and getattr(self, '_has_subconfigs', False):
             parts = key.split('.')
             parent_key, leaf = parts[:-1], parts[-1]
             from kwconf.subconfig import _ensure_parent_node
             parent = _ensure_parent_node(self, parent_key)
-            parent[leaf] = value
+            parent._setitem(leaf, value, validate=validate)
             return
         if key not in self._data:
             key = self._normalize_alias_key(key)
@@ -961,7 +970,8 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 # text boundary (argv pre-coerces in argparse; Config.coerce()/
                 # from_cli/from_env parse explicitly). So store the value as-is.
                 coerced = value
-                self._validate_assignment(key, coerced, template)
+                if validate:
+                    self._validate_assignment(key, coerced, template)
                 self._data[key] = coerced
             else:
                 # If we don't have an underlying Value object simply set the
@@ -975,12 +985,19 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Run optional annotation-based validation on an assignment.
 
         Mode is resolved from ``template.validate`` first, falling back to
-        the class-level ``__validate__`` attribute (default ``False``).
+        the class-level ``__validate__`` attribute (default ``'warn'``).
 
         Modes:
-          * ``False`` / ``None`` (default) -- no validation.
-          * ``'warn'`` -- emit a ``UserWarning`` on mismatch.
+          * ``'warn'`` (default) -- emit a ``UserWarning`` on mismatch.
+          * ``False`` -- no validation.
           * ``'error'`` / ``True`` -- raise ``TypeError`` on mismatch.
+
+        This is the single place kwconf reports annotation mismatches; the
+        ``coerce``/``auto`` parsers no longer warn on a value-level no-match
+        (they best-effort and keep the string), so there is one voice. It
+        runs on user-supplied values (constructor/data/assignment and parsed
+        argv/env), but NOT on the field's own trusted default (design.md §4),
+        so a WYSIWYG default like ``Value('512')`` never warns about itself.
 
         Validation is skipped when the template has no associated
         annotation (e.g. fields declared without a class-level type hint).
@@ -990,7 +1007,7 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
             return
         mode = template.validate
         if mode is None:
-            mode = getattr(self, '__validate__', False)
+            mode = getattr(self, '__validate__', 'warn')
         if not mode:
             return
         if _value_matches_annotation(value, annotation):
@@ -1511,7 +1528,9 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 # Preserve any data/default overrides already applied before
                 # argparse defaults are merged in.
                 continue
-            self[key] = default_value
+            # Trusted default (not runtime-supplied): skip validation so a
+            # WYSIWYG default never warns about itself.
+            self._setitem(key, default_value, validate=False)
 
         # Then load config file defaults
         if special_options:

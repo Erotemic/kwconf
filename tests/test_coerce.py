@@ -53,12 +53,18 @@ class TestAutoAnnotationGated:
 
 
 class TestAutoFallback:
-    def test_warn_and_fallback_when_str_not_allowed(self):
-        with pytest.warns(UserWarning, match='could not parse'):
+    def test_silent_fallback_when_str_not_allowed(self):
+        # No value-level warning: the Config validation layer is the single
+        # voice for mismatches. auto best-efforts and keeps the string.
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
             got = auto('foo', Optional[int])
         assert got == 'foo'
 
     def test_container_annotation_warns_and_falls_back(self):
+        # The *shape* error (auto cannot build a container) is a parser-usage
+        # hint that validation cannot give, so it still warns.
         with pytest.warns(UserWarning, match="parser='csv'"):
             got = auto('1,2,3', list[int])
         assert got == '1,2,3'
@@ -79,13 +85,12 @@ class TestAutoBoolIntInterplay:
 
     def test_strict_bool_rejects_arbitrary_ints(self):
         # "123" must NOT become True; bool is strict (0/1/true/false only).
-        with pytest.warns(UserWarning, match='could not parse'):
-            got = auto('123', Union[bool, None])
+        # Silent best-effort fallback (no value-level warning).
+        got = auto('123', Union[bool, None])
         assert got == '123'
 
     def test_true_with_only_int_falls_back(self):
-        with pytest.warns(UserWarning, match='could not parse'):
-            got = auto('true', Optional[int])
+        got = auto('true', Optional[int])
         assert got == 'true'
 
 

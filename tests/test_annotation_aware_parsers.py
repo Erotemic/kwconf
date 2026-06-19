@@ -7,6 +7,7 @@ parsers opt in via ``register_parser(..., annotation_aware=True)``.
 ``csv`` is ``auto`` mapped over the comma-split, gated by the container's
 element annotation.
 """
+import pytest
 import kwconf
 from kwconf.coerce import coerce, register_parser, element_annotation, auto
 
@@ -42,12 +43,27 @@ def test_csv_without_annotation_is_full_auto():
 
 
 def test_yaml_stays_annotation_blind():
+    # __validate__=False isolates parsing behavior from the validation layer
+    # (which, on by default, would separately warn about the list mismatch).
     class C(kwconf.Config):
+        __validate__ = False
         data: list = kwconf.Value(default_factory=list, parser='yaml')
 
     # yaml produces its own typed structure regardless of the annotation.
     assert C.cli(argv=['--data', 'just-a-string'])['data'] == 'just-a-string'
     assert C.cli(argv=['--data', '[1, 2, 3]'])['data'] == [1, 2, 3]
+
+
+def test_yaml_mismatch_warns_via_validation_layer():
+    # The flip side: with validation on (the default), yaml producing a value
+    # that doesn't match the annotation is reported by the single validation
+    # voice -- this is what makes warnings consistent across parsers.
+    class C(kwconf.Config):
+        data: list = kwconf.Value(default_factory=list, parser='yaml')
+
+    with pytest.warns(UserWarning, match='does not match annotation'):
+        cfg = C.cli(argv=['--data', 'just-a-string'])
+    assert cfg['data'] == 'just-a-string'
 
 
 def test_register_custom_annotation_aware_parser():

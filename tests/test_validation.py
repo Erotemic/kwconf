@@ -15,15 +15,30 @@ import typing
 import pytest
 
 
-def test_validation_off_by_default():
+def test_validation_warns_by_default():
     import kwconf
 
     class D(kwconf.Config):
         mode: typing.Literal['fast', 'slow'] = 'fast'
 
-    # mode is a choice on argparse but constructor doesn't enforce
-    # without ``__validate__``. ``'wrong'`` is silently accepted.
-    cfg = D(mode='wrong')  # ty: ignore[invalid-argument-type]
+    # Validation now defaults to 'warn': a mismatched user value is still
+    # accepted (never raises), but emits a warning.
+    with pytest.warns(UserWarning, match='does not match annotation'):
+        cfg = D(mode='wrong')  # ty: ignore[invalid-argument-type]
+    assert cfg['mode'] == 'wrong'
+
+
+def test_validation_can_be_disabled():
+    import kwconf
+
+    class D(kwconf.Config):
+        __validate__ = False
+        mode: typing.Literal['fast', 'slow'] = 'fast'
+
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        cfg = D(mode='wrong')  # ty: ignore[invalid-argument-type]
     assert cfg['mode'] == 'wrong'
 
 
@@ -126,6 +141,33 @@ def test_validation_skipped_without_annotation():
 
     # No annotation, no validation, no error.
     assert C(x='whatever')['x'] == 'whatever'  # ty: ignore[unknown-argument]
+
+
+def test_default_is_exempt_from_validation():
+    import warnings
+    import kwconf
+
+    # A WYSIWYG string default on an int field is a trusted Python-boundary
+    # value (design.md §4); with validation on by default it must NOT warn
+    # about itself -- on the plain constructor or the argv path.
+    class C(kwconf.Config):
+        x: int = kwconf.Value('512')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        assert C()['x'] == '512'
+        assert C.cli(argv=[])['x'] == '512'
+
+
+def test_user_supplied_mismatch_still_warns_with_default_on():
+    import kwconf
+
+    # But a runtime-supplied value that mismatches is reported.
+    class C(kwconf.Config):
+        x: int = kwconf.Value(0)
+
+    with pytest.warns(UserWarning, match='does not match annotation'):
+        C(x='not-an-int')  # ty: ignore[invalid-argument-type]
 
 
 def test_validation_runs_on_setitem():
