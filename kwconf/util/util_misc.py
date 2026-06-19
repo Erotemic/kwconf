@@ -52,3 +52,19 @@ def iterable(obj: Any, strok: bool = False) -> bool:
     except Exception:
         return False
     return strok or not isinstance(obj, str)
+
+
+def import_ubelt(feature: str = 'this feature') -> Any:
+    """
+    Import the optional ``ubelt`` dependency, raising an actionable error if it
+    is not installed. Used by the few features that still need ubelt
+    (``port_to_argparse`` codegen, ``Config.__json__``).
+    """
+    try:
+        import ubelt as ub
+    except ImportError as exc:
+        raise RuntimeError(
+            f'{feature} requires the optional ubelt dependency. '
+            f'Install it with `pip install kwconf[ubelt]`.'
+        ) from exc
+    return ub

@@ -74,7 +74,6 @@ import os
 import sys
 import pprint
 import warnings
-import ubelt as ub
 import itertools as it
 import argparse as argparse_mod
 from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Union, cast
@@ -83,7 +82,7 @@ from collections.abc import Mapping as _ABCMapping
 from collections import Counter
 from kwconf.util.util_fileio import open_text_input
 from kwconf.util.util_text import codeblock, paragraph, indent
-from kwconf.util.util_misc import iterable
+from kwconf.util.util_misc import iterable, import_ubelt
 from kwconf.util.util_repr import NiceRepr
 from kwconf.value import _Value as Value, _Flag as Flag
 from kwconf import diagnostics
@@ -826,7 +825,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         BUILTIN_VECTOR_TYPES = (set, frozenset, list, tuple)
 
         # The walker method should be more efficient.
-        walker = cast(Any, ub.IndexableWalker(data, list_cls=BUILTIN_VECTOR_TYPES))
+        ub = import_ubelt('Config.__json__')
+        walker = ub.IndexableWalker(data, list_cls=BUILTIN_VECTOR_TYPES)
         for path, item in walker:
             if item is None or isinstance(item, BUILTIN_SCALAR_TYPES):
                 ...
@@ -1822,7 +1822,6 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             raise Exception('no longer supported')
         elif style == 'config':
             recon_str = [
-                'import ubelt as ub',
                 'import kwconf',
                 '',
                 'class ' + name + '(kwconf.Config):',
@@ -1900,7 +1899,6 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>>     ...
             >>> text = kwconf.Config.port_from_click(click_main)
             >>> print(text)
-            import ubelt as ub
             import kwconf
             ...
             class click_main(kwconf.Config):
@@ -2229,6 +2227,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>>     got_port = vars(parser.parse_args(argv))
             >>>     assert got_orig == got_port
         """
+        ub = import_ubelt('port_to_argparse')
         parserkw = self._parserkw()
         to_pop = {k for k, v in parserkw.items() if v is None}
         parserkw = {k: v for k, v in parserkw.items() if k not in to_pop}

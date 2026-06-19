@@ -2,7 +2,11 @@ from __future__ import annotations
 
 
 def _register_ubelt_repr_extensions() -> None:
-    import ubelt as ub
+    try:
+        import ubelt as ub
+    except ImportError:
+        # ubelt is optional; its pretty-repr extension is just a nicety.
+        return
     try:
         _REPR_EXTENSIONS = ub.util_repr._REPR_EXTENSIONS  # type: ignore[attr-defined]
     except AttributeError:

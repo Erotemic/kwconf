@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
 import kwconf
-import ubelt as ub
 from kwconf.util.util_text import codeblock
 
 
@@ -34,7 +33,12 @@ class TemplateCLI(kwconf.Config):
             text = _build_single_template(config)
         elif config.type == 'modal':
             text = _build_modal_template(config)
-        print(ub.highlight_code(text, 'python'))
+        try:
+            import ubelt as ub
+            text = ub.highlight_code(text, 'python')
+        except ImportError:
+            pass  # syntax highlighting is an optional (ubelt) nicety
+        print(text)
 
 
 def _build_single_template(config):

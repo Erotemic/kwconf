@@ -6,8 +6,6 @@ from typing import Any, Callable, cast, Optional, TypeVar, Union, overload
 
 from collections.abc import MutableMapping, Sequence
 
-import ubelt as ub
-from kwconf.util.util_text import codeblock, indent
 from kwconf.util.util_misc import NoParam
 from kwconf.util.util_repr import NiceRepr
 
@@ -425,19 +423,8 @@ class _Value(NiceRepr):
         if value_kw.get('nargs', None) in {None, 'None'}:
             value_kw.pop('nargs', None)
 
-        # Reflow long help text into a ub.paragraph(...) call in the emitted code.
-        if orig_help and len(orig_help) > 40:
-            import textwrap
-            wrapped = indent('\n'.join(textwrap.wrap(orig_help, width=60)), ' ' * 4)
-            block = codeblock(
-                """
-                ub.paragraph(
-                    '''
-                {}
-                    ''')
-                """
-            ).format(wrapped)
-            value_kw['help'] = CodeRepr(indent(block, ' ' * 8).lstrip())
+        # help stays a plain repr string literal (set above) so emitted code is
+        # dependency-free; we no longer wrap it in a ``ub.paragraph(...)`` call.
         value_kw['default'] = value.value
         value_kw.pop('value', None)
         return value_kw

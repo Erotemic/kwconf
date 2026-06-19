@@ -68,8 +68,6 @@ import sys
 import pprint
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-import ubelt as ub
-
 from kwconf.util.util_text import codeblock, paragraph
 from kwconf.util.util_repr import NiceRepr
 from kwconf.util.util_class import class_or_instancemethod
