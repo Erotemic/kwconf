@@ -11,6 +11,14 @@ rows, so parser behavior is easy to inspect.
 python examples/run_all.py
 ```
 
+## Try one
+
+```bash
+python examples/01_minimal_config.py --help
+python examples/01_minimal_config.py --width=128 --height=96 --method=lanczos --dst=thumb.png --tags demo small --dry-run
+python examples/03_config_files.py --config examples/data/report.yaml --limit=3 --format=json
+```
+
 ## Examples
 
 - `01_minimal_config.py` - the smallest useful `kwconf.Config`: plain defaults,

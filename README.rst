@@ -81,6 +81,9 @@ A parser tells a field how to read a CLI/env string.
 
 .. code-block:: python
 
+    import kwconf
+
+
     class ParserConfig(kwconf.Config):
         scalar = kwconf.Value(None)                         # parser='auto'
         nums = kwconf.Value(default_factory=list, parser='csv')
@@ -154,39 +157,21 @@ validation.
     assert cfg.lr == 0.01
     assert cfg.tags == ['cat', 'dog']
 
-Example script
---------------
+Runnable examples
+-----------------
 
-.. code-block:: python
-
-    import hashlib
-    import kwconf
-
-
-    class FileHashConfig(kwconf.Config):
-        fpath = kwconf.Value(None, position=1, help='file to hash')
-        hasher = kwconf.Value('sha1', choices=['sha1', 'sha512'],
-                              help='hash algorithm')
-
-
-    def main(argv=None, **kwargs):
-        config = FileHashConfig.cli(argv=argv, data=kwargs)
-        hasher = getattr(hashlib, config.hasher)()
-        with open(config.fpath, 'rb') as file:
-            hasher.update(file.read())
-        print(hasher.hexdigest())
-
-
-    if __name__ == '__main__':
-        main()
-
-Usage:
+The checked-in examples live in ``examples/``. Run commands from the repo root:
 
 .. code-block:: bash
 
-    python hash_demo.py --help
-    python hash_demo.py README.rst
-    python hash_demo.py README.rst --hasher=sha512
+    python examples/01_minimal_config.py --help
+    python examples/01_minimal_config.py --width=128 --height=96 --method=lanczos --dst=thumb.png --tags demo small --dry-run
+    python examples/03_config_files.py --config examples/data/report.yaml --limit=3 --format=json
+    python examples/run_all.py
+
+Use ``examples/README.md`` as the map. Each example focuses on one surface:
+basic configs, CLI flags, files, nested configs, modals, large app structure,
+and migration helpers.
 
 Scriptconfig migration
 ----------------------

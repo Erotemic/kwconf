@@ -47,6 +47,9 @@ A parser reads a CLI/env string for one field.
 
 .. code-block:: python
 
+    import kwconf
+
+
     class ParserConfig(kwconf.Config):
         scalar = kwconf.Value(None)                         # parser='auto'
         nums = kwconf.Value(default_factory=list, parser='csv')
@@ -126,6 +129,14 @@ behavior.
 
 Next steps
 ----------
+
+Run checked-in examples from the repo root:
+
+.. code-block:: bash
+
+    python examples/01_minimal_config.py --help
+    python examples/03_config_files.py --config examples/data/report.yaml --limit=3 --format=json
+    python examples/run_all.py
 
 Use :doc:`../manual/migration_from_scriptconfig` when porting scriptconfig code
 or asking an LLM for migration help. The migration guide calls out old

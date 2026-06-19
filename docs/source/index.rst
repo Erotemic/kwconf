@@ -35,6 +35,9 @@ Parser demo
 
 .. code-block:: python
 
+    import kwconf
+
+
     class ParserConfig(kwconf.Config):
         scalar = kwconf.Value(None)                         # parser='auto'
         nums = kwconf.Value(default_factory=list, parser='csv')
@@ -52,6 +55,19 @@ Parser demo
 
 ``auto`` reads scalar CLI/env strings, ``csv`` reads comma lists, and ``yaml``
 reads YAML-shaped values. See :doc:`manual/coercion_and_cli` for details.
+
+Runnable examples
+-----------------
+
+The example scripts live in ``examples/``. Run commands from the repo root:
+
+.. code-block:: bash
+
+    python examples/01_minimal_config.py --help
+    python examples/03_config_files.py --config examples/data/report.yaml --limit=3 --format=json
+    python examples/run_all.py
+
+See ``examples/README.md`` for the map.
 
 .. toctree::
    :caption: Tutorial
