@@ -2606,12 +2606,16 @@ class Config(ub.NiceRepr, _ABCMapping, metaclass=MetaConfig):
         _positions = {k: v.position for k, v in self._default.items()
                       if v.position is not None}
         if _positions:
-            if ub.find_duplicates(_positions.values()):
-                # TODO: make this a warning in 3.7+ and ensure there is a good
-                # API for just indicating that a value is supposed to be
-                # positional, and using its order in the dictionary as that
-                # position. Need to account for inheritance though.
-                raise Exception('two values have the same position')
+            dup_positions = ub.find_duplicates(_positions.values())
+            if dup_positions:
+                # Build a {position: [keys...]} report so the error names the
+                # offending fields rather than just saying a clash exists.
+                conflicts = {
+                    pos: sorted(k for k, p in _positions.items() if p == pos)
+                    for pos in dup_positions
+                }
+                raise ValueError(
+                    f'Multiple fields declare the same CLI position: {conflicts}')
             _keyorder = ub.oset(ub.argsort(cast(Any, _positions)))
             _keyorder |= (ub.oset(self._default) - _keyorder)
         else:

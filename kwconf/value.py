@@ -415,22 +415,19 @@ class _Value(ub.NiceRepr):
         if value_kw.get('nargs', None) in {None, 'None'}:
             value_kw.pop('nargs', None)
 
-        HACKS = 1
-        if HACKS:
-
-            if orig_help and len(orig_help) > 40:
-                import textwrap
-                wrapped = ub.indent('\n'.join(textwrap.wrap(orig_help, width=60)), ' ' * 4)
-                block = ub.codeblock(
-                    """
-                    ub.paragraph(
-                        '''
-                    {}
-                        ''')
-                    """
-                ).format(wrapped)
-                value_kw['help'] = CodeRepr(ub.indent(block, ' ' * 8).lstrip())
-                # "ub.paragraph(\n'''\n{}\n''')".format(ub.indent(value.help, ' ' * 16))
+        # Reflow long help text into a ub.paragraph(...) call in the emitted code.
+        if orig_help and len(orig_help) > 40:
+            import textwrap
+            wrapped = ub.indent('\n'.join(textwrap.wrap(orig_help, width=60)), ' ' * 4)
+            block = ub.codeblock(
+                """
+                ub.paragraph(
+                    '''
+                {}
+                    ''')
+                """
+            ).format(wrapped)
+            value_kw['help'] = CodeRepr(ub.indent(block, ' ' * 8).lstrip())
         value_kw['default'] = value.value
         value_kw.pop('value', None)
         return value_kw
@@ -950,10 +947,8 @@ def _maker_smart_parse_action(self):
 
     kwconf_object = self
 
-    ### TODO: be slightly less smart
     class ParseAction(argparse._StoreAction):
         def __init__(self, *args, **kwargs):
-            # required/= kwargs.pop('required', False)
             super().__init__(*args, **kwargs)
             # with script config nothing should be required by default
             # (unless specified) all positional arguments should have
@@ -986,10 +981,6 @@ def _maker_smart_parse_action(self):
                 self.type = _smart_type
 
         def __call__(action, parser, namespace, values, option_string=None):
-            # print('CALL action = {!r}'.format(action))
-            # print('option_string = {!r}'.format(option_string))
-            # print('values = {!r}'.format(values))
-
             # No flattening: under nargs we apply the parser to each token and
             # collect the results verbatim (the uniform rule). A list-producing
             # parser like csv therefore yields a list-of-lists -- intended; the
