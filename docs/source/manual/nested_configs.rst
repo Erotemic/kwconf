@@ -1,29 +1,33 @@
 Nested Configs
 ==============
 
-Nested configs are declared explicitly with :class:`kwconf.SubConfig`.  A
+Nested configs are declared explicitly with :class:`kwconf.SubConfig`. A
 ``SubConfig`` wraps a :class:`kwconf.Config` class or instance and lets files
-and CLIs update nested values without hiding the tree shape.
+and CLIs update nested values while keeping the tree shape visible.
 
 Basic nesting
 -------------
 
 .. code-block:: python
 
-    import kwconf as kw
+    import kwconf
 
-    class Dataset(kw.Config):
-        path: str = 'demo'
-        augment: bool = False
 
-    class Adam(kw.Config):
-        lr: float = 0.001
-        beta1: float = 0.9
+    class Dataset(kwconf.Config):
+        path = 'demo'
+        augment = False
 
-    class Train(kw.Config):
-        dataset = kw.SubConfig(Dataset)
-        optim = kw.SubConfig(Adam)
-        epochs: int = 10
+
+    class Adam(kwconf.Config):
+        lr = 0.001
+        beta1 = 0.9
+
+
+    class Train(kwconf.Config):
+        dataset = kwconf.SubConfig(Dataset)
+        optim = kwconf.SubConfig(Adam)
+        epochs = 10
+
 
     cfg = Train.cli(argv=['--dataset.path=data/images', '--optim.lr=0.01'])
     assert cfg.dataset.path == 'data/images'
@@ -32,27 +36,29 @@ Basic nesting
 Selector choices
 ----------------
 
-A nested field can expose a registry of allowed implementations.  Users can
+A nested field can expose a registry of allowed implementations. Users can
 select a choice with ``--field=<choice>`` or ``--field.__class__=<choice>`` and
 then override leaves below that selected class.
 
 .. code-block:: python
 
-    class SGD(kw.Config):
-        lr: float = 0.01
-        momentum: float = 0.9
+    class SGD(kwconf.Config):
+        lr = 0.01
+        momentum = 0.9
 
-    class Train(kw.Config):
-        optim = kw.SubConfig(Adam, choices={'adam': Adam, 'sgd': SGD})
+
+    class Train(kwconf.Config):
+        optim = kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': SGD})
+
 
     cfg = Train.cli(argv=['--optim=sgd', '--optim.momentum=0.7'])
     assert isinstance(cfg.optim, SGD)
     assert cfg.optim.momentum == 0.7
 
-YAML roundtrip
---------------
+YAML round trip
+---------------
 
-Nested YAML uses normal dictionaries.  ``__class__`` records selector choices
+Nested YAML uses normal dictionaries. ``__class__`` records selector choices
 when a field is realized as a non-default class.
 
 .. code-block:: yaml
@@ -63,7 +69,7 @@ when a field is realized as a non-default class.
       momentum: 0.7
     epochs: 5
 
-The same file can be loaded with the opt-in special ``--config`` option:
+Load the file with the opt-in special ``--config`` option:
 
 .. code-block:: python
 
@@ -73,19 +79,19 @@ The same file can be loaded with the opt-in special ``--config`` option:
         allow_subconfig_overrides=True,
     )
 
-Precedence is predictable: class defaults, then ``data`` / config file values,
-then explicit CLI overrides.
+Precedence is: class defaults, then ``data`` / config file values, then
+explicit CLI overrides. See :doc:`core_contract`.
 
 Import safety
 -------------
 
-``SubConfig`` supports dynamic class-path selection only when ``allow_import``
-is enabled.  Prefer explicit ``choices`` for stable CLIs and disable imports in
-contexts where config files or argv are not trusted.
+``SubConfig`` supports dynamic class-path selection when ``allow_import`` is
+enabled. Prefer explicit ``choices`` for stable CLIs and disable imports when
+config files or argv come from untrusted sources.
 
 Help output
 -----------
 
-The parser is variant-aware.  If the user selects ``--optim=sgd`` before
+The parser is variant-aware. If the user selects ``--optim=sgd`` before
 ``--help``, the help output includes ``optim.momentum`` and omits Adam-only
 fields such as ``optim.beta1``.

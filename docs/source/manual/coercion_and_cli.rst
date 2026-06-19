@@ -1,159 +1,167 @@
 Coercion and CLI Contract
 =========================
 
-``kwconf`` keeps scriptconfig's useful CLI behavior but drops its surprising
-conversions. The core rule: untyped strings infer **scalars only**. ``"a,b,c"``
-stays a string unless the schema asks for structure.
+``kwconf`` parses strings from string-only sources: ``sys.argv`` tokens and
+``os.environ`` values. Python kwargs, assignment, defaults, and typed YAML/JSON
+values are used as Python values.
 
-The coercion boundary
----------------------
-
-Coercion happens only at the **text boundary** (argv, env). The **Python
-boundary** -- constructor, assignment, a field's own default -- is *trusted*:
-values pass through verbatim, no parsing, no runtime type failure.
+The user-facing rule
+--------------------
 
 .. code-block:: python
 
-    import kwconf as kw
+    import kwconf
 
-    class C(kw.Config):
-        x: int = kw.Value('512')        # WYSIWYG: the default stays '512'
 
-    assert C()['x'] == '512'            # Python boundary trusts
-    assert C.cli(argv=['--x=512'])['x'] == 512   # text boundary parses
+    class C(kwconf.Config):
+        x = kwconf.Value('512')
 
-``Config.coerce(**kwargs)`` and the ``from_cli`` / ``from_env`` / ``from_yaml``
-adapters opt into the text path from Python (handy in tests).
 
-Value coercion
+    assert C()['x'] == '512'
+    assert C.cli(argv=['--x=512'])['x'] == 512
+
+``Config.coerce(**kwargs)`` and ``from_cli`` / ``from_env`` adapters opt into
+the same string parsing path from Python. ``from_yaml`` loads YAML/JSON values
+with the types supplied by the file format.
+
+What a parser does
+------------------
+
+A parser tells one field how to read a CLI/env string. Set it with
+``Value(..., parser=...)``. The parser can be a named parser or a callable.
+
+.. code-block:: python
+
+    import kwconf
+
+
+    assert kwconf.Value(None).coerce('1') == 1
+    assert kwconf.Value(None).coerce('true') is True
+    assert kwconf.Value(None).coerce('a,b,c') == 'a,b,c'
+    assert kwconf.Value(None, parser='csv').coerce('1,2,3') == [1, 2, 3]
+    assert kwconf.Value(None, parser='yaml').coerce('[1, 2, 3]') == [1, 2, 3]
+
+``parser=`` is the canonical spelling. ``type=`` is a deprecated alias for
+migration.
+
+Default parsers
+---------------
+
+``auto``
+    The default parser. It reads one scalar from one string: ``None``, ``int``,
+    ``float``, ``complex``, ``bool``, or ``str``. With an annotation, it uses
+    the compatible scalar choices. Comma strings remain strings.
+
+``csv``
+    Splits on commas and applies ``auto`` to each item. Use it for compact
+    list-valued CLI/env fields.
+
+``yaml``
+    Runs ``yaml.safe_load`` on the string. Use it for values that may be a
+    list, dict, scalar, or nested structure. Install ``kwconf[yaml]`` for YAML
+    support.
+
+.. code-block:: python
+
+    class C(kwconf.Config):
+        scalar = kwconf.Value(None)                         # auto
+        nums = kwconf.Value(default_factory=list, parser='csv')
+        data = kwconf.Value(None, parser='yaml')
+
+
+    cfg = C.cli(argv=['--scalar=3', '--nums=1,2,3', '--data={a: 1}'])
+    assert cfg.scalar == 3
+    assert cfg.nums == [1, 2, 3]
+    assert cfg.data == {'a': 1}
+
+Annotations can refine parser output:
+
+.. code-block:: python
+
+    class C(kwconf.Config):
+        tags: list[str] = kwconf.Value(default_factory=list, parser='csv')
+        nums: list[int] = kwconf.Value(default_factory=list, parser='csv')
+
+
+    assert C.cli(argv=['--tags=1,2'])['tags'] == ['1', '2']
+    assert C.cli(argv=['--nums=1,2'])['nums'] == [1, 2]
+
+List input
+----------
+
+Use ``nargs`` for space-separated CLI lists:
+
+.. code-block:: python
+
+    class C(kwconf.Config):
+        tags = kwconf.Value(default_factory=list, nargs='+')
+
+
+    cfg = C.cli(argv=['--tags', 'cat', 'dog'])
+    assert cfg.tags == ['cat', 'dog']
+
+Use ``parser='csv'`` for comma-separated strings:
+
+.. code-block:: python
+
+    class C(kwconf.Config):
+        tags = kwconf.Value(default_factory=list, parser='csv')
+
+
+    cfg = C.cli(argv=['--tags=cat,dog'])
+    assert cfg.tags == ['cat', 'dog']
+
+Use ``parser='yaml'`` for nested text:
+
+.. code-block:: python
+
+    class C(kwconf.Config):
+        payload = kwconf.Value(None, parser='yaml')
+
+
+    cfg = C.cli(argv=['--payload={names: [cat, dog], enabled: true}'])
+    assert cfg.payload == {'names': ['cat', 'dog'], 'enabled': True}
+
+Custom parsers
 --------------
 
-``Value.coerce`` is the field-level text-boundary hook:
-
-1. an explicit ``parser=`` (named or callable) runs that parser;
-2. otherwise the default ``'auto'`` infers a scalar from a string -- ``None``,
-   ``int``, ``float``, ``complex``, ``bool``, ``str`` (fixed precedence,
-   intersected with the annotation);
-3. non-string values pass through unchanged.
+Register a named parser when the same string format appears in several fields.
+A normal parser accepts one string and returns one Python value.
 
 .. code-block:: python
 
-    assert kw.Value(None).coerce('1') == 1
-    assert kw.Value(None).coerce('true') is True
-    assert kw.Value(None).coerce('a,b,c') == 'a,b,c'          # NOT split
-    assert kw.Value(None, parser='csv').coerce('1,2,3') == [1, 2, 3]
-    assert kw.Value(None, parser='yaml').coerce('[1, 2, 3]') == [1, 2, 3]
+    import pathlib
+    import kwconf
+    from kwconf.coerce import register_parser
 
-.. note::
 
-   ``parser=`` is canonical; ``type=`` is a deprecated alias (mutually
-   exclusive). Don't use ``parser=list`` to build a list -- ``list('1,2,3')``
-   splits into characters. Use ``parser='csv'``, ``parser='yaml'``, or
-   ``nargs``.
+    def path_list(text):
+        return [pathlib.Path(p).expanduser() for p in text.split(':') if p]
 
-Parsers: annotation-aware vs unaware
-------------------------------------
 
-``'auto'`` (default, aware)
-    Scalar inference steered by the annotation; ``str`` is the final catch-all.
-    No match and ``str`` disallowed -> silent fallback (the validation layer
-    reports the mismatch once -- see :doc:`core_contract`).
+    register_parser('path_list', path_list)
 
-``'csv'`` (aware)
-    ``'auto'`` mapped over the comma-split, gated by the *element* annotation, so
-    ``list[str]`` keeps strings:
 
-    .. code-block:: python
+    class C(kwconf.Config):
+        inputs = kwconf.Value(default_factory=list, parser='path_list')
 
-        class C(kw.Config):
-            tags: list[str] = kw.Value(default_factory=list, parser='csv')
+For parsers that should consult the field annotation, register with
+``annotation_aware=True`` and accept ``(text, annotation)``.
 
-        assert C.cli(argv=['--tags', '1,2,3o'])['tags'] == ['1', '2', '3o']
+Validation
+----------
 
-``'yaml'`` (unaware)
-    ``yaml.safe_load``; produces its own typed structure. Best for polymorphic
-    ``list | dict | scalar`` fields:
-
-    .. code-block:: python
-
-        class C(kw.Config):
-            data: list | dict | int = kw.Value(None, parser='yaml')
-
-        assert C.cli(argv=['--data=[1,2,3]'])['data'] == [1, 2, 3]
-        assert C.cli(argv=["--data={a: 1}"])['data'] == {'a': 1}
-
-Register custom parsers, opting into awareness explicitly (unaware parsers keep
-the ``str -> value`` contract):
+Validation checks user-supplied values against annotations after parsing. The
+default policy is ``'warn'``. Set ``__validate__ = 'error'`` for stricter CLIs
+or ``False`` to disable validation.
 
 .. code-block:: python
 
-    from kwconf.coerce import register_parser, element_annotation, auto
+    class C(kwconf.Config):
+        __validate__ = 'error'
+        count: int = 0
 
-    def head_csv(token, annotation):                  # aware: gets annotation
-        elem = element_annotation(annotation)
-        return [auto(p, elem) for p in token.split(',')][:1]
 
-    register_parser('head_csv', head_csv, annotation_aware=True)
+    C.cli(argv=['--count=3'])
 
-``nargs`` with a parser
------------------------
-
-Uniform rule, no special cases: the parser runs on **each token** and the
-results **collect** into a list (no concat):
-
-.. code-block:: python
-
-    class C(kw.Config):
-        key: list[int] = kw.Value(default_factory=list, parser='csv', nargs='*')
-
-    assert C.cli(argv=['--key=1,2,3'])['key'] == [[1, 2, 3]]
-    assert C.cli(argv=['--key', '1,2', '3'])['key'] == [[1, 2], [3]]
-
-So ``csv + nargs`` is defined but rarely useful: use commas **or** spaces, not
-both. The old dual-form (``--k a,b,c`` == ``--k a b c``) is intentionally
-dropped -- it was ambiguous for structured tokens.
-
-Annotations also feed metadata -- e.g. ``Literal`` becomes choices:
-
-.. code-block:: python
-
-    import typing
-
-    class C(kw.Config):
-        mode: typing.Literal['fast', 'safe'] = 'fast'
-
-    assert list(C.__default__['mode'].parsekw['choices']) == ['fast', 'safe']
-
-Useful CLI behavior
--------------------
-
-``kwconf`` keeps the ergonomic scriptconfig pieces:
-
-* long/short options, long aliases, fuzzy underscore-to-hyphen variants;
-* flexible booleans (``--flag``, ``--flag=false``, ``--no-flag``);
-* counters (``-vvv``, ``--verbose=3``);
-* ``nargs``, positionals, display groups, mutex groups;
-* opt-in special options: ``--config``, ``--dump``, ``--dumps``.
-
-.. code-block:: python
-
-    class RunConfig(kw.Config):
-        __fuzzy_hyphens__ = 1
-        workers: int = 0
-        verbose = kw.Value(0, short_alias=['v'], isflag='counter')
-        dry_run = kw.Flag(False, alias=['dryrun'])
-        tags: list[str] = kw.Value(default_factory=list, nargs='+')
-
-    cfg = RunConfig.cli(argv=['--workers=4', '-vvv', '--dry-run', '--tags', 'a', 'b'])
-    assert (cfg.workers, cfg.verbose, cfg.dry_run, cfg.tags) == (4, 3, True, ['a', 'b'])
-
-Special options are off by default; opt in per call or with
-``__special_options__ = True`` on the class:
-
-.. code-block:: python
-
-    class Dumpable(kw.Config):
-        __special_options__ = True
-        x: int = 1
-
-    Dumpable.cli(argv=['--x=2', '--dumps'])     # prints YAML and exits
+See :doc:`core_contract` for the full validation contract.

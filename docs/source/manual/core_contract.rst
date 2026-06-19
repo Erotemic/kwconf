@@ -1,65 +1,69 @@
 Core Contract
 =============
 
-``kwconf`` is intentionally **not** a drop-in compatibility layer for
-``scriptconfig``.  It is a typed, explicit, dataclass-like configuration and
-CLI library that keeps the useful scriptconfig ergonomics while removing the
-implicit behavior that made large CLIs surprising.
+``kwconf`` is a typed, dataclass-like configuration and CLI library for small
+scripts and larger applications. It keeps the useful scriptconfig workflow and
+makes parsing choices explicit.
 
 Stable public objects
 ---------------------
 
-The stable public surface is intentionally small:
-
 ``Config``
-    The only public configuration base class.  Define schemas with typed class
-    variables and optional ``Value`` wrappers.  Construct with keyword
-    arguments, ``.load(...)``, or ``.cli(argv=...)``.
+    The public configuration base class. Define schemas with class variables
+    and optional ``Value`` wrappers. Construct with keyword arguments,
+    ``.load(...)``, or ``.cli(argv=...)``.
 
 ``Value`` / ``Flag``
-    Attach CLI metadata to a field: help text, aliases, choices, flags,
-    counters, ``nargs``, positional order, groups, mutex groups, explicit
-    coercion (``parser=``), and validation policy.  These are typed *factory
-    functions* (annotated to return the field's value type, which is what gives
-    you static default-vs-annotation checking).  To subclass the underlying
-    runtime class, use ``ValueClass`` / ``FlagClass``.
+    Attach field metadata: help text, aliases, choices, flags, counters,
+    ``nargs``, positional order, groups, mutex groups, ``parser=``, default
+    factories, and validation policy.
 
 ``SubConfig``
-    Declare nested configuration trees, including dotted CLI overrides and
-    selector choices for variant nodes.
+    Declare nested configuration trees, dotted CLI overrides, and selector
+    choices for variant nodes.
 
 ``ModalCLI`` / ``ModalValue``
-    Build subcommand CLIs from ``Config`` classes, including aliases and
-    nested modal dispatch.
+    Build subcommand CLIs from ``Config`` classes, including aliases and nested
+    modal dispatch.
 
 ``dataconf`` / ``define``
-    Lightweight helpers for defining config classes programmatically.
+    Lightweight helpers for programmatic or migration-heavy definitions.
 
-Schema definition contract
---------------------------
+Schema definition
+-----------------
 
-Prefer typed class variables:
+Start with class attributes. Type annotations are optional.
 
 .. code-block:: python
 
-    import kwconf as kw
+    import kwconf
 
 
-    class TrainConfig(kw.Config):
+    class TrainConfig(kwconf.Config):
+        lr = 1e-3
+        mode = kwconf.Value('fast', choices=['fast', 'safe'])
+        tags = kwconf.Value(default_factory=list, nargs='+')
+
+Raw defaults are normalized to ``Value`` metadata internally. Use ``Value``
+when a field needs metadata or a ``default_factory``.
+
+Add annotations when you want static checks, editor help, parser selection, or
+validation:
+
+.. code-block:: python
+
+    class TypedTrainConfig(kwconf.Config):
         lr: float = 1e-3
-        mode: str = kw.Value('fast', choices=['fast', 'safe'])
-        tags: list[str] = kw.Value(default_factory=list, nargs='+')
+        mode: str = kwconf.Value('fast', choices=['fast', 'safe'])
+        tags: list[str] = kwconf.Value(default_factory=list, nargs='+')
 
-Raw defaults are normalized to ``Value`` metadata internally.  Use ``Value``
-when the field needs CLI metadata or a ``default_factory``.
-
-``__default__`` remains supported for migration and dynamic construction, but
-new code should prefer typed class variables.
+``__default__`` remains available for migration and dynamic construction.
+Prefer class attributes for new code.
 
 CLI contract
 ------------
 
-All command-line parsing flows through ``argv``:
+All command-line parsing uses ``argv``:
 
 .. code-block:: python
 
@@ -72,88 +76,85 @@ Accepted ``argv`` values are:
 * ``list[str]``: parse that list.
 * ``str``: split with ``shlex`` and parse the result.
 
-Special options are opt-in.  ``--config``, ``--dump``, and ``--dumps`` are not
-reserved unless ``special_options=True`` is passed or the class sets
+Special options are opt-in. ``--config``, ``--dump``, and ``--dumps`` are
+reserved only when ``special_options=True`` is passed or the class sets
 ``__special_options__ = True``.
+
+Precedence
+----------
+
+Configuration values resolve in this order:
+
+1. class defaults;
+2. runtime default overrides;
+3. mapping or file data;
+4. explicit argv values.
+
+Every input path maps into the same field model.
 
 Coercion contract
 -----------------
 
-Coercion happens only at the **text boundary** (argv / env). The **Python
-boundary** (constructor, assignment, a field's own default) is trusted, so a
-WYSIWYG ``kw.Value('512')`` stays the string ``'512'``.
+Coercion runs for string-only sources: ``sys.argv`` tokens and ``os.environ``
+values. Python kwargs, assignment, defaults, and typed YAML/JSON values are
+used as Python values.
 
-* untyped strings infer scalars only; ``--items=a,b,c`` does **not** become a
-  list;
-* ``parser=`` (canonical; ``type=`` is a deprecated alias) selects a parser --
-  a callable, or a named one: ``'auto'`` (default), ``'csv'``, ``'yaml'``;
-* ``'auto'`` and ``'csv'`` are annotation-aware; ``'yaml'`` is not;
-* annotations like ``list[int]`` and ``Literal['a', 'b']`` enrich coercion,
-  choices, and validation.
+* ``parser=`` selects the parser for a field.
+* ``auto`` is the default scalar parser.
+* ``csv`` reads comma-separated lists.
+* ``yaml`` reads YAML-shaped strings.
+* ``nargs`` reads space-separated CLI lists.
 
-For a list on the CLI use ``nargs='+'``, ``parser='csv'``, or ``parser='yaml'``.
-See :doc:`coercion_and_cli` for the full parser model.
+See :doc:`coercion_and_cli` for parser details.
 
 Validation contract
 -------------------
 
-Runtime validation defaults to ``'warn'``: a value that does not match the
-field annotation is accepted (never raises) but emits a ``UserWarning``.  It is
-the single place mismatches are reported, so the message is consistent across
-``auto``/``csv``/``yaml``/custom parsers.  Tune it per class or per field:
+Runtime validation checks user-supplied values against annotations after
+parsing. The default policy is ``'warn'``. Tune it per class or per field:
 
 .. code-block:: python
 
-    class C(kw.Config):
-        __validate__ = 'error'  # 'warn' (default) | 'error'/True | False
+    class C(kwconf.Config):
+        __validate__ = 'error'  # 'warn' | 'error'/True | False
         count: int | None = None
 
-Validation runs after coercion, on *user-supplied* values (constructor / data /
-assignment / parsed argv-env) but **not** on a field's own trusted default.
-Unknown or unsupported annotation forms are under-validated instead of causing
-class creation or assignment to fail.  Opt a single field out with
-``Value(..., validate=False)``.
+Validation runs on constructor values, data/file values, assignment, parsed
+argv values, and parsed env values. Field defaults are accepted as declared.
+Unsupported annotation forms are skipped.
 
-Nested-config contract
-----------------------
+Nested configs
+--------------
 
 Nested config values are declared with ``SubConfig`` and updated with dotted
 keys:
 
 .. code-block:: python
 
-    class Inner(kw.Config):
-        depth: int = 1
+    class Inner(kwconf.Config):
+        depth = 1
 
-    class Outer(kw.Config):
-        inner = kw.SubConfig(Inner)
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(Inner)
+
 
     cfg = Outer.cli(argv=['--inner.depth=3'])
+    assert cfg.inner.depth == 3
 
-Variant nodes use ``choices`` for explicit selectors.  Dynamic imports are
-controlled by the ``allow_import`` policy and should be disabled when untrusted
-input controls selectors.
+Variant nodes use ``choices`` for explicit selectors. Dynamic import selectors
+are controlled by ``allow_import``.
 
-Modal contract
---------------
+Modal CLIs
+----------
 
-``ModalCLI`` collects class attributes that are ``Config`` or ``ModalCLI``
-subclasses and exposes them as subcommands.  Use ``ModalValue`` when a command
-needs aliases or grouping metadata.
+``ModalCLI`` collects ``Config`` or ``ModalCLI`` class attributes and exposes
+them as subcommands. Use ``ModalValue`` for aliases or grouping metadata.
 
-Removed scriptconfig behavior
------------------------------
+Migration boundary
+------------------
 
-The following APIs and behaviors are deliberately not part of kwconf:
-
-* ``kwconf.DataConfig`` and the old ``scriptconfig.Config(data=..., cmdline=...)`` constructor style.
-* ``cmdline=``.
-* non-dunder lifecycle aliases: ``default``, ``normalize``, ``description``,
-  ``epilog``, and ``prog``.
-* implicit comma-splitting.
-* ``Path`` / ``PathList`` helper classes.
-* magic ``type='smartcast'``, ``type='smartcast:v1'``, or
-  ``type='smartcast:legacy'`` aliases.
-
-Migration checks should remain a documentation/review concern rather than a
-runtime CLI feature.
+Review :doc:`migration_from_scriptconfig` when porting scriptconfig code. The
+most common changes are the import name, the single ``Config`` base class,
+``parser=`` instead of ``type=``, ``argv=`` instead of old ``cmdline=`` examples,
+opt-in special options, and explicit list parsing.
