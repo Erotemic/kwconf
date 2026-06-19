@@ -413,11 +413,14 @@ class _Value(NiceRepr):
             else:
                 value_kw['type'] = CodeRepr(orig_type.__name__)
 
-        value_kw = ub.udict(value_kw)
-        order = value_kw & ['value', 'nargs', 'type', 'isflag', 'position', 'required',  # type: ignore
-                            'choices', 'alias', 'short_alias', 'group', 'mutex_group',
-                            'help']
-        value_kw = order | (value_kw - order)
+        # Move the "known" keys to the front (keeping their existing relative
+        # order), then any extra keys after -- matching the prior udict dance.
+        _order_keys = {'value', 'nargs', 'type', 'isflag', 'position', 'required',
+                       'choices', 'alias', 'short_alias', 'group', 'mutex_group',
+                       'help'}
+        order = {k: v for k, v in value_kw.items() if k in _order_keys}
+        rest = {k: v for k, v in value_kw.items() if k not in _order_keys}
+        value_kw = {**order, **rest}
         if value_kw.get('nargs', None) in {None, 'None'}:
             value_kw.pop('nargs', None)
 
@@ -465,13 +468,13 @@ class _Value(NiceRepr):
             if short_prefix_pat.match(s)
         ]
 
-        alias_set = ub.oset(normalize_option_str(s)
-                            for s in long_option_strings)
-        alias: list[str] = list(alias_set - {key})
+        alias_seen = list(dict.fromkeys(
+            normalize_option_str(s) for s in long_option_strings))
+        alias: list[str] = [a for a in alias_seen if a != key]
 
-        short_alias_set = ub.oset(normalize_option_str(s)
-                                  for s in short_option_strings)
-        short_alias: list[str] = list(short_alias_set - {key})
+        short_alias_seen = list(dict.fromkeys(
+            normalize_option_str(s) for s in short_option_strings))
+        short_alias: list[str] = [a for a in short_alias_seen if a != key]
 
         real_value_kw = {
             'default': action.default,

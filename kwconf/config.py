@@ -79,6 +79,7 @@ import argparse as argparse_mod
 from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Union, cast
 from kwconf import _ubelt_repr_extension
 from collections.abc import Mapping as _ABCMapping
+from collections import Counter
 from kwconf.util.util_fileio import open_text_input
 from kwconf.util.util_text import codeblock, paragraph, indent
 from kwconf.util.util_misc import iterable
@@ -391,7 +392,7 @@ class MetaConfig(_ABCMeta):
             this_default = namespace.get('__default__', {})
             if this_default is None:
                 this_default = {}
-            this_default = ub.udict(this_default)
+            this_default = dict(this_default)
 
             inheritence_default: Dict[str, Any] = {}
             for base in reversed(bases):
@@ -504,10 +505,11 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         self._init_state(_dont_call_post_init=_dont_call_post_init)
 
         argkeys = list(self._default.keys())[0:len(args)]
-        new_values = ub.dzip(argkeys, args)
+        new_values = dict(zip(argkeys, args))
         kwargs = self._normalize_alias_dict(kwargs)
         new_values.update(kwargs)
-        unknown_args: Dict[str, Any] = ub.dict_diff(new_values, self._default)  # type: ignore[arg-type]
+        unknown_args: Dict[str, Any] = {
+            k: v for k, v in new_values.items() if k not in self._default}
         if unknown_args:
             raise ValueError((
                 "Unknown Arguments: {}. Expected arguments are: {}"
@@ -2222,7 +2224,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         parserkw = self._parserkw()
         to_pop = {k for k, v in parserkw.items() if v is None}
-        parserkw = ub.udict(parserkw) - to_pop  # type: ignore
+        parserkw = {k: v for k, v in parserkw.items() if k not in to_pop}
         parserkw.pop('formatter_class', None)
 
         constructor_body = indent(ub.urepr(parserkw, explicit=True, nobr=1))  # type: ignore
@@ -2319,7 +2321,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 elif kwargs.get('type', None) is not None:
                     kwargs['type'] = value_mod.CodeRepr(kwargs['type'].__name__)
                 to_pop = {k for k, v in kwargs.items() if v is None}
-                kwargs = ub.udict(kwargs) - to_pop  # type: ignore
+                kwargs = {k: v for k, v in kwargs.items() if k not in to_pop}
                 args_body = ub.urepr(args, explicit=1, nobr=1, trailsep=0).strip().strip(',')  # type: ignore
                 kwargs_body = ub.urepr(kwargs, explicit=1, nobr=1, trailsep=0, nl=0).strip(',')  # type: ignore
                 if args_body and kwargs_body:
@@ -2611,7 +2613,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         _positions = {k: v.position for k, v in self._default.items()
                       if v.position is not None}
         if _positions:
-            dup_positions = ub.find_duplicates(_positions.values())
+            dup_positions = [p for p, n in Counter(_positions.values()).items()
+                             if n > 1]
             if dup_positions:
                 # Build a {position: [keys...]} report so the error names the
                 # offending fields rather than just saying a clash exists.
@@ -2621,10 +2624,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 }
                 raise ValueError(
                     f'Multiple fields declare the same CLI position: {conflicts}')
-            _keyorder = ub.oset(ub.argsort(cast(Any, _positions)))
-            _keyorder |= (ub.oset(self._default) - _keyorder)
+            # NOTE: _keyorder is currently computed but unused downstream (the
+            # build loop iterates self._data); kept ubelt-free, pending review.
+            _keyorder = sorted(_positions, key=_positions.__getitem__)
+            _seen = set(_keyorder)
+            _keyorder = _keyorder + [k for k in self._default if k not in _seen]
         else:
-            _keyorder = ub.oset(self._default.keys())
+            _keyorder = list(self._default.keys())
 
         FUZZY_HYPHENS = getattr(self, '__fuzzy_hyphens__', 1)
 
