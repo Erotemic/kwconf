@@ -11,3 +11,10 @@ coverage>=6.1.1     ; python_version < '3.9'  and python_version >= '3.8'    # P
 pytest-cov
 
 xdoctest >= 1.1.5
+
+# kwconf treats these as optional at runtime, but the test suite + doctests
+# exercise the ubelt- and yaml-backed features, so they are required for tests.
+ubelt>=1.3.6
+PyYAML>=6.0.1     ; python_version < '4.0'  and python_version >= '3.12'    # Python 3.12+
+PyYAML>=6.0       ; python_version < '3.12' and python_version >= '3.11'    # Python 3.11+
+PyYAML>=6.0       ; python_version < '3.11' and python_version >= '3.10'    # Python 3.10

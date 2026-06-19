@@ -60,7 +60,9 @@ tests = { file = ["requirements/tests.txt"] }
 optional = { file = ["requirements/optional.txt"] }
 docs = { file = ["requirements/docs.txt"] }
 linting = { file = ["requirements/linting.txt"] }
-all = { file = ["requirements/runtime.txt", "requirements/tests.txt", "requirements/optional.txt", "requirements/docs.txt", "requirements/linting.txt"] }
+yaml = { file = ["requirements/yaml.txt"] }
+ubelt = { file = ["requirements/ubelt.txt"] }
+all = { file = ["requirements/runtime.txt", "requirements/tests.txt", "requirements/optional.txt", "requirements/docs.txt", "requirements/linting.txt", "requirements/yaml.txt", "requirements/ubelt.txt"] }
 
 [tool.ruff]
 target-version = "py310"
