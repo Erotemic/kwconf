@@ -14,6 +14,14 @@ This module is the home of the ``coerce`` mechanism described in
   ``'yaml'``, ``'csv'``). Coercion only ever runs on *strings*; real Python
   objects pass through untouched.
 
+Parsers are either *annotation-aware* or not. Aware parsers receive the field
+annotation and use it to steer the produced type: ``'auto'`` gates a scalar
+token by the annotation's union members, and ``'csv'`` is just ``'auto'`` mapped
+over the comma-split (so ``list[str]`` keeps strings). ``'yaml'`` is unaware --
+it produces its own typed structure and ignores the annotation; mismatches are
+caught by the separate post-parse validation layer, not here. Custom parsers opt
+in via ``register_parser(..., annotation_aware=True)``.
+
 Deliberate departures from scriptconfig's old smartcast behavior (see the
 design doc):
 
@@ -221,20 +229,41 @@ def _parse_yaml(token: str) -> Any:
     return yaml.safe_load(token)
 
 
-def _parse_csv(token: str) -> list[Any]:
-    """Split on commas and ``auto``-parse each (scalar) element.
+def _parse_csv(token: str, annotation: Any = Any) -> list[Any]:
+    """Split on commas and ``auto``-parse each element, gated by the
+    container's *element* annotation.
+
+    ``csv`` is annotation-aware: it is ``auto`` mapped over the comma-split,
+    so ``list[str]`` keeps each element a string while ``list[int]`` parses
+    ints. With no (or a bare-container) annotation it falls back to full
+    ``auto`` per element.
 
     Examples:
         >>> from kwconf.coerce import _parse_csv
-        >>> _parse_csv('1,2,3')
+        >>> _parse_csv('1,2,3')                  # no annotation -> full auto
         [1, 2, 3]
+        >>> _parse_csv('1,2,3o', list[str])      # element type pins to str
+        ['1', '2', '3o']
         >>> _parse_csv('a,b,c')
         ['a', 'b', 'c']
         >>> _parse_csv('')
         []
     """
+    elem = element_annotation(annotation)
     parts = [p.strip() for p in token.split(',')]
-    return [auto(p) for p in parts if p]
+    return [auto(p, elem) for p in parts if p]
+
+
+# ``auto`` and ``csv`` consult the field annotation; ``yaml`` does not. The
+# dispatcher passes the annotation only to parsers in this set, so the public
+# single-arg ``register_parser`` contract keeps working for everyone else.
+_ANNOTATION_AWARE: set[Callable[..., Any]] = {auto, _parse_csv}
+
+
+def _is_annotation_aware(parser: Callable[..., Any]) -> bool:
+    """Whether ``parser`` accepts ``(token, annotation)`` rather than just
+    ``(token)``. Opted in via ``register_parser(..., annotation_aware=True)``."""
+    return parser in _ANNOTATION_AWARE
 
 
 # Registry of named string parsers usable as ``parser='<name>'``.
@@ -245,8 +274,28 @@ _REGISTRY: dict[str, Callable[..., Any]] = {
 }
 
 
-def register_parser(name: str, parser: Callable[[str], Any]) -> None:
-    """Register a named parser usable as ``parser='<name>'``."""
+def register_parser(
+    name: str,
+    parser: Callable[..., Any],
+    annotation_aware: bool = False,
+) -> None:
+    """
+    Register a named parser usable as ``parser='<name>'``.
+
+    Args:
+        name (str): registry key.
+        parser (Callable):
+            the parser. By default it must accept a single string token
+            (``str -> value``). If ``annotation_aware`` is True it must accept
+            ``(token, annotation) -> value`` and the dispatcher will pass the
+            field annotation through (use :func:`element_annotation` if you want
+            the container's element type, as ``csv`` does).
+        annotation_aware (bool):
+            opt in to receiving the field annotation. Defaults to False so
+            existing single-arg parsers keep working unchanged.
+    """
+    if annotation_aware:
+        _ANNOTATION_AWARE.add(parser)
     _REGISTRY[name] = parser
 
 
@@ -276,6 +325,8 @@ def coerce(value: Any, annotation: Any = Any, spec: Any = 'auto') -> Any:
     if not isinstance(value, str):
         return value
     if callable(spec):
+        if _is_annotation_aware(spec):
+            return spec(value, annotation)
         return spec(value)
     if isinstance(spec, str):
         try:
@@ -285,7 +336,7 @@ def coerce(value: Any, annotation: Any = Any, spec: Any = 'auto') -> Any:
                 f'unknown coerce spec {spec!r}; '
                 f'known names: {sorted(_REGISTRY)} (or pass a callable).'
             ) from exc
-        if parser is auto:
-            return auto(value, annotation)
+        if _is_annotation_aware(parser):
+            return parser(value, annotation)
         return parser(value)
     raise TypeError(f'coerce spec must be a callable or str, got {type(spec)!r}')
