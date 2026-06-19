@@ -3,8 +3,7 @@ Coercion and CLI Contract
 
 ``kwconf`` keeps scriptconfig's useful CLI behavior but drops its surprising
 conversions. The core rule: untyped strings infer **scalars only**. ``"a,b,c"``
-stays a string unless the schema explicitly asks for sequence or structured
-parsing.
+stays a string unless the schema asks for structure.
 
 The coercion boundary
 ---------------------
@@ -23,9 +22,8 @@ values pass through verbatim, no parsing, no runtime type failure.
     assert C()['x'] == '512'            # Python boundary trusts
     assert C.cli(argv=['--x=512'])['x'] == 512   # text boundary parses
 
-To run the text-boundary path from Python (handy in tests), use
-``Config.coerce(**kwargs)`` or the ``from_cli`` / ``from_env`` / ``from_yaml``
-adapters. Plain ``MyConfig(x=...)`` stays the trusted, non-coercing path.
+``Config.coerce(**kwargs)`` and the ``from_cli`` / ``from_env`` / ``from_yaml``
+adapters opt into the text path from Python (handy in tests).
 
 Value coercion
 --------------
@@ -84,8 +82,8 @@ Parsers: annotation-aware vs unaware
         assert C.cli(argv=['--data=[1,2,3]'])['data'] == [1, 2, 3]
         assert C.cli(argv=["--data={a: 1}"])['data'] == {'a': 1}
 
-Register custom parsers and opt into awareness explicitly; unaware parsers keep
-the single-argument ``str -> value`` contract:
+Register custom parsers, opting into awareness explicitly (unaware parsers keep
+the ``str -> value`` contract):
 
 .. code-block:: python
 
@@ -100,9 +98,8 @@ the single-argument ``str -> value`` contract:
 ``nargs`` with a parser
 -----------------------
 
-Uniform rule, no special cases: the parser is applied to **each token** and the
-results **collect** into a list (no concat). Result depth = parser-output depth
-+ 1 for the wrapper:
+Uniform rule, no special cases: the parser runs on **each token** and the
+results **collect** into a list (no concat):
 
 .. code-block:: python
 
@@ -114,8 +111,7 @@ results **collect** into a list (no concat). Result depth = parser-output depth
 
 So ``csv + nargs`` is defined but rarely useful: use commas **or** spaces, not
 both. The old dual-form (``--k a,b,c`` == ``--k a b c``) is intentionally
-dropped -- it needed a concat special case and was ambiguous for structured
-tokens.
+dropped -- it was ambiguous for structured tokens.
 
 Annotations also feed metadata -- e.g. ``Literal`` becomes choices:
 
