@@ -6,6 +6,9 @@ from typing import Any, Callable, cast, Optional, TypeVar, Union, overload
 from collections.abc import MutableMapping, Sequence
 
 import ubelt as ub
+from kwconf.util.util_text import codeblock, indent
+from kwconf.util.util_misc import NoParam
+from kwconf.util.util_repr import NiceRepr
 
 
 long_prefix_pat: re.Pattern[str] = re.compile('--[^-].*')
@@ -101,7 +104,7 @@ TODO:
 """
 
 
-class _Value(ub.NiceRepr):
+class _Value(NiceRepr):
     """
     You may set any item in the config's default to an instance of this class.
     Using this class allows you to declare the desired default value as well as
@@ -191,7 +194,7 @@ class _Value(ub.NiceRepr):
     """
 
     def __init__(self,
-                 default: Any = ub.NoParam,
+                 default: Any = NoParam,
                  type: Any = None,
                  help: Optional[str] = None,
                  choices: Sequence[Any] | None = None,
@@ -209,7 +212,7 @@ class _Value(ub.NiceRepr):
                  parser: Any = None,
                  validate: Optional[Union[bool, str]] = None) -> None:
 
-        if default_factory is not None and default is not ub.NoParam:
+        if default_factory is not None and default is not NoParam:
             raise ValueError('Error: default_factory is mutually exclusive with default')
 
         if parser is not None and type is not None:
@@ -267,7 +270,7 @@ class _Value(ub.NiceRepr):
         # defaults are never shared.
         if default_factory is not None:
             self._value: Any = _FACTORY_UNSET
-        elif default is not ub.NoParam:
+        elif default is not NoParam:
             # BOUNDARY (design.md §4): the default is a Python-boundary value and
             # is stored verbatim (WYSIWYG). It is NOT run through coerce(), so
             # ``Value('512')`` keeps the string ``'512'``. Coercion happens only
@@ -313,7 +316,10 @@ class _Value(ub.NiceRepr):
         """
         val = self._value
         if val is _FACTORY_UNSET:
-            val = self._value = self.default_factory()  # type: ignore[misc]
+            # Invariant: _value is _FACTORY_UNSET only when a factory was given
+            # (set in __init__), so default_factory is non-None here.
+            assert self.default_factory is not None
+            val = self._value = self.default_factory()
         return val
 
     @value.setter
@@ -418,8 +424,8 @@ class _Value(ub.NiceRepr):
         # Reflow long help text into a ub.paragraph(...) call in the emitted code.
         if orig_help and len(orig_help) > 40:
             import textwrap
-            wrapped = ub.indent('\n'.join(textwrap.wrap(orig_help, width=60)), ' ' * 4)
-            block = ub.codeblock(
+            wrapped = indent('\n'.join(textwrap.wrap(orig_help, width=60)), ' ' * 4)
+            block = codeblock(
                 """
                 ub.paragraph(
                     '''
@@ -427,7 +433,7 @@ class _Value(ub.NiceRepr):
                     ''')
                 """
             ).format(wrapped)
-            value_kw['help'] = CodeRepr(ub.indent(block, ' ' * 8).lstrip())
+            value_kw['help'] = CodeRepr(indent(block, ' ' * 8).lstrip())
         value_kw['default'] = value.value
         value_kw.pop('value', None)
         return value_kw
@@ -559,7 +565,7 @@ def Value(
     validate: Optional[Union[bool, str]] = ...,
 ) -> _T: ...
 def Value(
-    default: Any = ub.NoParam,
+    default: Any = NoParam,
     type: Any = None,
     help: Optional[str] = None,
     choices: Sequence[Any] | None = None,

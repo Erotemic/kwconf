@@ -69,6 +69,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import ubelt as ub
 
+from kwconf.util.util_text import codeblock, paragraph
+from kwconf.util.util_repr import NiceRepr
 from kwconf.util.util_class import class_or_instancemethod
 from kwconf import diagnostics
 # from kwconf.config import MetaConfig
@@ -77,7 +79,7 @@ from kwconf import diagnostics
 DEFAULT_GROUP = 'commands'
 
 
-class ModalValue(ub.NiceRepr):
+class ModalValue(NiceRepr):
     """
     Declarative wrapper for registering a modal subcommand with extra metadata.
 
@@ -301,7 +303,7 @@ class ModalCLI(metaclass=MetaModalCLI):
             sub_clis = []
 
         if self.__class__.__name__ != 'ModalCLI':
-            self.description = description or ub.codeblock(self.__doc__ or '')
+            self.description = description or codeblock(self.__doc__ or '')
         else:
             self.description = description
 
@@ -360,7 +362,7 @@ class ModalCLI(metaclass=MetaModalCLI):
             return
 
         if not hasattr(cli_cls, 'main'):
-            raise ValueError(ub.paragraph(
+            raise ValueError(paragraph(
                 f'''
                 The ModalCLI expects that registered subconfigs have a
                 ``main`` classmethod with the signature
@@ -373,7 +375,7 @@ class ModalCLI(metaclass=MetaModalCLI):
             if command is None:
                 command = cli_cls.__name__
             if command is None:
-                raise ValueError(ub.paragraph(
+                raise ValueError(paragraph(
                     f'''
                     The ModalCLI expects that registered subconfigs have a
                     ``__command__: str`` attribute, but {cli_cls} is missing one.

@@ -2,6 +2,7 @@
 # PYTHON_ARGCOMPLETE_OK
 import kwconf
 import ubelt as ub
+from kwconf.util.util_text import codeblock
 
 
 class TemplateCLI(kwconf.Config):
@@ -40,7 +41,7 @@ def _build_single_template(config):
 
     classname = f'{config.name}Config'
 
-    text = ub.codeblock(
+    text = codeblock(
         f'''
         #!/usr/bin/env python3
         # PYTHON_ARGCOMPLETE_OK
@@ -81,7 +82,7 @@ def _build_modal_template(config):
 
     classname = f'{config.name}Modal'
 
-    text = ub.codeblock(
+    text = codeblock(
         f'''
         #!/usr/bin/env python3
         # PYTHON_ARGCOMPLETE_OK

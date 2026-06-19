@@ -27,6 +27,7 @@ from collections.abc import Mapping
 from typing import Any, IO
 import ubelt as ub
 
+from kwconf.util.util_misc import iterable
 from kwconf.config import Config
 from kwconf.value import _Value as Value
 
@@ -294,7 +295,7 @@ def coerce_argv(cmdline: Any) -> tuple[list[str], bool]:
         argv = sys.argv[1:]
     elif isinstance(cmdline, str):
         argv = shlex.split(cmdline)
-    elif ub.iterable(cmdline):
+    elif iterable(cmdline):
         argv = list(cmdline)
     else:
         raise TypeError(f'Unsupported argv={cmdline!r}')
