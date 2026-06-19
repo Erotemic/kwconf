@@ -162,14 +162,16 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
   best-effort resolver in `kwconf/annotations.py`. **[LOCKED]**
 - **Mechanism: a function facade in `kwconf/__init__.py` — no `.pyi`.**
   **[IMPLEMENTED, chunk 6]** Public `kwconf.Value`/`kwconf.Flag` are
-  `@overload`ed *functions* returning `T`, wrapping the real
-  `kwconf.value.Value`/`Flag` *classes*. Internals keep importing the classes
-  via `from kwconf.value import Value`, so `isinstance`/attribute access/
+  `@overload`ed *functions* returning `T`, wrapping the real runtime classes
+  `kwconf.value._Value`/`_Flag`. Internals import the classes via
+  `from kwconf.value import _Value as Value`, so `isinstance`/attribute access/
   `._from_action` are unaffected and the ty CI gate stays green — no `.pyi`, no
   class rename. Tradeoff: `isinstance(x, kwconf.Value)` and subclassing the
-  *public* name break at runtime; use `kwconf.value.Value` (a future public
-  `ValueClass`). Verified: `x: int = Value(None)` errors on ty, mypy, AND pyright
-  through `from kwconf import Value`, positionally.
+  *public function* break at runtime; subclass/`isinstance` against the exported
+  `kwconf.ValueClass`/`FlagClass` (aliases of `_Value`/`_Flag`) instead.
+  Verified: `x: int = Value(None)` errors on ty, mypy, AND pyright
+  through `from kwconf import Value`, positionally. **[REVISED 2026-06:
+  `ValueClass`/`FlagClass` now exported; no longer "future".]**
 - **Do NOT use PEP 681 `converter`** for coercion. The spec's `converter`
   rewrites constructor/assignment *types* — the opposite of our "constructor
   trusts, does not coerce" boundary. (mypy doesn't support it yet anyway.)

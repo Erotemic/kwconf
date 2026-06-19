@@ -13,9 +13,10 @@ and shows what to change.
 | Import name                                           | `import scriptconfig as scfg` | `import kwconf as kw`                                                  |
 | Primary base class                                    | `scfg.Config` / `scfg.DataConfig` | `kw.Config`                                           |
 | Coerce method on Value                                | `Value.cast(v)`               | `Value.coerce(v)`                                                      |
-| Comma-separated CLI strings                           | auto-split into a list        | stay a literal string                                                  |
+| Parser keyword                                        | `type=`                       | `parser=` (`type=` kept as a deprecated alias)                        |
+| Comma-separated CLI strings                           | auto-split into a list        | stay a literal string (use `parser='csv'` / `nargs`)                  |
 | `type='smartcast'` aliases                            | three string variants         | removed -- pass a callable                                             |
-| `kwconf.Path` / `kwconf.PathList`                     | available                     | removed -- use `Value(type=str)` and explicit globbing                 |
+| `kwconf.Path` / `kwconf.PathList`                     | available                     | removed -- use `Value(parser=str)` and explicit globbing              |
 | `kwconf.DataConfig` class                             | alternate kwconf base name | removed -- only `Config` is exposed                    |
 | `Config(data=, default=, cmdline=)` ctor              | available                  | removed -- use `Config.cli(...)` or `MyConfig(**kwargs).load(...)` |
 | `default` class attribute                             | accepted (deprecation warned) | removed -- use `__default__`                                           |
@@ -114,44 +115,77 @@ assert cfg.tags == ['a', 'b', 'c']
 The old auto-split behavior cannot be re-enabled with a flag or string alias
 (see below).
 
+## `type=` is now `parser=`
+
+The `type=` keyword was overloaded (argparse type + smartcast hint +
+container shape). It is renamed to `parser=`, a callable `str -> value` or a
+string key into the parser registry (`'auto'`, `'csv'`, `'yaml'`). `type=` is
+kept as a **deprecated alias** for a long while (the two are mutually
+exclusive), so existing code keeps working -- but prefer `parser=` in new code.
+
+```python
+# before
+kw.Value(0, type=int)
+kw.Value(None, type='yaml')
+
+# after
+kw.Value(0, parser=int)
+kw.Value(None, parser='yaml')
+```
+
+Parsers are **annotation-aware** or not. `'auto'` (the default) and `'csv'`
+steer their output by the field annotation; `'yaml'` produces its own typed
+structure. Register a custom parser with
+`kwconf.coerce.register_parser(name, fn, annotation_aware=...)`. See the
+coercion manual for the full model.
+
 ## `type='smartcast'` aliases are removed
 
 scriptconfig accepted three magic strings for the `type=` argument of
 `Value`: `'smartcast'`, `'smartcast:v1'`, and `'smartcast:legacy'`. All
-three are gone. Passing a string for `type` now raises a clear `TypeError`.
+three are gone. Passing an unknown string for `parser`/`type` raises a clear
+`TypeError` listing the known names.
 
 ```python
 # before
 kw.Value([], type='smartcast:legacy')
 
-# after -- pass a callable
-kw.Value(0, type=int)                # explicit int parsing
-kw.Value(None)                       # default scalar inference
-# (for CLI list input use ``nargs='+'`` instead of ``type=list``;
-#  see "Comma-splitting is gone" above.)
+# after -- pass a callable or a named parser
+kw.Value(0, parser=int)              # explicit int parsing
+kw.Value(None)                       # default scalar inference ('auto')
 ```
 
 The default un-typed inference (int, float, complex, bool, None) still
 runs for un-annotated string CLI input -- only the auto-list behavior is
 removed.
 
-If you want richer string parsing (lists, dicts, scalars), use the
-named YAML type:
+For CLI list input, declare `nargs='+'` (space-separated) or `parser='csv'`
+(comma-separated):
 
 ```python
 class C(kw.Config):
-    items = kw.Value(None, type='yaml')
+    nums: list[int] = kw.Value(default_factory=list, parser='csv')
+
+C.cli(argv=['--nums=1,2,3'])['nums']        # [1, 2, 3]
+```
+
+If you want richer string parsing (lists, dicts, scalars), use the
+named YAML parser:
+
+```python
+class C(kw.Config):
+    items = kw.Value(None, parser='yaml')
 
 C.cli(argv=['--items=[1,2,3]'])['items']    # [1, 2, 3]
 C.cli(argv=['--items={a: 1}'])['items']     # {'a': 1}
 C(items='auto')['items']                    # 'auto'
-C(items='1')['items']                       # 1  (yaml parses scalars)
+C.cli(argv=['--items=1'])['items']          # 1  (yaml parses scalars)
 ```
 
-``type='yaml'`` runs ``yaml.safe_load`` on string inputs. The same
-parsing happens whether the value comes from argv, a file, or kwargs --
-matching how ``type=int`` already coerces strings everywhere. Pass an
-already-parsed Python value to bypass it.
+`parser='yaml'` runs `yaml.safe_load` on string inputs at the text boundary
+(argv/env/file). The plain constructor still trusts its input: `C(items='1')`
+keeps the string `'1'` (the Python boundary does not coerce). Use
+`C.coerce(items='1')` to opt into text-boundary parsing from Python.
 
 ## `kwconf.Path` and `kwconf.PathList` are removed
 
@@ -167,7 +201,7 @@ class C(scfg.Config):
 
 # after -- expand and glob explicitly in __post_init__
 class C(kw.Config):
-    out: str = kw.Value(None, help='output dir')
+    out: str = kw.Value(None, parser=str, help='output dir')
     inputs: list = kw.Value(default_factory=list, nargs='+', help='input files')
 
     def __post_init__(self):
@@ -183,12 +217,18 @@ class C(kw.Config):
 
 Doing this in `__post_init__` keeps the path-handling logic visible
 in the user's class instead of buried in a Value subclass. If you do
-need a reusable subclass, it is straightforward to roll your own:
+need a reusable subclass, roll your own -- but note that the public
+`kwconf.Value` is now a typed *factory function* (it is annotated to return the
+field's value type, which is what gives you static default-vs-annotation
+checking). Subclass the underlying class, exposed as `kwconf.ValueClass`
+(`kwconf.FlagClass` for flags):
 
 ```python
-class Path(kw.Value):
+import kwconf
+
+class Path(kwconf.ValueClass):
     def __init__(self, value=None, **kw):
-        super().__init__(value, type=str, **kw)
+        super().__init__(value, parser=str, **kw)
     def coerce(self, value):
         if isinstance(value, str):
             import os
@@ -256,9 +296,10 @@ If the user explicitly passes ``--depth=full``, modal dispatch forwards
 ## `Value.cast` -> `Value.coerce`
 
 If you subclassed `Value` and overrode `cast`, rename the override to
-`coerce`. The new name is honest about what the function does (it goes
-through `smartcast`, which both type-infers and is permissive about input
-shapes -- it is not a clean type-cast).
+`coerce`. The new name is honest about what the function does: it parses a
+string at the text boundary (via the `parser=`/`'auto'` path), which both
+type-infers and is permissive about input shapes -- it is not a clean
+type-cast. (The old scriptconfig `smartcast` module is retired.)
 
 ```python
 # before
@@ -266,25 +307,29 @@ class MyValue(scfg.Value):
     def cast(self, value):
         ...
 
-# after
-class MyValue(kw.Value):
+# after -- subclass the underlying class (the public name is now a function)
+import kwconf
+
+class MyValue(kwconf.ValueClass):
     def coerce(self, value):
         ...
 ```
 
 Direct callers (`template.cast(value)`) similarly become `template.coerce(value)`.
 
-## Optional annotation-based validation
+## Annotation-based validation (defaults to `warn`)
 
-Set ``__validate__ = 'error'`` (or ``'warn'``) on a class to have kwconf
-check assignments against the field's type annotation after coercion.
-Off by default, since most callers don't want runtime type policing.
+kwconf checks user-supplied values against the field's type annotation after
+coercion. This defaults to ``'warn'`` -- a mismatch is accepted (never raises)
+but emits a ``UserWarning``. It is the single, parser-agnostic place mismatches
+are reported. Set ``__validate__`` on the class (or ``validate=`` per field) to
+``'error'``/``True`` to raise instead, or ``False`` to disable:
 
 ```python
 import typing
 
 class C(kw.Config):
-    __validate__ = 'error'
+    __validate__ = 'error'        # 'warn' (default) | 'error'/True | False
     mode: typing.Literal['fast', 'slow'] = 'fast'
     count: int | None = None
 
@@ -292,10 +337,11 @@ C(mode='wrong')  # TypeError
 C(count=[1, 2])  # TypeError
 ```
 
-Per-field opt-out is available with ``Value(..., validate=False)``.
-Annotations the validator can't reason about (custom generics, callables,
-etc.) are silently skipped -- the goal is to under-validate rather than
-misvalidate.
+Validation runs on user-supplied values but **not** on a field's own trusted
+default, so a WYSIWYG ``kw.Value('512')`` on an ``int`` field never warns about
+itself. Per-field opt-out is available with ``Value(..., validate=False)``.
+Annotations the validator can't reason about (custom generics, callables, etc.)
+are silently skipped -- the goal is to under-validate rather than misvalidate.
 
 ## Removed lifecycle / metadata helpers
 
@@ -346,8 +392,9 @@ items listed above. Please file an issue.
 4. Find any `--key=a,b,c` CLI invocations and either:
    * declare the field with `nargs='+'` and switch to space-separated input, or
    * keep the comma form and split in `__post_init__`.
-5. Replace any `type='smartcast*'` strings with concrete callables.
-6. Replace `Path` / `PathList` usage with `Value(type=str)` plus explicit
+5. Replace any `type='smartcast*'` strings with concrete callables. Rename
+   `type=` to `parser=` in new code (`type=` still works as a deprecated alias).
+6. Replace `Path` / `PathList` usage with `Value(parser=str)` plus explicit
    path handling in `__post_init__`.
 7. If you subclassed `Value`, rename `cast` -> `coerce`.
 8. If your CLI relied on the built-in `--config`, `--dump`, or `--dumps`
