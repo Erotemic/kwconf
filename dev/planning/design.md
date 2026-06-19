@@ -62,6 +62,14 @@ master `kwconf_primatives` switch exists; granular ones are future work).
   annotation-derived auto > untyped auto.** `parser=str` is the escape hatch to
   keep a string verbatim. The runtime *mechanism* keeps the `coerce` name
   (`Value.coerce()`, `Config.coerce()`, `kwconf.coerce`). **[LOCKED]**
+- **Parsers are annotation-aware or not.** Aware parsers receive the field
+  annotation and use it to steer the produced type; unaware parsers keep the
+  single-arg `str -> value` contract. `'auto'` and `'csv'` are aware (`'csv'` is
+  `'auto'` mapped over the comma-split, gated by the *element* annotation, so
+  `list[str]` keeps each element a string instead of `[1, 2, '3o']`); `'yaml'`
+  is unaware (it produces its own typed structure). Custom parsers opt in via
+  `register_parser(name, fn, annotation_aware=True)`, after which the dispatcher
+  passes `(token, annotation)`. **[LOCKED]**
 - **`default` is positional-allowed.** `Value(10)`, `Value((256, 256))`,
   `Value('soft2')` all valid. No keyword requirement. **[LOCKED]**
 - `default_factory=` (keyword) for mutable defaults. `required=True` with no
@@ -92,7 +100,11 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
   exception below. Annotations are **statically binding but runtime-advisory.**
   **[LOCKED]**
 - **No-match fallback:** when nothing in the candidate set matches and `str` is
-  not allowed → **warn and fall back to string** (do not raise). **[LOCKED]**
+  not allowed → **silently fall back to string** (do not raise, do not warn).
+  Reporting a value/annotation mismatch is the job of the single Config
+  validation layer (§4), so there is one voice consistent across all parsers.
+  **[REVISED 2026-06; supersedes earlier "warn and fall back" — the warning
+  moved to the validation layer to avoid double-warning and to cover yaml too]**
 - **bool rules:** `int` claims `"1"`/`"0"` when `int` is in the union; `bool`
   always claims `true`/`false`. When `bool` is **not** unioned with `int`, the
   `auto` parser accepts **only `0/1/true/false`** for bool — this strictness is
@@ -100,9 +112,11 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
 - **No comma-splitting:** `"1,2,3"` stays the literal string under every
   annotation. **[LOCKED]**
 - **Containers** (`list[int]`, `dict[...]`, ...): `auto` cannot build them from a
-  single token → **warn**, pointing at `parser='csv'|'yaml'` or `nargs`. The
-  `str -> T` registry MUST special-case containers (never `list(str)`, which is
-  the relocated original footgun). **[LOCKED policy; registry TODO]**
+  single token → **warn**, pointing at `parser='csv'|'yaml'` or `nargs`. This
+  shape/usage hint is the *one* parse-time warning `auto` still emits (it is a
+  parser-misuse hint the validation layer cannot give); value-level no-match is
+  silent (see above). The `str -> T` registry MUST special-case containers
+  (never `list(str)`, the relocated original footgun). **[LOCKED]**
 
 ## 4. Coercion boundary & ingestion
 
@@ -124,6 +138,15 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
   runtime *also* coerced it, the checker and runtime would disagree on the same
   line. Complementary guarantees: Python boundary = statically checked + no
   runtime coercion; argv boundary = no static info + runtime parse. **[LOCKED]**
+- **Validation is the single mismatch voice, default `'warn'`.** Controlled by
+  `__validate__` (class) / `Value(validate=)` (field): checks a value against
+  the annotation and warns (default), raises `TypeError` (`'error'`/`True`), or
+  is off (`False`). It runs on *user-supplied* values (constructor / `data=` /
+  assignment, and parsed argv/env), but **not** on a field's own trusted default
+  — a WYSIWYG `Value('512')` never warns about itself. Combined with parsers no
+  longer warning on value-level no-match, mismatches are reported exactly once,
+  uniformly across `auto`/`csv`/`yaml`/custom. **[REVISED 2026-06; default
+  flipped off → 'warn']**
 
 ## 5. Static typing strategy
 
