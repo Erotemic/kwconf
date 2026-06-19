@@ -223,12 +223,8 @@ def auto(token: str, annotation: Any = Any) -> Any:
 
 
 def _parse_yaml(token: str) -> Any:
-    try:
-        import yaml  # type: ignore[import-untyped]
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise ImportError(
-            "parser='yaml' requires PyYAML. Install with `pip install pyyaml`."
-        ) from exc
+    from kwconf.util.util_yaml import import_yaml
+    yaml = import_yaml("parser='yaml'")
     return yaml.safe_load(token)
 
 

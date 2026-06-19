@@ -58,12 +58,8 @@ def normalize_option_str(s: str) -> str:
 
 def _yaml_safe_load(value: str) -> Any:
     """Parse a string as YAML, used as the callable for ``type='yaml'``."""
-    try:
-        import yaml  # type: ignore[import-untyped]
-    except ImportError as exc:
-        raise ImportError(
-            "type='yaml' requires PyYAML. Install with `pip install pyyaml`."
-        ) from exc
+    from kwconf.util.util_yaml import import_yaml
+    yaml = import_yaml("type='yaml'")
     return yaml.safe_load(value)
 
 

@@ -27,6 +27,7 @@ from collections.abc import Mapping
 from typing import Any, IO
 
 from kwconf.util.util_misc import iterable
+from kwconf.util.util_yaml import import_yaml
 from kwconf.config import Config
 from kwconf.value import _Value as Value
 
@@ -344,8 +345,8 @@ def coerce_data_updates(data, mode=None):
             try:
                 user_config = json.loads(data)
             except Exception:
-                import yaml  # type: ignore[import-untyped]
                 import io
+                yaml = import_yaml('YAML parsing')
                 stream: IO[Any] = io.StringIO(data)
                 user_config = yaml.load(stream, Loader=yaml.SafeLoader)
         else:
@@ -356,7 +357,7 @@ def coerce_data_updates(data, mode=None):
                 mode = 'yaml'
             with open_text_input(data, 'r') as file:
                 if mode == 'yaml':
-                    import yaml
+                    yaml = import_yaml('YAML file loading')
                     user_config = yaml.load(file, Loader=yaml.SafeLoader)
                 elif mode == 'json':
                     import json

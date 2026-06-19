@@ -81,6 +81,7 @@ from kwconf import _ubelt_repr_extension
 from collections.abc import Mapping as _ABCMapping
 from collections import Counter
 from kwconf.util.util_fileio import open_text_input
+from kwconf.util.util_yaml import import_yaml
 from kwconf.util.util_text import codeblock, paragraph, indent
 from kwconf.util.util_misc import iterable, import_ubelt
 from kwconf.util.util_repr import NiceRepr
@@ -261,8 +262,8 @@ def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any
             try:
                 return json.loads(data)
             except Exception:
-                import yaml  # type: ignore[import-untyped]
                 import io
+                yaml = import_yaml('YAML parsing')
                 return yaml.load(io.StringIO(data), Loader=yaml.SafeLoader)
         if mode is None:
             if isinstance(data, str) and data.lower().endswith('.json'):
@@ -273,7 +274,7 @@ def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any
                 mode = 'yaml'
         with open_text_input(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
             if mode == 'yaml':
-                import yaml  # type: ignore[import-untyped]
+                yaml = import_yaml('YAML file loading')
                 return yaml.load(file, Loader=yaml.SafeLoader)
             if mode == 'json':
                 import json
@@ -1411,6 +1412,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> print(f'Got expected error: {ex}')
             >>> print('Test success case:')
             >>> cfg._read_argv(argv='--optim=sgd --optim.momentum=0.8')
+            >>> # xdoctest: +REQUIRES(module:yaml)
             >>> print(cfg.dumps())
             >>> assert isinstance(cfg['optim'], Sgd) and cfg['optim']['momentum'] == 0.8
         """
@@ -1612,7 +1614,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         else:
             payload = dict(self.items())
         if mode == 'yaml':
-            import yaml  # type: ignore
+            yaml = import_yaml("dump(mode='yaml')")
             def order_rep(dumper, data):
                 return dumper.represent_mapping('tag:yaml.org,2002:map', data.items(), flow_style=False)
             yaml.add_representer(dict, order_rep, Dumper=yaml.SafeDumper)
