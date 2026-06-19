@@ -2,15 +2,19 @@
 build-backend = "setuptools.build_meta"
 requires = [
   "setuptools>=41.0.1",
+  "setuptools>=77",
 ]
 
 [project]
 name = "kwconf"
 description = "The kwconf module"
-license.text = "Apache 2"
+license = "Apache-2.0"
+license-files = [
+  "LICENSE",
+]
 authors = [
   { name = "Kitware Inc.", email = "kitware@kitware.com" },
-  { name = "Jon Crall", email = "jon.crall@kitware.com" },
+  { name = "Jon Crall", email = "jon.crall@kitware.com" }
 ]
 requires-python = ">=3.10"
 classifiers = [
@@ -25,15 +29,45 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dynamic = [
-  "version",
-  "readme",
   "dependencies",
   "optional-dependencies",
+  "readme",
+  "version",
 ]
 urls.Homepage = "https://github.com/Erotemic/kwconf"
 
 [tool.setuptools]
 include-package-data = true
+dynamic.dependencies.file = [
+  "requirements/runtime.txt",
+]
+dynamic.optional-dependencies.all.file = [
+  "requirements/runtime.txt",
+  "requirements/tests.txt",
+  "requirements/optional.txt",
+  "requirements/docs.txt",
+  "requirements/linting.txt",
+  "requirements/yaml.txt",
+  "requirements/ubelt.txt",
+]
+dynamic.optional-dependencies.docs.file = [
+  "requirements/docs.txt",
+]
+dynamic.optional-dependencies.linting.file = [
+  "requirements/linting.txt",
+]
+dynamic.optional-dependencies.optional.file = [
+  "requirements/optional.txt",
+]
+dynamic.optional-dependencies.tests.file = [
+  "requirements/tests.txt",
+]
+dynamic.optional-dependencies.ubelt.file = [
+  "requirements/ubelt.txt",
+]
+dynamic.optional-dependencies.yaml.file = [
+  "requirements/yaml.txt",
+]
 dynamic.readme.file = [
   "README.rst",
 ]
@@ -49,20 +83,8 @@ packages.find.include = [
   "kwconf*",
 ]
 
-
-[tool.setuptools.dynamic.dependencies]
-file = [
-  "requirements/runtime.txt",
-]
-
-[tool.setuptools.dynamic.optional-dependencies]
-tests = { file = ["requirements/tests.txt"] }
-optional = { file = ["requirements/optional.txt"] }
-docs = { file = ["requirements/docs.txt"] }
-linting = { file = ["requirements/linting.txt"] }
-yaml = { file = ["requirements/yaml.txt"] }
-ubelt = { file = ["requirements/ubelt.txt"] }
-all = { file = ["requirements/runtime.txt", "requirements/tests.txt", "requirements/optional.txt", "requirements/docs.txt", "requirements/linting.txt", "requirements/yaml.txt", "requirements/ubelt.txt"] }
+[tool.uv]
+exclude-newer = "2026-06-18"
 
 [tool.ruff]
 target-version = "py310"

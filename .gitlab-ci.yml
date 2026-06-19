@@ -87,6 +87,8 @@ stages:
     python --version  # Print out python version for debugging
   script:
   - export INSTALL_EXTRAS="tests"
+  - export USE_UV_LOCK="false"
+  - export LOCK_REQUIREMENTS=""
   - echo "Finding the path to the wheel"
   - ls dist || echo "dist does not exist"
   - 'echo "Installing helpers: update pip"'
@@ -122,14 +124,29 @@ stages:
     ")
   - echo "WHEEL_FPATH=$WHEEL_FPATH"
   - echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
-  - echo "UV_RESOLUTION=$UV_RESOLUTION"
+  - echo "USE_UV_LOCK=$USE_UV_LOCK"
+  - echo "LOCK_REQUIREMENTS=$LOCK_REQUIREMENTS"
   - if [[ -n "${INSTALL_EXTRAS:-}" ]]; then
   - '    INSTALL_TARGET="${WHEEL_FPATH}[${INSTALL_EXTRAS}]"'
   - else
   - '    INSTALL_TARGET="${WHEEL_FPATH}"'
   - fi
   - echo "INSTALL_TARGET=$INSTALL_TARGET"
-  - python -m pip install --prefer-binary "${INSTALL_TARGET}"
+  - LOCK_ARGS=()
+  - if [[ "${USE_UV_LOCK:-false}" == "true" ]]; then
+  - '    if [[ -z "${LOCK_REQUIREMENTS:-}" ]]; then'
+  - '        echo "USE_UV_LOCK=true but LOCK_REQUIREMENTS is empty"'
+  - '        exit 1'
+  - '    fi'
+  - '    if [[ ! -f "$LOCK_REQUIREMENTS" ]]; then'
+  - '        echo "Missing checked-in lock requirements: $LOCK_REQUIREMENTS"'
+  - '        exit 1'
+  - '    fi'
+  - '    echo "Using checked-in lock requirements: $LOCK_REQUIREMENTS"'
+  - '    cat "$LOCK_REQUIREMENTS"'
+  - '    LOCK_ARGS=(--constraint "$LOCK_REQUIREMENTS")'
+  - fi
+  - python -m uv pip install --prerelease=allow "${LOCK_ARGS[@]}" "${INSTALL_TARGET}"
   - echo "Install finished."
   - echo "Creating test sandbox directory"
   - export WORKSPACE_DNAME="sandbox"
@@ -169,6 +186,8 @@ stages:
     python --version  # Print out python version for debugging
   script:
   - export INSTALL_EXTRAS="tests,optional"
+  - export USE_UV_LOCK="false"
+  - export LOCK_REQUIREMENTS=""
   - echo "Finding the path to the wheel"
   - ls dist || echo "dist does not exist"
   - 'echo "Installing helpers: update pip"'
@@ -204,14 +223,29 @@ stages:
     ")
   - echo "WHEEL_FPATH=$WHEEL_FPATH"
   - echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
-  - echo "UV_RESOLUTION=$UV_RESOLUTION"
+  - echo "USE_UV_LOCK=$USE_UV_LOCK"
+  - echo "LOCK_REQUIREMENTS=$LOCK_REQUIREMENTS"
   - if [[ -n "${INSTALL_EXTRAS:-}" ]]; then
   - '    INSTALL_TARGET="${WHEEL_FPATH}[${INSTALL_EXTRAS}]"'
   - else
   - '    INSTALL_TARGET="${WHEEL_FPATH}"'
   - fi
   - echo "INSTALL_TARGET=$INSTALL_TARGET"
-  - python -m pip install --prefer-binary "${INSTALL_TARGET}"
+  - LOCK_ARGS=()
+  - if [[ "${USE_UV_LOCK:-false}" == "true" ]]; then
+  - '    if [[ -z "${LOCK_REQUIREMENTS:-}" ]]; then'
+  - '        echo "USE_UV_LOCK=true but LOCK_REQUIREMENTS is empty"'
+  - '        exit 1'
+  - '    fi'
+  - '    if [[ ! -f "$LOCK_REQUIREMENTS" ]]; then'
+  - '        echo "Missing checked-in lock requirements: $LOCK_REQUIREMENTS"'
+  - '        exit 1'
+  - '    fi'
+  - '    echo "Using checked-in lock requirements: $LOCK_REQUIREMENTS"'
+  - '    cat "$LOCK_REQUIREMENTS"'
+  - '    LOCK_ARGS=(--constraint "$LOCK_REQUIREMENTS")'
+  - fi
+  - python -m uv pip install --prerelease=allow "${LOCK_ARGS[@]}" "${INSTALL_TARGET}"
   - echo "Install finished."
   - echo "Creating test sandbox directory"
   - export WORKSPACE_DNAME="sandbox"
@@ -251,6 +285,8 @@ stages:
     python --version  # Print out python version for debugging
   script:
   - export INSTALL_EXTRAS="tests"
+  - export USE_UV_LOCK="true"
+  - export LOCK_REQUIREMENTS="requirements/locks/tests.txt"
   - echo "Finding the path to the wheel"
   - ls dist || echo "dist does not exist"
   - 'echo "Installing helpers: update pip"'
@@ -286,14 +322,29 @@ stages:
     ")
   - echo "WHEEL_FPATH=$WHEEL_FPATH"
   - echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
-  - echo "UV_RESOLUTION=$UV_RESOLUTION"
+  - echo "USE_UV_LOCK=$USE_UV_LOCK"
+  - echo "LOCK_REQUIREMENTS=$LOCK_REQUIREMENTS"
   - if [[ -n "${INSTALL_EXTRAS:-}" ]]; then
   - '    INSTALL_TARGET="${WHEEL_FPATH}[${INSTALL_EXTRAS}]"'
   - else
   - '    INSTALL_TARGET="${WHEEL_FPATH}"'
   - fi
   - echo "INSTALL_TARGET=$INSTALL_TARGET"
-  - python -m pip install --prefer-binary "${INSTALL_TARGET}"
+  - LOCK_ARGS=()
+  - if [[ "${USE_UV_LOCK:-false}" == "true" ]]; then
+  - '    if [[ -z "${LOCK_REQUIREMENTS:-}" ]]; then'
+  - '        echo "USE_UV_LOCK=true but LOCK_REQUIREMENTS is empty"'
+  - '        exit 1'
+  - '    fi'
+  - '    if [[ ! -f "$LOCK_REQUIREMENTS" ]]; then'
+  - '        echo "Missing checked-in lock requirements: $LOCK_REQUIREMENTS"'
+  - '        exit 1'
+  - '    fi'
+  - '    echo "Using checked-in lock requirements: $LOCK_REQUIREMENTS"'
+  - '    cat "$LOCK_REQUIREMENTS"'
+  - '    LOCK_ARGS=(--constraint "$LOCK_REQUIREMENTS")'
+  - fi
+  - python -m uv pip install --prerelease=allow "${LOCK_ARGS[@]}" "${INSTALL_TARGET}"
   - echo "Install finished."
   - echo "Creating test sandbox directory"
   - export WORKSPACE_DNAME="sandbox"
@@ -333,6 +384,8 @@ stages:
     python --version  # Print out python version for debugging
   script:
   - export INSTALL_EXTRAS="tests,optional"
+  - export USE_UV_LOCK="true"
+  - export LOCK_REQUIREMENTS="requirements/locks/tests-optional.txt"
   - echo "Finding the path to the wheel"
   - ls dist || echo "dist does not exist"
   - 'echo "Installing helpers: update pip"'
@@ -368,14 +421,29 @@ stages:
     ")
   - echo "WHEEL_FPATH=$WHEEL_FPATH"
   - echo "INSTALL_EXTRAS=$INSTALL_EXTRAS"
-  - echo "UV_RESOLUTION=$UV_RESOLUTION"
+  - echo "USE_UV_LOCK=$USE_UV_LOCK"
+  - echo "LOCK_REQUIREMENTS=$LOCK_REQUIREMENTS"
   - if [[ -n "${INSTALL_EXTRAS:-}" ]]; then
   - '    INSTALL_TARGET="${WHEEL_FPATH}[${INSTALL_EXTRAS}]"'
   - else
   - '    INSTALL_TARGET="${WHEEL_FPATH}"'
   - fi
   - echo "INSTALL_TARGET=$INSTALL_TARGET"
-  - python -m pip install --prefer-binary "${INSTALL_TARGET}"
+  - LOCK_ARGS=()
+  - if [[ "${USE_UV_LOCK:-false}" == "true" ]]; then
+  - '    if [[ -z "${LOCK_REQUIREMENTS:-}" ]]; then'
+  - '        echo "USE_UV_LOCK=true but LOCK_REQUIREMENTS is empty"'
+  - '        exit 1'
+  - '    fi'
+  - '    if [[ ! -f "$LOCK_REQUIREMENTS" ]]; then'
+  - '        echo "Missing checked-in lock requirements: $LOCK_REQUIREMENTS"'
+  - '        exit 1'
+  - '    fi'
+  - '    echo "Using checked-in lock requirements: $LOCK_REQUIREMENTS"'
+  - '    cat "$LOCK_REQUIREMENTS"'
+  - '    LOCK_ARGS=(--constraint "$LOCK_REQUIREMENTS")'
+  - fi
+  - python -m uv pip install --prerelease=allow "${LOCK_ARGS[@]}" "${INSTALL_TARGET}"
   - echo "Install finished."
   - echo "Creating test sandbox directory"
   - export WORKSPACE_DNAME="sandbox"
@@ -415,41 +483,11 @@ test/minimal-loose/cp310-linux-x86_64:
   image: python:3.10
   needs:
   - build/cp310-linux-x86_64
-test/full-loose/cp310-linux-x86_64:
-  <<: *test_full-loose_template
-  image: python:3.10
-  needs:
-  - build/cp310-linux-x86_64
-test/minimal-strict/cp310-linux-x86_64:
-  <<: *test_minimal-strict_template
-  image: python:3.10
-  needs:
-  - build/cp310-linux-x86_64
-test/full-strict/cp310-linux-x86_64:
-  <<: *test_full-strict_template
-  image: python:3.10
-  needs:
-  - build/cp310-linux-x86_64
 build/cp311-linux-x86_64:
   <<: *build_wheel_template
   image: python:3.11
 test/minimal-loose/cp311-linux-x86_64:
   <<: *test_minimal-loose_template
-  image: python:3.11
-  needs:
-  - build/cp311-linux-x86_64
-test/full-loose/cp311-linux-x86_64:
-  <<: *test_full-loose_template
-  image: python:3.11
-  needs:
-  - build/cp311-linux-x86_64
-test/minimal-strict/cp311-linux-x86_64:
-  <<: *test_minimal-strict_template
-  image: python:3.11
-  needs:
-  - build/cp311-linux-x86_64
-test/full-strict/cp311-linux-x86_64:
-  <<: *test_full-strict_template
   image: python:3.11
   needs:
   - build/cp311-linux-x86_64
@@ -461,41 +499,11 @@ test/minimal-loose/cp312-linux-x86_64:
   image: python:3.12
   needs:
   - build/cp312-linux-x86_64
-test/full-loose/cp312-linux-x86_64:
-  <<: *test_full-loose_template
-  image: python:3.12
-  needs:
-  - build/cp312-linux-x86_64
-test/minimal-strict/cp312-linux-x86_64:
-  <<: *test_minimal-strict_template
-  image: python:3.12
-  needs:
-  - build/cp312-linux-x86_64
-test/full-strict/cp312-linux-x86_64:
-  <<: *test_full-strict_template
-  image: python:3.12
-  needs:
-  - build/cp312-linux-x86_64
 build/cp313-linux-x86_64:
   <<: *build_wheel_template
   image: python:3.13
 test/minimal-loose/cp313-linux-x86_64:
   <<: *test_minimal-loose_template
-  image: python:3.13
-  needs:
-  - build/cp313-linux-x86_64
-test/full-loose/cp313-linux-x86_64:
-  <<: *test_full-loose_template
-  image: python:3.13
-  needs:
-  - build/cp313-linux-x86_64
-test/minimal-strict/cp313-linux-x86_64:
-  <<: *test_minimal-strict_template
-  image: python:3.13
-  needs:
-  - build/cp313-linux-x86_64
-test/full-strict/cp313-linux-x86_64:
-  <<: *test_full-strict_template
   image: python:3.13
   needs:
   - build/cp313-linux-x86_64
@@ -507,16 +515,76 @@ test/minimal-loose/cp314-linux-x86_64:
   image: python:3.14
   needs:
   - build/cp314-linux-x86_64
+test/full-loose/cp310-linux-x86_64:
+  <<: *test_full-loose_template
+  image: python:3.10
+  needs:
+  - build/cp310-linux-x86_64
+test/full-loose/cp311-linux-x86_64:
+  <<: *test_full-loose_template
+  image: python:3.11
+  needs:
+  - build/cp311-linux-x86_64
+test/full-loose/cp312-linux-x86_64:
+  <<: *test_full-loose_template
+  image: python:3.12
+  needs:
+  - build/cp312-linux-x86_64
+test/full-loose/cp313-linux-x86_64:
+  <<: *test_full-loose_template
+  image: python:3.13
+  needs:
+  - build/cp313-linux-x86_64
 test/full-loose/cp314-linux-x86_64:
   <<: *test_full-loose_template
   image: python:3.14
   needs:
   - build/cp314-linux-x86_64
+test/minimal-strict/cp310-linux-x86_64:
+  <<: *test_minimal-strict_template
+  image: python:3.10
+  needs:
+  - build/cp310-linux-x86_64
+test/minimal-strict/cp311-linux-x86_64:
+  <<: *test_minimal-strict_template
+  image: python:3.11
+  needs:
+  - build/cp311-linux-x86_64
+test/minimal-strict/cp312-linux-x86_64:
+  <<: *test_minimal-strict_template
+  image: python:3.12
+  needs:
+  - build/cp312-linux-x86_64
+test/minimal-strict/cp313-linux-x86_64:
+  <<: *test_minimal-strict_template
+  image: python:3.13
+  needs:
+  - build/cp313-linux-x86_64
 test/minimal-strict/cp314-linux-x86_64:
   <<: *test_minimal-strict_template
   image: python:3.14
   needs:
   - build/cp314-linux-x86_64
+test/full-strict/cp310-linux-x86_64:
+  <<: *test_full-strict_template
+  image: python:3.10
+  needs:
+  - build/cp310-linux-x86_64
+test/full-strict/cp311-linux-x86_64:
+  <<: *test_full-strict_template
+  image: python:3.11
+  needs:
+  - build/cp311-linux-x86_64
+test/full-strict/cp312-linux-x86_64:
+  <<: *test_full-strict_template
+  image: python:3.12
+  needs:
+  - build/cp312-linux-x86_64
+test/full-strict/cp313-linux-x86_64:
+  <<: *test_full-strict_template
+  image: python:3.13
+  needs:
+  - build/cp313-linux-x86_64
 test/full-strict/cp314-linux-x86_64:
   <<: *test_full-strict_template
   image: python:3.14

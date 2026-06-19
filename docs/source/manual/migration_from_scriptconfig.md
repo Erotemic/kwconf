@@ -133,7 +133,7 @@ kw.Value(0, parser=int)
 kw.Value(None, parser='yaml')
 ```
 
-Parsers are **annotation-aware** or not. `'auto'` (the default) and `'csv'`
+Parsers may or may not be **annotation-aware**. `'auto'` (the default) and `'csv'`
 steer their output by the field annotation; `'yaml'` produces its own typed
 structure. Register a custom parser with
 `kwconf.coerce.register_parser(name, fn, annotation_aware=...)`. See the
