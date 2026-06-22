@@ -14,7 +14,6 @@ Example
     >>> import kwconf
     >>> #
     >>> class DoFooCLI(kwconf.Config):
-    >>>     __command__ = 'do_foo'
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
     >>>     @classmethod
@@ -23,7 +22,6 @@ Example
     >>>         print('Called Foo with: ' + str(self))
     >>> #
     >>> class DoBarCLI(kwconf.Config):
-    >>>     __command__ = 'do_bar'
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
     >>>     @classmethod
@@ -33,9 +31,10 @@ Example
     >>> #
     >>> #
     >>> class MyModalCLI(kwconf.ModalCLI):
+    >>>     # The attribute name is the command name.
     >>>     __version__ = '1.2.3'
-    >>>     foo = DoFooCLI
-    >>>     bar = DoBarCLI
+    >>>     do_foo = DoFooCLI
+    >>>     do_bar = DoBarCLI
     >>> #
     >>> modal = MyModalCLI()
     >>> MyModalCLI.main(argv=['do_foo'])
@@ -45,6 +44,13 @@ Example
     >>>     MyModalCLI.main(argv=['--help'])
     >>> except SystemExit:
     >>>     print('prevent system exit due to calling --help')
+
+Note:
+    The command name comes from the attribute a command is registered under
+    (or the class name when registered via :meth:`register`). To override it,
+    prefer :class:`kwconf.ModalValue` with ``command=...``. A ``__command__``
+    class attribute also works but is rarely needed -- mainly for argument-less
+    decorator registration where no attribute name is available.
 
 Note:
     Submodals in :class:`ModalCLI` must be registered as classes (or via

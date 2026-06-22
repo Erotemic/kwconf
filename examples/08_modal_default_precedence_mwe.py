@@ -66,8 +66,6 @@ class ArchiveSource(kw.Config):
     Small stand-in for git-well archive_source.
     """
 
-    __command__ = 'archive_source'
-
     depth = kw.Value(
         'full',
         help='history depth: full, positive integer, or 0 for source-only',

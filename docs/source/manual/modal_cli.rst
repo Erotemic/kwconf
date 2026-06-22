@@ -14,7 +14,6 @@ Basic modal
 
 
     class Train(kwconf.Config):
-        __command__ = 'train'
         epochs = kwconf.Value(1, help='number of epochs')
         dry_run = kwconf.Flag(False, help='only print what would run')
 
@@ -26,7 +25,6 @@ Basic modal
 
 
     class Eval(kwconf.Config):
-        __command__ = 'eval'
         dataset = kwconf.Value('demo', help='dataset name')
 
         @classmethod
@@ -49,7 +47,10 @@ Declarative registration
 
 Commands can be class attributes, registered imperatively with
 ``@modal.register``, or wrapped in :class:`kwconf.ModalValue` when you want
-aliases, command-name overrides, or group metadata.
+aliases, command-name overrides, or group metadata. The command name defaults to
+the attribute name (or the class name under ``@modal.register``); to override it
+prefer ``ModalValue(..., command=...)``. A ``__command__`` class attribute also
+works but is rarely needed.
 
 .. code-block:: python
 
@@ -65,7 +66,6 @@ A modal can contain another modal:
 .. code-block:: python
 
     class Tools(kwconf.ModalCLI):
-        __command__ = 'tools'
         score = kwconf.ModalValue(Eval, command='score')
 
 
