@@ -18,6 +18,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   spelling of option flags on the command line. Previously the variant was still
   accepted on the input side; the setting only stopped advertising it in
   `--help`.
+* A parent `ModalCLI` opting out of fuzzy hyphens now propagates the opt-out to
+  its subcommands and submodals (command names and option flags). Propagation is
+  resolved per-invocation (`argparse(..., fuzzy_hyphens=...)`), so a `Config`
+  reused under two different modals still resolves independently — no class
+  attribute is mutated.
 
 ## [Version 0.10.0] - Released 2026-06-18 (ish)
 

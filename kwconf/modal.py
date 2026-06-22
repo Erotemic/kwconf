@@ -538,11 +538,24 @@ class ModalCLI(metaclass=MetaModalCLI):
         return parserkw
 
     def argparse(
-        self, parser: Optional[Any] = None, special_options: Any = ...
+        self,
+        parser: Optional[Any] = None,
+        special_options: Any = ...,
+        fuzzy_hyphens: Optional[int] = None,
     ) -> Any:
         """
         Builds a new argparse object for this ModalCLI or extends an existing
         one with it.
+
+        Args:
+            fuzzy_hyphens (int | None):
+                Effective fuzzy-hyphen setting inherited from a parent modal at
+                resolve time. ``None`` (the default, top-level) means use this
+                modal's own ``__fuzzy_hyphens__``. A falsy value forces fuzzy
+                hyphens off for this whole subtree regardless of the children's
+                own settings (an ancestor opting out propagates down). This is
+                threaded per-call, so the same Config/ModalCLI reused under two
+                different parents resolves independently.
         """
 
         if parser is None:
@@ -571,7 +584,11 @@ class ModalCLI(metaclass=MetaModalCLI):
         for metadata in self._subconfig_metadata:
             self._update_metadata(metadata)
         cmdinfo_list = self._subconfig_metadata
-        fuzzy_hyphens = getattr(self, '__fuzzy_hyphens__', 1)
+        own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
+        # Effective = own setting, but forced off if an ancestor opted out.
+        fuzzy_hyphens = (
+            own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
+        )
 
         # Build a list of primary command names to display as the valid options
         # for subparsers. This avoids cluttering the screen with all aliases
@@ -664,7 +681,9 @@ class ModalCLI(metaclass=MetaModalCLI):
                 modal_parser = command_subparsers.add_parser(
                     main_cmd, **parserkw
                 )
-                modal_parser = modal_inst.argparse(parser=modal_parser)
+                modal_parser = modal_inst.argparse(
+                    parser=modal_parser, fuzzy_hyphens=fuzzy_hyphens
+                )
                 modal_parser.set_defaults(
                     __main_function__=cmdinfo['main_func']
                 )
@@ -675,7 +694,9 @@ class ModalCLI(metaclass=MetaModalCLI):
                 # cases, but this works better than defaults
                 parserkw['prog'] = ' '.join([parser.prog, main_cmd])
                 subparser = command_subparsers.add_parser(main_cmd, **parserkw)
-                subparser = cmdinfo['subconfig'].argparse(subparser)
+                subparser = cmdinfo['subconfig'].argparse(
+                    subparser, fuzzy_hyphens=fuzzy_hyphens
+                )
                 subparser.set_defaults(__main_function__=cmdinfo['main_func'])
                 subparser.set_defaults(
                     __submodal__=None

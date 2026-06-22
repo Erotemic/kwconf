@@ -569,6 +569,57 @@ def test_modal_value_alias_fuzzy_hyphens():
     assert FuzzyModalHyphenAlias.main(argv=['alias_cmd'], _noexit=True) == 1
 
 
+def test_modal_fuzzy_hyphens_propagation():
+    """
+    A parent modal opting out of fuzzy hyphens propagates down at resolve time
+    (commands and option flags), without mutating the possibly-shared child.
+    """
+    import kwconf
+
+    class Leaf(kwconf.Config):
+        out_dir = kwconf.Value('x')
+
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            cls.cli(argv=argv, data=kwargs)
+            return 0
+
+    class Sub(kwconf.ModalCLI):
+        do_thing = Leaf
+
+    class FuzzyRoot(kwconf.ModalCLI):
+        run_leaf = Leaf
+        sub = Sub
+
+    class StrictRoot(kwconf.ModalCLI):
+        __fuzzy_hyphens__ = False
+        run_leaf = Leaf
+        sub = Sub
+
+    # Fuzzy root: hyphen spellings accepted at every level.
+    assert FuzzyRoot.main(argv=['run-leaf', '--out-dir=A'], _noexit=True) == 0
+    assert (
+        FuzzyRoot.main(argv=['sub', 'do-thing', '--out-dir=A'], _noexit=True)
+        == 0
+    )
+
+    # Strict root propagates down: hyphen command names AND option flags are
+    # rejected for the whole subtree; canonical spellings still work.
+    assert StrictRoot.main(argv=['run_leaf', '--out_dir=A'], _noexit=True) == 0
+    assert StrictRoot.main(argv=['run-leaf', '--out_dir=A'], _noexit=True) == 1
+    assert StrictRoot.main(argv=['run_leaf', '--out-dir=A'], _noexit=True) == 1
+    assert StrictRoot.main(argv=['sub', 'do-thing'], _noexit=True) == 1
+    assert (
+        StrictRoot.main(argv=['sub', 'do_thing', '--out-dir=A'], _noexit=True)
+        == 1
+    )
+
+    # The shared Leaf class is not mutated: still fuzzy under FuzzyRoot even
+    # after StrictRoot has been built and resolved.
+    assert not hasattr(Leaf, '__fuzzy_hyphens__')
+    assert FuzzyRoot.main(argv=['run_leaf', '--out-dir=A'], _noexit=True) == 0
+
+
 def test_arbitrary_opaque_subparser():
     import kwconf
 

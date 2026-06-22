@@ -2617,6 +2617,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         parser: Optional[argparse_mod.ArgumentParser] = None,
         special_options: bool = False,
         allow_subconfig_overrides: bool = False,
+        fuzzy_hyphens: Optional[int] = None,
     ) -> argparse_mod.ArgumentParser:
         """
         construct or update an argparse.ArgumentParser CLI parser
@@ -2832,8 +2833,15 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         else:
             _keyorder = list(self._default.keys())
 
-        FUZZY_HYPHENS = getattr(self, '__fuzzy_hyphens__', 1)
-        # Let the parser honor this config's setting on the input side too, so
+        own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
+        # ``fuzzy_hyphens`` (when not None) is the effective setting propagated
+        # from a parent modal at resolve time: effective = own, but forced off
+        # if an ancestor opted out. Threaded per-call, so a Config reused under
+        # two different modals resolves independently (no class mutation).
+        FUZZY_HYPHENS = (
+            own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
+        )
+        # Let the parser honor this setting on the input side too, so
         # __fuzzy_hyphens__ = False actually stops "_"/"-" being interchangeable
         # (not just stops advertising the hyphen variant in --help).
         parser._kwconf_fuzzy_hyphens = bool(FUZZY_HYPHENS)  # type: ignore[attr-defined]
