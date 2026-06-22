@@ -5,6 +5,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Version 0.10.1] - Unreleased
 
+### Fixed
+* `__fuzzy_hyphens__ = False` on a `Config` now actually rejects the hyphen
+  spelling of option flags on the command line. Previously the variant was still
+  accepted on the input side; the setting only stopped advertising it in
+  `--help`.
+
 ## [Version 0.10.0] - Released 2026-06-18 (ish)
 
 First public release. `kwconf` is a successor to `scriptconfig`: typed,

@@ -743,6 +743,12 @@ class ExtendedArgumentParser_PRE_GH_114180(CompatArgumentParser):
         """
         Helper to allow "_" or "-" on the CLI.
         """
+        if not getattr(self, '_kwconf_fuzzy_hyphens', True):
+            # Fuzzy hyphens disabled for this parser: defer to the standard
+            # library so "_" and "-" are NOT interchangeable on the input side.
+            return argparse.ArgumentParser._get_option_tuples(
+                self, option_string
+            )
         result: list[tuple[Any, str, str | None]] = []
 
         if '=' in option_string:
@@ -806,6 +812,12 @@ class ExtendedArgumentParser_POST_GH_114180(CompatArgumentParser):
     """
 
     def _get_option_tuples(self, option_string: str):
+        if not getattr(self, '_kwconf_fuzzy_hyphens', True):
+            # Fuzzy hyphens disabled for this parser: defer to the standard
+            # library so "_" and "-" are NOT interchangeable on the input side.
+            return argparse.ArgumentParser._get_option_tuples(
+                self, option_string
+            )
         result: list[tuple[Any, str, str | None, str | None]] = []
 
         # option strings starting with two prefix characters are only

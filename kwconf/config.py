@@ -2833,6 +2833,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             _keyorder = list(self._default.keys())
 
         FUZZY_HYPHENS = getattr(self, '__fuzzy_hyphens__', 1)
+        # Let the parser honor this config's setting on the input side too, so
+        # __fuzzy_hyphens__ = False actually stops "_"/"-" being interchangeable
+        # (not just stops advertising the hyphen variant in --help).
+        parser._kwconf_fuzzy_hyphens = bool(FUZZY_HYPHENS)  # type: ignore[attr-defined]
 
         # Need to clean this up, metadata probably isn't necessary.
         for key, value in self._data.items():
