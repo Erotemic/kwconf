@@ -2,7 +2,10 @@
 We [keep a changelog](https://keepachangelog.com/en/1.0.0/).
 We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Version 0.10.0] -
+
+## [Version 0.10.1] - Unreleased
+
+## [Version 0.10.0] - Released 2026-06-18 (ish)
 
 First public release. `kwconf` is a successor to `scriptconfig`: typed,
 dependency-free configuration objects that parse consistently from Python

@@ -32,7 +32,7 @@ Ignore:
     mkinit ~/code/kwconf/kwconf/__init__.py --nomods --relative -w
 """
 
-__version__ = '0.10.0'
+__version__ = '0.10.1'
 
 __submodules__ = {
     'modal': None,
@@ -51,9 +51,8 @@ from .config import (
 )
 
 # Value / Flag are factory FUNCTIONS defined in kwconf.value (typed to
-# return the field value type T). _Value / _Flag are the runtime wrapper
-# classes, re-exported as ValueClass / FlagClass for isinstance / subclassing.
-from .value import Value, Flag, _Value as ValueClass, _Flag as FlagClass
+# return the field value type T).
+from .value import Value, Flag
 from .dataconfig import (
     dataconf,
 )
