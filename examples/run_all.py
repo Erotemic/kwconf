@@ -59,9 +59,14 @@ EXAMPLE_COMMANDS = [
     [
         sys.executable,
         'examples/05_modal_cli.py',
-        'fit',
-        '--epochs=3',
-        '--dry-run',
+    ],
+    [
+        sys.executable,
+        'examples/05_modal_cli.py',
+        'data-tools',
+        'export-data',
+        '--out-dir=build/exports',
+        '--include-meta',
     ],
     [
         sys.executable,
