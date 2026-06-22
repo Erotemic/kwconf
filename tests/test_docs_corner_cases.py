@@ -4,6 +4,7 @@ Corner cases surfaced while refreshing the manual (coercion_and_cli,
 core_contract, migration). These pin down behavior the docs now promise so the
 prose cannot silently drift from the runtime again.
 """
+
 import os
 
 import pytest
@@ -19,7 +20,12 @@ def test_parser_list_callable_is_a_footgun():
     # comma string -- it splits the string into characters. The docs steer
     # users to csv/yaml/nargs instead; this test documents why.
     assert kwconf.Value(None, parser=list).coerce('1,2,3') == [
-        '1', ',', '2', ',', '3']
+        '1',
+        ',',
+        '2',
+        ',',
+        '3',
+    ]
 
 
 def test_csv_is_the_comma_list_tool():
@@ -39,6 +45,7 @@ def test_yaml_is_the_structured_tool():
 # --------------------------------------------------------------------------
 def test_value_and_flag_classes_are_exported():
     import inspect
+
     assert inspect.isclass(kwconf.ValueClass)
     assert inspect.isclass(kwconf.FlagClass)
     assert issubclass(kwconf.FlagClass, kwconf.ValueClass)
@@ -72,4 +79,5 @@ def test_valueclass_subclass_usable_as_a_field():
         out = Path('~/out')
 
     assert C.cli(argv=['--out=~/elsewhere'])['out'] == os.path.expanduser(
-        '~/elsewhere')
+        '~/elsewhere'
+    )

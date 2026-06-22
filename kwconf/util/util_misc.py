@@ -1,6 +1,7 @@
 """
 Misc small helpers vendored to keep kwconf dependency-free at runtime.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -13,6 +14,7 @@ class _NoParamType:
     Reproduces ``ubelt.NoParam``: identity-comparable, falsy, and stable across
     copy/deepcopy/pickle so it survives Config cloning.
     """
+
     _instance = None
 
     def __new__(cls) -> '_NoParamType':

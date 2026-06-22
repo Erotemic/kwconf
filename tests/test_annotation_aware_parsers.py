@@ -7,6 +7,7 @@ parsers opt in via ``register_parser(..., annotation_aware=True)``.
 ``csv`` is ``auto`` mapped over the comma-split, gated by the container's
 element annotation.
 """
+
 import pytest
 import kwconf
 from kwconf.coerce import coerce, register_parser, element_annotation, auto
@@ -29,7 +30,9 @@ def test_csv_parses_int_elements():
 
 def test_csv_union_element_annotation():
     class C(kwconf.Config):
-        mixed: list[int | str] = kwconf.Value(default_factory=list, parser='csv')
+        mixed: list[int | str] = kwconf.Value(
+            default_factory=list, parser='csv'
+        )
 
     # int wins where it can, str catches the rest.
     assert C.cli(argv=['--mixed', '1,2,3o'])['mixed'] == [1, 2, '3o']

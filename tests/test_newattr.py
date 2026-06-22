@@ -6,8 +6,8 @@ def test_newattr():
 
     import kwconf
     import pytest
-    class TestNewattrCLI(kwconf.Config):
-        ...
+
+    class TestNewattrCLI(kwconf.Config): ...
 
     config = TestNewattrCLI()
 
@@ -22,7 +22,8 @@ def test_newattr():
     assert 'newattr2' not in config
     assert config.newattr2 == 456, (
         'even though it is not in the config, you can still access it '
-        'to cary info around')
+        'to cary info around'
+    )
     print(f'config={config}')
     print(f'config.__dict__={config.__dict__}')
 

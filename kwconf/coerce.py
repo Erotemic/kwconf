@@ -42,6 +42,7 @@ design doc):
 This is the default coercion path: ``Value.coerce()`` and ``Config.coerce()``
 route here, and the deprecated ``type=`` kwarg is mapped onto it.
 """
+
 from __future__ import annotations
 
 import types
@@ -49,8 +50,13 @@ import typing
 import warnings
 from typing import Any, Callable
 
-__all__ = ['auto', 'coerce', 'register_parser', 'CannotCoerce',
-           'element_annotation']
+__all__ = [
+    'auto',
+    'coerce',
+    'register_parser',
+    'CannotCoerce',
+    'element_annotation',
+]
 
 NoneType = type(None)
 
@@ -204,7 +210,7 @@ def auto(token: str, annotation: Any = Any) -> Any:
     except CannotCoerce:
         warnings.warn(
             f'auto parser cannot build {annotation!r} from the single token '
-            f'{token!r}; use parser=\'csv\'/\'yaml\' or nargs. Keeping string.',
+            f"{token!r}; use parser='csv'/'yaml' or nargs. Keeping string.",
             stacklevel=2,
         )
         return token
@@ -224,6 +230,7 @@ def auto(token: str, annotation: Any = Any) -> Any:
 
 def _parse_yaml(token: str) -> Any:
     from kwconf.util.util_yaml import import_yaml
+
     yaml = import_yaml("parser='yaml'")
     return yaml.safe_load(token)
 
@@ -338,4 +345,6 @@ def coerce(value: Any, annotation: Any = Any, spec: Any = 'auto') -> Any:
         if _is_annotation_aware(parser):
             return parser(value, annotation)
         return parser(value)
-    raise TypeError(f'coerce spec must be a callable or str, got {type(spec)!r}')
+    raise TypeError(
+        f'coerce spec must be a callable or str, got {type(spec)!r}'
+    )

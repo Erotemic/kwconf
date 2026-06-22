@@ -63,13 +63,19 @@ def port_argparse_counter_to_kwconf():
     xdoctest ~/code/kwconf/tests/test_counter_flags.py port_argparse_counter_to_kwconf
     """
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--flag1', action='count')
     parser.add_argument('--flag2', action='store_true')
-    parser.add_argument('--flag3', action='count', help='specified looooooooooooooooooooooonggg help ')
+    parser.add_argument(
+        '--flag3',
+        action='count',
+        help='specified looooooooooooooooooooooonggg help ',
+    )
     parser.add_argument('--flag4', action='store_true', help='specified help')
 
     import kwconf
+
     text = kwconf.Config.port_argparse(parser)
     print(text)
     import ubelt as ub
@@ -82,9 +88,13 @@ def port_argparse_counter_to_kwconf():
         import kwconf
 
         class MyConfig(kwconf.Config):
-            """ + tq + """
+            """
+        + tq
+        + """
             $
-            """ + tq + """
+            """
+        + tq
+        + """
             flag1 = kwconf.Value(None, isflag='counter', help=None)
             flag2 = kwconf.Value(False, isflag=True, help=None)
             flag3 = kwconf.Value(None, isflag='counter', help=ub.paragraph(
@@ -92,7 +102,8 @@ def port_argparse_counter_to_kwconf():
                     specified looooooooooooooooooooooonggg help
                     '''))
             flag4 = kwconf.Value(False, isflag=True, help='specified help')
-        """).replace('$', '')
+        """
+    ).replace('$', '')
     print(text)
     print(want)
     assert text == want

@@ -24,8 +24,12 @@ class ConvertConfig(kw.Config):
     src: str = kw.Value('input.txt', position=1, help='input file')
     dst: str = kw.Value('output.txt', position=2, help='output file')
     workers: int = kw.Value(1, short_alias=['j'], help='worker count')
-    mode: str = kw.Value('fast', choices=['fast', 'safe'], help='conversion mode')
-    include: list = kw.Value(default_factory=list, nargs='*', help='named sections')
+    mode: str = kw.Value(
+        'fast', choices=['fast', 'safe'], help='conversion mode'
+    )
+    include: list = kw.Value(
+        default_factory=list, nargs='*', help='named sections'
+    )
     verbose = kw.Value(0, short_alias=['v'], isflag='counter', help='verbosity')
     dry_run = kw.Flag(False, alias=['dryrun'], help='do not write outputs')
 

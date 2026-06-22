@@ -44,14 +44,30 @@ __submodules__ = {
 }
 
 from . import diagnostics  # NOQA
-from .modal import (ModalCLI, ModalValue)
-from .config import (Config, define,)
+from .modal import ModalCLI, ModalValue
+from .config import (
+    Config,
+    define,
+)
+
 # Value / Flag are factory FUNCTIONS defined in kwconf.value (typed to
 # return the field value type T). _Value / _Flag are the runtime wrapper
 # classes, re-exported as ValueClass / FlagClass for isinstance / subclassing.
-from .value import (Value, Flag, _Value as ValueClass, _Flag as FlagClass)
-from .dataconfig import (dataconf,)
-from .subconfig import (SubConfig,)
+from .value import Value, Flag, _Value as ValueClass, _Flag as FlagClass
+from .dataconfig import (
+    dataconf,
+)
+from .subconfig import (
+    SubConfig,
+)
 
-__all__ = ['Config', 'Value', 'Flag',
-           'dataconf', 'define', 'ModalCLI', 'ModalValue', 'SubConfig']
+__all__ = [
+    'Config',
+    'Value',
+    'Flag',
+    'dataconf',
+    'define',
+    'ModalCLI',
+    'ModalValue',
+    'SubConfig',
+]

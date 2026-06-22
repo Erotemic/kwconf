@@ -10,6 +10,7 @@ Many tests in this file deliberately pass values that violate the field
 annotations to exercise the runtime validator. Inline ``# ty: ignore``
 comments suppress the corresponding static-analysis errors.
 """
+
 import typing
 
 import pytest
@@ -36,6 +37,7 @@ def test_validation_can_be_disabled():
         mode: typing.Literal['fast', 'slow'] = 'fast'
 
     import warnings
+
     with warnings.catch_warnings():
         warnings.simplefilter('error')
         cfg = D(mode='wrong')  # ty: ignore[invalid-argument-type]
@@ -72,7 +74,8 @@ def test_per_field_validate_overrides_class():
     class C(kwconf.Config):
         __validate__ = 'error'
         mode: typing.Literal['fast', 'slow'] = kwconf.Value(  # ty: ignore[invalid-assignment]
-            'fast', validate=False)
+            'fast', validate=False
+        )
 
     # Class would error, but field opts out.
     cfg = C(mode='whatever')  # ty: ignore[invalid-argument-type]
@@ -105,7 +108,8 @@ def test_validation_yaml_typed_with_literal():
     class C(kwconf.Config):
         __validate__ = 'error'
         flag: typing.Literal[1, 0, True, 'auto', None] = kwconf.Value(  # ty: ignore[invalid-assignment]
-            None, type='yaml')
+            None, type='yaml'
+        )
 
     # yaml parses --flag=1 to int 1, which is in the Literal set
     assert C.cli(argv=['--flag=1'])['flag'] == 1

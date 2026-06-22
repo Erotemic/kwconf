@@ -61,7 +61,9 @@ def test_selector_override_remains_available():
         beta1 = kwconf.Value(0.9, type=float)
 
     class TrainConfig(kwconf.Config):
-        optim = kwconf.SubConfig(AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig})
+        optim = kwconf.SubConfig(
+            AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig}
+        )
         epochs = kwconf.Value(10, type=int)
 
     cfg = TrainConfig.cli(

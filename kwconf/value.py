@@ -26,9 +26,10 @@ class _FactoryUnset:
     copy/deepcopy-safe singleton and is falsy so attribute-introspection code
     (e.g. ``_to_value_kw``) skips it.
     """
-    _instance: "Optional[_FactoryUnset]" = None
 
-    def __new__(cls) -> "_FactoryUnset":
+    _instance: 'Optional[_FactoryUnset]' = None
+
+    def __new__(cls) -> '_FactoryUnset':
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -39,10 +40,10 @@ class _FactoryUnset:
     def __bool__(self) -> bool:
         return False
 
-    def __copy__(self) -> "_FactoryUnset":
+    def __copy__(self) -> '_FactoryUnset':
         return self
 
-    def __deepcopy__(self, memo: Any) -> "_FactoryUnset":
+    def __deepcopy__(self, memo: Any) -> '_FactoryUnset':
         return self
 
     def __reduce__(self) -> Any:
@@ -59,6 +60,7 @@ def normalize_option_str(s: str) -> str:
 def _yaml_safe_load(value: str) -> Any:
     """Parse a string as YAML, used as the callable for ``type='yaml'``."""
     from kwconf.util.util_yaml import import_yaml
+
     yaml = import_yaml("type='yaml'")
     return yaml.safe_load(value)
 
@@ -69,7 +71,9 @@ def _yaml_safe_load(value: str) -> Any:
 _NAMED_TYPE_PARSERS: dict[str, Callable[[str], Any]] = {
     'yaml': _yaml_safe_load,
 }
-_NAMED_TYPE_PARSER_SET: set[Callable[[str], Any]] = set(_NAMED_TYPE_PARSERS.values())
+_NAMED_TYPE_PARSER_SET: set[Callable[[str], Any]] = set(
+    _NAMED_TYPE_PARSERS.values()
+)
 
 
 def _resolve_named_type(type_: Any) -> Any:
@@ -188,32 +192,37 @@ class _Value(NiceRepr):
         self.value = 3.3
     """
 
-    def __init__(self,
-                 default: Any = NoParam,
-                 type: Any = None,
-                 help: Optional[str] = None,
-                 choices: Sequence[Any] | None = None,
-                 position: Optional[int] = None,
-                 isflag: Union[bool, str] = False,
-                 nargs: Optional[Any] = None,
-                 alias: Sequence[str] | None = None,
-                 required: bool = False,
-                 short_alias: Sequence[str] | None = None,
-                 group: Optional[str] = None,
-                 mutex_group: Optional[str] = None,
-                 tags: Optional[Any] = None,
-                 *,
-                 default_factory: Callable[[], Any] | None = None,
-                 parser: Any = None,
-                 validate: Optional[Union[bool, str]] = None) -> None:
+    def __init__(
+        self,
+        default: Any = NoParam,
+        type: Any = None,
+        help: Optional[str] = None,
+        choices: Sequence[Any] | None = None,
+        position: Optional[int] = None,
+        isflag: Union[bool, str] = False,
+        nargs: Optional[Any] = None,
+        alias: Sequence[str] | None = None,
+        required: bool = False,
+        short_alias: Sequence[str] | None = None,
+        group: Optional[str] = None,
+        mutex_group: Optional[str] = None,
+        tags: Optional[Any] = None,
+        *,
+        default_factory: Callable[[], Any] | None = None,
+        parser: Any = None,
+        validate: Optional[Union[bool, str]] = None,
+    ) -> None:
 
         if default_factory is not None and default is not NoParam:
-            raise ValueError('Error: default_factory is mutually exclusive with default')
+            raise ValueError(
+                'Error: default_factory is mutually exclusive with default'
+            )
 
         if parser is not None and type is not None:
             raise ValueError(
                 'Value: pass either `parser` (preferred) or the deprecated '
-                '`type`, not both.')
+                '`type`, not both.'
+            )
 
         # Whether the user explicitly passed ``type=`` (deprecated). The
         # metaclass also populates ``self.type`` from a field annotation, so we
@@ -291,11 +300,17 @@ class _Value(NiceRepr):
         """
         if self.short_alias is not None:
             short_alias: Sequence[str] = self.short_alias
-            _short_alias: list[str] = cast(list[str], [short_alias] if isinstance(short_alias, str) else short_alias)
+            _short_alias: list[str] = cast(
+                list[str],
+                [short_alias] if isinstance(short_alias, str) else short_alias,
+            )
             for v in _short_alias:
                 if v.startswith('-'):
                     import warnings
-                    warnings.warn('Do not prefix short aliases with a -, it is implicit')
+
+                    warnings.warn(
+                        'Do not prefix short aliases with a -, it is implicit'
+                    )
 
     def __nice__(self) -> str:
         # return '{!r}: {!r}'.format(self.type, self.value)
@@ -321,7 +336,7 @@ class _Value(NiceRepr):
     def value(self, val: Any) -> None:
         self._value = val
 
-    def update(self, value: Any) -> "_Value":
+    def update(self, value: Any) -> '_Value':
         self.value = self.coerce(value)
         return self
 
@@ -342,11 +357,13 @@ class _Value(NiceRepr):
         """
         if isinstance(value, str):
             from kwconf import coerce as _coerce_mod
+
             if self._parser_spec is not None:
                 # Explicit parser= spec. 'auto' is gated by the field
                 # annotation; named/callable specs ignore it.
-                return _coerce_mod.coerce(value, annotation=self._annotation,
-                                          spec=self._parser_spec)
+                return _coerce_mod.coerce(
+                    value, annotation=self._annotation, spec=self._parser_spec
+                )
             if self._user_gave_type:
                 # Deprecated explicit type= path, mapped onto kwconf.coerce
                 # (smartcast has been retired). Named parsers (e.g. 'yaml') and
@@ -361,15 +378,17 @@ class _Value(NiceRepr):
             return _coerce_mod.auto(value, self._annotation)
         return value
 
-    def copy(self) -> "_Value":
+    def copy(self) -> '_Value':
         import copy
+
         return copy.copy(self)
 
-    def clone_default(self) -> "_Value":
+    def clone_default(self) -> '_Value':
         """
         Create a fresh per-instance copy of this value template.
         """
         import copy
+
         new = self.copy()
         if self.default_factory is not None:
             # BOUNDARY (design.md §4): factory output is a Python-boundary value
@@ -392,7 +411,9 @@ class _Value(NiceRepr):
         value = self
         orig_help = cast(Optional[str], self.parsekw['help'])
         orig_type = cast(Optional[Union[str, type]], self.parsekw['type'])
-        value_kw: MutableMapping[str, Any] = {k: v for k, v in self.__dict__.items() if v}
+        value_kw: MutableMapping[str, Any] = {
+            k: v for k, v in self.__dict__.items() if v
+        }
         # The value is stored under the private ``_value`` attribute (it is a
         # lazily-materialized property); expose it under ``value`` so the
         # ordering/pop logic below treats it as before.
@@ -410,9 +431,20 @@ class _Value(NiceRepr):
 
         # Move the "known" keys to the front (keeping their existing relative
         # order), then any extra keys after -- matching the prior udict dance.
-        _order_keys = {'value', 'nargs', 'type', 'isflag', 'position', 'required',
-                       'choices', 'alias', 'short_alias', 'group', 'mutex_group',
-                       'help'}
+        _order_keys = {
+            'value',
+            'nargs',
+            'type',
+            'isflag',
+            'position',
+            'required',
+            'choices',
+            'alias',
+            'short_alias',
+            'group',
+            'mutex_group',
+            'help',
+        }
         order = {k: v for k, v in value_kw.items() if k in _order_keys}
         rest = {k: v for k, v in value_kw.items() if k not in _order_keys}
         value_kw = {**order, **rest}
@@ -426,8 +458,9 @@ class _Value(NiceRepr):
         return value_kw
 
     @classmethod
-    def _from_action(cls, action, actionid_to_groupkey, actionid_to_mgroupkey,
-                     pos_counter):
+    def _from_action(
+        cls, action, actionid_to_groupkey, actionid_to_mgroupkey, pos_counter
+    ):
         """
         Used in port_argparse
 
@@ -441,23 +474,24 @@ class _Value(NiceRepr):
             value = _Value._from_action(action, {}, {}, 0)
         """
         import argparse
+
         key = action.dest
 
         long_option_strings = [
-            s for s in action.option_strings
-            if long_prefix_pat.match(s)
+            s for s in action.option_strings if long_prefix_pat.match(s)
         ]
         short_option_strings = [
-            s for s in action.option_strings
-            if short_prefix_pat.match(s)
+            s for s in action.option_strings if short_prefix_pat.match(s)
         ]
 
-        alias_seen = list(dict.fromkeys(
-            normalize_option_str(s) for s in long_option_strings))
+        alias_seen = list(
+            dict.fromkeys(normalize_option_str(s) for s in long_option_strings)
+        )
         alias: list[str] = [a for a in alias_seen if a != key]
 
-        short_alias_seen = list(dict.fromkeys(
-            normalize_option_str(s) for s in short_option_strings))
+        short_alias_seen = list(
+            dict.fromkeys(normalize_option_str(s) for s in short_option_strings)
+        )
         short_alias: list[str] = [a for a in short_alias_seen if a != key]
 
         real_value_kw = {
@@ -482,7 +516,9 @@ class _Value(NiceRepr):
         if action_id in actionid_to_groupkey:
             real_value_kw['group'] = repr(actionid_to_groupkey[action_id])
         if action_id in actionid_to_mgroupkey:
-            real_value_kw['mutex_group'] = repr(actionid_to_mgroupkey[action_id])
+            real_value_kw['mutex_group'] = repr(
+                actionid_to_mgroupkey[action_id]
+            )
         if len(action.option_strings) == 0:
             real_value_kw['position'] = next(pos_counter)
         value = _Value(**real_value_kw)  # type: ignore
@@ -493,6 +529,7 @@ class _Flag(_Value):
     """
     Exactly the same as a Value except isflag default to True
     """
+
     def __init__(self, default: Any = False, **kwargs: Any) -> None:
         isflag = kwargs.get('isflag', True)
         assert isflag, 'Cannot disable isflag on a Flag value'
@@ -652,10 +689,21 @@ def Value(
         >>> assert Cfg(epochs=3)['epochs'] == 3
     """
     return _Value(
-        default, type=type, help=help, choices=choices, position=position,
-        isflag=isflag, nargs=nargs, alias=alias, required=required,
-        short_alias=short_alias, group=group, mutex_group=mutex_group,
-        tags=tags, default_factory=default_factory, parser=parser,
+        default,
+        type=type,
+        help=help,
+        choices=choices,
+        position=position,
+        isflag=isflag,
+        nargs=nargs,
+        alias=alias,
+        required=required,
+        short_alias=short_alias,
+        group=group,
+        mutex_group=mutex_group,
+        tags=tags,
+        default_factory=default_factory,
+        parser=parser,
         validate=validate,
     )
 
@@ -679,14 +727,32 @@ def Flag(
     (supports both ``--flag`` and ``--flag=value`` on the CLI). Typed to return
     ``bool``. See :func:`Value` for the shared keyword arguments.
     """
-    return cast(bool, _Flag(
-        default, help=help, alias=alias, short_alias=short_alias, group=group,
-        mutex_group=mutex_group, required=required, position=position,
-        tags=tags, parser=parser, validate=validate,
-    ))
+    return cast(
+        bool,
+        _Flag(
+            default,
+            help=help,
+            alias=alias,
+            short_alias=short_alias,
+            group=group,
+            mutex_group=mutex_group,
+            required=required,
+            position=position,
+            tags=tags,
+            parser=parser,
+            validate=validate,
+        ),
+    )
 
 
-def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
+def _value_add_argument_to_parser(
+    value: Any,
+    _value: Optional[_Value],
+    self: Any,
+    parser: Any,
+    key: str,
+    fuzzy_hyphens: int | bool = False,
+) -> None:
     """
     POC for a new simplified way for a value to add itself as an argument to a
     parser.
@@ -736,7 +802,9 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: An
 
         if _value.mutex_group is not None:
             if _value.mutex_group not in mutex_group_lut:
-                mutex_group_lut[_value.mutex_group] = parent.add_mutually_exclusive_group()
+                mutex_group_lut[_value.mutex_group] = (
+                    parent.add_mutually_exclusive_group()
+                )
             parent = mutex_group_lut[_value.mutex_group]
 
     if not argkw['help']:
@@ -776,7 +844,12 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: An
         else:
             argkw['action'] = argparse_ext.BooleanFlagOrKeyValAction
 
-    if argkw.get('nargs', None) is not None and argkw.get('type', None) in {list, tuple, set, frozenset}:
+    if argkw.get('nargs', None) is not None and argkw.get('type', None) in {
+        list,
+        tuple,
+        set,
+        frozenset,
+    }:
         # argparse applies ``type`` to each token, so collection types here
         # would split strings into characters instead of preserving argv items.
         argkw.pop('type', None)
@@ -796,14 +869,22 @@ def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: An
     try:
         parent.add_argument(*option_strings, required=required, **argkw)
     except Exception:
-        print('ERROR: Failed to add argument (in _value_add_argument_to_parser / Config.argparse)')
+        print(
+            'ERROR: Failed to add argument (in _value_add_argument_to_parser / Config.argparse)'
+        )
         print('argkw = {}'.format(pprint.pformat(argkw)))
         print('required = {}'.format(pprint.pformat(required)))
         print('option_strings = {}'.format(pprint.pformat(option_strings)))
         raise
 
 
-def _value_add_argument_kw(value: Any, _value: Optional[_Value], self: Any, key: str, fuzzy_hyphens: int = 0) -> dict[str, tuple]:
+def _value_add_argument_kw(
+    value: Any,
+    _value: Optional[_Value],
+    self: Any,
+    key: str,
+    fuzzy_hyphens: int = 0,
+) -> dict[str, tuple]:
     """
     TODO: resolve with :func:`_value_add_argument_to_parser`. This just creates
     one or more kwargs for add_argument. (Depending on how many variants of the
@@ -892,7 +973,12 @@ def _value_add_argument_kw(value: Any, _value: Optional[_Value], self: Any, key:
         else:
             argkw['action'] = argparse_ext.BooleanFlagOrKeyValAction
 
-    if argkw.get('nargs', None) is not None and argkw.get('type', None) in {list, tuple, set, frozenset}:
+    if argkw.get('nargs', None) is not None and argkw.get('type', None) in {
+        list,
+        tuple,
+        set,
+        frozenset,
+    }:
         argkw.pop('type', None)
 
     argkw['required'] = required
@@ -906,7 +992,9 @@ def _value_add_argument_kw(value: Any, _value: Optional[_Value], self: Any, key:
     return invocations
 
 
-def _resolve_alias(name: str, _value: Optional[_Value], fuzzy_hyphens: int | bool) -> list[str]:
+def _resolve_alias(
+    name: str, _value: Optional[_Value], fuzzy_hyphens: int | bool
+) -> list[str]:
     aliases: Optional[Sequence[str]]
     short_aliases: Optional[Sequence[str]]
     if _value is None:
@@ -926,7 +1014,9 @@ def _resolve_alias(name: str, _value: Optional[_Value], fuzzy_hyphens: int | boo
         # Do we want to allow for people to use hyphens on the CLI?
         # Maybe, we can make it optional.
         unique_long_names: set[str] = set(long_names)
-        modified_long_names: set[str] = {n.replace('_', '-') for n in unique_long_names}
+        modified_long_names: set[str] = {
+            n.replace('_', '-') for n in unique_long_names
+        }
         extra_long_names: set[str] = modified_long_names - unique_long_names
         long_names += sorted(extra_long_names)
     short_option_strings: list[str] = ['-' + n for n in short_names]
@@ -960,6 +1050,7 @@ def _maker_smart_parse_action(self):
                     template = kwconf_object.__default__[self.dest]
                     if self.nargs is not None:
                         from kwconf import coerce as _coerce_mod
+
                         # With an explicit parser, apply it per token (csv ->
                         # list, yaml -> value); argparse collects the results.
                         if getattr(template, '_parser_spec', None) is not None:
@@ -967,7 +1058,8 @@ def _maker_smart_parse_action(self):
                         # Otherwise coerce each token as the container's element
                         # type rather than the (container) field annotation.
                         elem = _coerce_mod.element_annotation(
-                            getattr(template, '_annotation', None))
+                            getattr(template, '_annotation', None)
+                        )
                         return _coerce_mod.auto(value, elem)
                     return template.coerce(value)
 

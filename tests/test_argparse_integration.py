@@ -2,47 +2,42 @@
 """
 Test that we can play very nicely with argparse
 """
+
 import argparse
 from pathlib import Path
 
 
 def setup_args1():
     parser = argparse.ArgumentParser(
-        description="Description 1",
+        description='Description 1',
     )
 
     # Configuration
     parser.add_argument(
-        "--config", "-c",
-        type=Path,
-        help="Path to configuration YAML file"
+        '--config', '-c', type=Path, help='Path to configuration YAML file'
     )
 
     parser.add_argument(
-        "--output-dir", "-o",
-        type=Path,
-        help="Output directory"
+        '--output-dir', '-o', type=Path, help='Output directory'
     )
     return parser
 
 
 def setup_args2():
     parser = argparse.ArgumentParser(
-        description="Description 2",
+        description='Description 2',
     )
 
     # Input data
     parser.add_argument(
-        "input_dir",
-        type=Path,
-        help="Directory containing the input"
+        'input_dir', type=Path, help='Directory containing the input'
     )
 
     parser.add_argument(
-        "--option",
+        '--option',
         type=str,
         choices=['value1', 'value2'],
-        help="Some option",
+        help='Some option',
     )
     return parser
 
@@ -61,14 +56,16 @@ def main2():
 
 def build_modal():
     from kwconf.modal import ModalCLI
+
     modal = ModalCLI()
 
     import kwconf
+
     # FIXME: doesn't work when you use Config instead of Config.
-    cli1 = kwconf.Config.cls_from_argparse(setup_args1(), name="mode1")
+    cli1 = kwconf.Config.cls_from_argparse(setup_args1(), name='mode1')
     cli1.main = main2  # ty: ignore[unresolved-attribute]
 
-    cli2 = kwconf.Config.cls_from_argparse(setup_args2(), name="mode2")
+    cli2 = kwconf.Config.cls_from_argparse(setup_args2(), name='mode2')
     cli2.main = main2  # ty: ignore[unresolved-attribute]
 
     modal.register(cli1)
@@ -77,8 +74,7 @@ def build_modal():
 
 
 def test_argparse_playnice():
-    """
-    """
+    """ """
     modal = build_modal()
     parser = modal.argparse()
     parser.print_usage()

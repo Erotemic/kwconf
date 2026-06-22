@@ -26,7 +26,9 @@ import kwconf as kw
 
 class FolderDataset(kw.Config):
     root: str = 'data/images'
-    channels: list = kw.Value(default_factory=lambda: ['red', 'green', 'blue'], type='yaml')
+    channels: list = kw.Value(
+        default_factory=lambda: ['red', 'green', 'blue'], type='yaml'
+    )
     cache = kw.Flag(False)
 
 
@@ -74,25 +76,36 @@ class TrainConfig(kw.Config):
     __description__ = 'Train a model with nested, selectable components.'
 
     profile: str = kw.Value('local', choices=['local', 'debug', 'cluster'])
-    dataset = kw.SubConfig(FolderDataset, choices={
-        'folder': FolderDataset,
-        'coco': CocoDataset,
-    })
-    model = kw.SubConfig(ResNet, choices={
-        'resnet': ResNet,
-        'unet': UNet,
-    })
-    optim = kw.SubConfig(Adam, choices={
-        'adam': Adam,
-        'sgd': SGD,
-    })
+    dataset = kw.SubConfig(
+        FolderDataset,
+        choices={
+            'folder': FolderDataset,
+            'coco': CocoDataset,
+        },
+    )
+    model = kw.SubConfig(
+        ResNet,
+        choices={
+            'resnet': ResNet,
+            'unet': UNet,
+        },
+    )
+    optim = kw.SubConfig(
+        Adam,
+        choices={
+            'adam': Adam,
+            'sgd': SGD,
+        },
+    )
     trainer = kw.SubConfig(Trainer)
     logging = kw.SubConfig(Logging)
     dry_run = kw.Flag(False)
 
     def __post_init__(self):
         if self.logging.run_name == 'auto':
-            self.logging.run_name = f'{self.profile}-{self.model.__class__.__name__.lower()}'
+            self.logging.run_name = (
+                f'{self.profile}-{self.model.__class__.__name__.lower()}'
+            )
 
 
 class EvalConfig(kw.Config):
@@ -122,7 +135,6 @@ def build_train_plan(config):
 
 
 class TrainCommand(TrainConfig):
-
     @classmethod
     def main(cls, argv=None, **kwargs):
         # ModalCLI pre-parses arguments and forwards default selector values as
@@ -137,7 +149,6 @@ class TrainCommand(TrainConfig):
 
 
 class EvalCommand(EvalConfig):
-
     @classmethod
     def main(cls, argv=None, **kwargs):
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
@@ -154,7 +165,6 @@ class EvalCommand(EvalConfig):
 
 
 class ExportCommand(ExportConfig):
-
     @classmethod
     def main(cls, argv=None, **kwargs):
         kwargs = {k: v for k, v in kwargs.items() if v is not None}

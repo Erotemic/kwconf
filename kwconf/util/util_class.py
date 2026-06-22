@@ -27,6 +27,7 @@ class class_or_instancemethod(classmethod):
         >>> print(X().foo())
         bound to the instance
     """
+
     def __get__(self, instance, owner=None):
         """
         Descriptor method

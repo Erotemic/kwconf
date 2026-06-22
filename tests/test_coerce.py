@@ -1,4 +1,5 @@
 """Tests for the additive ``kwconf.coerce`` module (the 'auto' parser)."""
+
 from typing import Any, Optional, Union
 
 import pytest
@@ -48,6 +49,7 @@ class TestAutoAnnotationGated:
 
     def test_literal_infers_member_type(self):
         from typing import Literal
+
         assert auto('a', Literal['a', 'b']) == 'a'
         assert auto('2', Literal[1, 2, 3]) == 2
 
@@ -57,6 +59,7 @@ class TestAutoFallback:
         # No value-level warning: the Config validation layer is the single
         # voice for mismatches. auto best-efforts and keeps the string.
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter('error')
             got = auto('foo', Optional[int])
@@ -138,36 +141,41 @@ class TestValueCoerceKwarg:
 
     def test_legacy_path_unchanged_when_coerce_unset(self):
         from kwconf import Value
+
         v = Value(None, type=float)
         v.update('3.3')
         assert v.value == 3.3
 
     def test_coerce_callable(self):
         from kwconf import Value
+
         v = Value(None, parser=str)
         v.update('123')
-        assert v.value == '123'   # explicit str escape hatch keeps the string
+        assert v.value == '123'  # explicit str escape hatch keeps the string
 
     def test_coerce_csv(self):
         from kwconf import Value
+
         v = Value(None, parser='csv')
         v.update('1,2,3')
         assert v.value == [1, 2, 3]
 
     def test_coerce_auto_gated_by_annotation(self):
         from kwconf import Value
+
         v = Value(None, parser='auto')
-        v._annotation = str           # mimic a `: str` class annotation
+        v._annotation = str  # mimic a `: str` class annotation
         v.update('123')
         assert v.value == '123'
         v2 = Value(None, parser='auto')
-        v2.update('123')              # no annotation -> full inference
+        v2.update('123')  # no annotation -> full inference
         assert v2.value == 123
 
     def test_non_string_passthrough(self):
         from kwconf import Value
+
         v = Value(None, parser='csv')
-        v.update([1, 2])              # already a list; not re-parsed
+        v.update([1, 2])  # already a list; not re-parsed
         assert v.value == [1, 2]
 
 
@@ -192,6 +200,7 @@ class TestConfigCoerceConstructor:
 def test_coerce_and_type_are_mutually_exclusive():
     import pytest
     from kwconf import Value
+
     with pytest.raises(ValueError, match='either .parser.* or the deprecated'):
         Value(None, type=int, parser='auto')
 
@@ -210,8 +219,8 @@ class TestAutoIsDefaultParser:
             x: Union[str, int, None] = kwconf.Value(None)
 
         for C in (Bare, Wrapped):
-            assert C.coerce(x='123')['x'] == 123      # int member of the union
-            assert C.coerce(x='foo')['x'] == 'foo'    # str catch-all
+            assert C.coerce(x='123')['x'] == 123  # int member of the union
+            assert C.coerce(x='foo')['x'] == 'foo'  # str catch-all
             assert C.coerce(x='None')['x'] is None
 
     def test_str_annotation_pins_to_string(self):
@@ -224,6 +233,7 @@ class TestAutoIsDefaultParser:
 
     def test_explicit_deprecated_type_uses_legacy_path(self):
         import kwconf
+
         v = kwconf.Value(None, type=int)
         v.update('5')
         assert v.value == 5

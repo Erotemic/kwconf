@@ -1,4 +1,3 @@
-
 def test_config_aliases():
     import kwconf
 

@@ -1,6 +1,7 @@
 """
 Argparse Extensions
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -62,16 +63,17 @@ except ImportError:
     _ArgumentDefaultsHelpFormatter = argparse.ArgumentDefaultsHelpFormatter
 else:
     _RawDescriptionHelpFormatter = rich_argparse.RawDescriptionRichHelpFormatter
-    _ArgumentDefaultsHelpFormatter = rich_argparse.ArgumentDefaultsRichHelpFormatter
+    _ArgumentDefaultsHelpFormatter = (
+        rich_argparse.ArgumentDefaultsRichHelpFormatter
+    )
 
 
 # Check if we are on 3.11 with a patch version higher than 3.11.9
 # Or if we are higher than 3.12.3
 # https://github.com/python/cpython/pull/115674
 HAS_ARGPARSE_GH_114180 = (
-    (sys.version_info[0:2] == (3, 11) and sys.version_info[2] >= 9) or
-    (sys.version_info[0:3] >= (3, 12, 3))
-)
+    sys.version_info[0:2] == (3, 11) and sys.version_info[2] >= 9
+) or (sys.version_info[0:3] >= (3, 12, 3))
 
 
 # NOTE: CPython broke us here by changing the internal API to require an intermixed arg
@@ -79,9 +81,8 @@ HAS_ARGPARSE_GH_114180 = (
 # https://github.com/python/cpython/commit/759a54d28ffe7eac8c23917f5d3dfad8309856be#diff-205ef24c9374465bf35c359abce9211d3aa113e986a1e3d41569eb29d07df479
 # TODO: we should likely add better support for it, for now we workaround.
 HAS_ARGPARSE_GH_125355 = (
-    (sys.version_info[0:2] == (3, 12) and sys.version_info[2] >= 8) or
-    (sys.version_info[0:3] >= (3, 13, 1))
-)
+    sys.version_info[0:2] == (3, 12) and sys.version_info[2] >= 8
+) or (sys.version_info[0:3] >= (3, 13, 1))
 
 # Inherit from StoreAction to make configargparse happy.  Hopefully python
 # doesn't change the behavior of this private class.
@@ -115,11 +116,7 @@ class ParseResult:
     @property
     def explicit_values(self) -> dict[str, Any]:
         values = self.values
-        return {
-            key: values[key]
-            for key in self.explicit_keys
-            if key in values
-        }
+        return {key: values[key] for key in self.explicit_keys if key in values}
 
 
 def parse_known_result(
@@ -138,10 +135,7 @@ def parse_known_result(
     if args is None:
         args = sys.argv[1:]
     else:
-        args = [
-            os.fspath(a) if isinstance(a, os.PathLike) else a
-            for a in args
-        ]
+        args = [os.fspath(a) if isinstance(a, os.PathLike) else a for a in args]
     if namespace is None:
         namespace, unknown_args = parser.parse_known_args(args=args)
     else:
@@ -181,6 +175,7 @@ def parse_result(
             result.selected_parser.error(msg)
         else:
             from argparse import ArgumentError
+
             raise ArgumentError(None, msg)
     return result
 
@@ -236,13 +231,16 @@ class BooleanFlagOrKeyValAction(_Base):
         >>>     print(f'args={args} -> {ns}')
         >>>     assert ns['flag'] == want
     """
-    def __init__(self,
-                 option_strings: Sequence[str],
-                 dest: str,
-                 default: Any = None,
-                 required: bool = False,
-                 help: str | None = None,
-                 type: type | None = None) -> None:
+
+    def __init__(
+        self,
+        option_strings: Sequence[str],
+        dest: str,
+        default: Any = None,
+        required: bool = False,
+        help: str | None = None,
+        type: type | None = None,
+    ) -> None:
 
         _option_strings: list[str] = []
         for option_string in option_strings:
@@ -250,13 +248,23 @@ class BooleanFlagOrKeyValAction(_Base):
             if option_string.startswith('--'):
                 option_string = '--no-' + option_string[2:]
                 _option_strings.append(option_string)
-        if help is not None and default is not None and default is not argparse.SUPPRESS:
-            help += " (default: %(default)s)"
+        if (
+            help is not None
+            and default is not None
+            and default is not argparse.SUPPRESS
+        ):
+            help += ' (default: %(default)s)'
 
         actionkw: dict[str, Any] = dict(
-            option_strings=_option_strings, dest=dest, default=default,
-            type=type, choices=None, required=required, help=help,
-            metavar=None)
+            option_strings=_option_strings,
+            dest=dest,
+            default=default,
+            type=type,
+            choices=None,
+            required=required,
+            help=help,
+            metavar=None,
+        )
         # Either the zero arg flag form or the 1 arg key/value form.
         actionkw['nargs'] = '?'
 
@@ -288,11 +296,13 @@ class BooleanFlagOrKeyValAction(_Base):
             parser._explicitly_given = set()  # type: ignore
         parser._explicitly_given.add(self.dest)  # type: ignore
 
-    def __call__(self,
-                 parser: argparse.ArgumentParser,
-                 namespace: argparse.Namespace,
-                 values: Any,
-                 option_string: str | None = None) -> None:
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
         """
         Args:
             parser (argparse.ArgumentParser): Parser instance.
@@ -310,12 +320,16 @@ class BooleanFlagOrKeyValAction(_Base):
         """
         key_is_negative: bool = False
         if option_string is None:
-            raise Exception('Cannot use a BooleanFlagOrKeyValAction as a positional argument')
+            raise Exception(
+                'Cannot use a BooleanFlagOrKeyValAction as a positional argument'
+            )
         if option_string in self.option_strings:
             # Was the positive or negated key given?
             key_is_negative = option_string.startswith('--no-')
         else:
-            raise Exception('Cannot use a BooleanFlagOrKeyValAction as a positional argument')
+            raise Exception(
+                'Cannot use a BooleanFlagOrKeyValAction as a positional argument'
+            )
 
         # Was there a value or was the flag specified by itself?
         if values is None:
@@ -383,13 +397,18 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
         >>>     print(f'args={args} -> {ns}')
         >>>     assert ns['flag'] == want
     """
-    def __call__(self,
-                 parser: argparse.ArgumentParser,
-                 namespace: argparse.Namespace,
-                 values: Any,
-                 option_string: str | None = None) -> None:
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
         if option_string is None:
-            raise Exception('Cannot use a CounterFlagOrKeyValAction as a positional argument')
+            raise Exception(
+                'Cannot use a CounterFlagOrKeyValAction as a positional argument'
+            )
         if option_string in self.option_strings:
             # Was the positive or negated key given?
             key_default: bool = not option_string.startswith('--no-')
@@ -402,7 +421,11 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
         # value.  We avoid doing any smartcasting here and instead modify
         # ``values`` so that the original logic later in the method will
         # handle casting/boolean inversion as usual.
-        if values is not None and isinstance(values, str) and option_string.startswith('-'):
+        if (
+            values is not None
+            and isinstance(values, str)
+            and option_string.startswith('-')
+        ):
             short: str = option_string.lstrip('-')[0]
             rep: int = 0
             rest: str = values
@@ -448,9 +471,9 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
 
 
 class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
-        _RawDescriptionHelpFormatter,  # type: ignore[misc,valid-type]
-        _ArgumentDefaultsHelpFormatter):  # type: ignore[misc,valid-type]
-
+    _RawDescriptionHelpFormatter,  # type: ignore[misc,valid-type]
+    _ArgumentDefaultsHelpFormatter,
+):  # type: ignore[misc,valid-type]
     group_name_formatter: type = str  # revert rich-argparse title change
 
     # Set these classvars to prevent rich_argparase from interpreting user data
@@ -476,7 +499,7 @@ class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
         """
         if not action.option_strings:
             default = self._get_default_metavar_for_positional(action)
-            metavar, = self._metavar_formatter(action, default)(1)
+            (metavar,) = self._metavar_formatter(action, default)(1)
             return metavar
 
         else:
@@ -501,7 +524,10 @@ class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
                 for option_string in display_option_strings:
                     if SCFG_MODIFICATIONS:
                         if option_string.startswith('--no-'):
-                            if isinstance(action.default, int) and action.default == 0:
+                            if (
+                                isinstance(action.default, int)
+                                and action.default == 0
+                            ):
                                 # Dont bother telling the user they can turn
                                 # something off when that is the default.
                                 continue
@@ -519,7 +545,9 @@ class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
         from rich.text import Text
 
         if not action.option_strings:
-            return Text().append(self._format_action_invocation(action), style="argparse.args")
+            return Text().append(
+                self._format_action_invocation(action), style='argparse.args'
+            )
         else:
             parts: list[Text] = []
             SCFG_MODIFICATIONS: bool = True
@@ -531,7 +559,9 @@ class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
             # if the Optional doesn't take a value, format is:
             #    -s, --long
             if action.nargs == 0:
-                parts.extend([Text(o, 'argparse.args') for o in display_option_strings])
+                parts.extend(
+                    [Text(o, 'argparse.args') for o in display_option_strings]
+                )
 
             # if the Optional takes a value, format is:
             #    -s ARGS, --long ARGS
@@ -540,15 +570,23 @@ class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
                 args_string = self._format_args(action, default)
                 for option_string in display_option_strings:
                     if option_string.startswith('--no-'):
-                        if isinstance(action.default, int) and action.default == 0:
+                        if (
+                            isinstance(action.default, int)
+                            and action.default == 0
+                        ):
                             # Dont bother telling the user they can turn
                             # something off when that is the default.
                             continue
                         part = Text(option_string, 'argparse.args')
                     else:
-                        part = Text(" ").join([Text(option_string, 'argparse.args'), Text(args_string, 'argparse.metavar')])
+                        part = Text(' ').join(
+                            [
+                                Text(option_string, 'argparse.args'),
+                                Text(args_string, 'argparse.metavar'),
+                            ]
+                        )
                     parts.append(part)
-            return Text(", ").join(parts)
+            return Text(', ').join(parts)
 
 
 class CompatArgumentParser(argparse.ArgumentParser):
@@ -563,9 +601,11 @@ class CompatArgumentParser(argparse.ArgumentParser):
         self.exit_on_error = kwargs.pop('exit_on_error', True)
         super().__init__(*args, **kwargs)
 
-    def parse_known_args(self,  # type: ignore[override]  # ty: ignore[invalid-method-override]
-                         args: Sequence[str] | None = None,
-                         namespace: argparse.Namespace | None = None) -> Tuple[argparse.Namespace, List[str]]:
+    def parse_known_args(
+        self,  # type: ignore[override]  # ty: ignore[invalid-method-override]
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> Tuple[argparse.Namespace, List[str]]:
         """
         This is the Python 3.10 implementation of this function.
         We define this for Python 3.6-3.8 compatibility where the exit_on_error
@@ -576,6 +616,7 @@ class CompatArgumentParser(argparse.ArgumentParser):
         from argparse import Namespace, SUPPRESS, ArgumentError
         from argparse import _UNRECOGNIZED_ARGS_ATTR
         import os
+
         if args is None:
             # args default to the system args
             args = sys.argv[1:]
@@ -583,7 +624,9 @@ class CompatArgumentParser(argparse.ArgumentParser):
             # make sure that args are mutable
             args = list(args)
             # Allow Paths objects
-            args_list: list[str] = [os.fspath(a) if isinstance(a, os.PathLike) else a for a in args]
+            args_list: list[str] = [
+                os.fspath(a) if isinstance(a, os.PathLike) else a for a in args
+            ]
             args = args_list
 
         # default Namespace built from parser defaults
@@ -606,7 +649,9 @@ class CompatArgumentParser(argparse.ArgumentParser):
         if self.exit_on_error:
             try:
                 if HAS_ARGPARSE_GH_125355:
-                    namespace, args = self._parse_known_args(args, namespace, intermixed=False)  # type: ignore
+                    namespace, args = self._parse_known_args(
+                        args, namespace, intermixed=False
+                    )  # type: ignore
                 else:
                     namespace, args = self._parse_known_args(args, namespace)  # type: ignore
             except ArgumentError:
@@ -614,7 +659,9 @@ class CompatArgumentParser(argparse.ArgumentParser):
                 self.error(str(err))
         else:
             if HAS_ARGPARSE_GH_125355:
-                namespace, args = self._parse_known_args(args, namespace, intermixed=False)  # type: ignore
+                namespace, args = self._parse_known_args(
+                    args, namespace, intermixed=False
+                )  # type: ignore
             else:
                 namespace, args = self._parse_known_args(args, namespace)  # type: ignore
 
@@ -659,16 +706,22 @@ class ExtendedArgumentParser_PRE_GH_114180(CompatArgumentParser):
 
         # if multiple actions match, the option string was ambiguous
         if len(option_tuples) > 1:
-            options = ', '.join([option_string
-                                 for action, option_string, explicit_arg in option_tuples])
+            options = ', '.join(
+                [
+                    option_string
+                    for action, option_string, explicit_arg in option_tuples
+                ]
+            )
             args = {'option': arg_string, 'matches': options}
-            msg = gettext_fn('ambiguous option: %(option)s could match %(matches)s')
+            msg = gettext_fn(
+                'ambiguous option: %(option)s could match %(matches)s'
+            )
             self.error(msg % args)
 
         # if exactly one action matched, this segmentation is good,
         # so return the parsed action
         elif len(option_tuples) == 1:
-            option_tuple, = option_tuples
+            (option_tuple,) = option_tuples
             return option_tuple
 
         # if it was not found as an option, but it looks like a negative
@@ -717,7 +770,9 @@ class ExtendedArgumentParser_PRE_GH_114180(CompatArgumentParser):
                     tup = action, short_option_prefix, short_explicit_arg
                     result.append(tup)
 
-            underscored = {k.replace('-', '_'): k for k in self._option_string_actions}
+            underscored = {
+                k.replace('-', '_'): k for k in self._option_string_actions
+            }
             option_prefix = option_prefix.replace('-', '_')
             if option_prefix in underscored:
                 action = self._option_string_actions[underscored[option_prefix]]
@@ -726,7 +781,9 @@ class ExtendedArgumentParser_PRE_GH_114180(CompatArgumentParser):
             elif self.allow_abbrev:
                 for option_string in underscored:
                     if option_string.startswith(option_prefix):
-                        action = self._option_string_actions[underscored[option_string]]
+                        action = self._option_string_actions[
+                            underscored[option_string]
+                        ]
                         tup = action, underscored[option_string], explicit_arg
                         result.append(tup)
 
@@ -747,6 +804,7 @@ class ExtendedArgumentParser_POST_GH_114180(CompatArgumentParser):
     introduced in
     https://github.com/python/cpython/commit/c02b7ae4dd367444aa6822d5fb73b61e8f5a4ff9
     """
+
     def _get_option_tuples(self, option_string: str):
         result: list[tuple[Any, str, str | None, str | None]] = []
 
@@ -765,7 +823,12 @@ class ExtendedArgumentParser_POST_GH_114180(CompatArgumentParser):
                     # if option_string.startswith(option_prefix):
                     if norm_option_string.startswith(norm_option_prefix):
                         action = self._option_string_actions[option_string]
-                        tup: tuple[Any, str, str | None, str | None] = (action, option_string, sep, explicit_arg)
+                        tup: tuple[Any, str, str | None, str | None] = (
+                            action,
+                            option_string,
+                            sep,
+                            explicit_arg,
+                        )
                         result.append(tup)
 
         # single character options can be concatenated with their arguments
@@ -779,11 +842,21 @@ class ExtendedArgumentParser_POST_GH_114180(CompatArgumentParser):
             for option_string in self._option_string_actions:
                 if option_string == short_option_prefix:
                     action = self._option_string_actions[option_string]
-                    tup1: tuple[Any, str, str, str] = (action, option_string, '', short_explicit_arg)
+                    tup1: tuple[Any, str, str, str] = (
+                        action,
+                        option_string,
+                        '',
+                        short_explicit_arg,
+                    )
                     result.append(tup1)
                 elif option_string.startswith(option_prefix):
                     action = self._option_string_actions[option_string]
-                    tup2: tuple[Any, str, None, None] = (action, option_string, None, None)
+                    tup2: tuple[Any, str, None, None] = (
+                        action,
+                        option_string,
+                        None,
+                        None,
+                    )
                     result.append(tup2)
 
         # shouldn't ever get here
@@ -900,7 +973,11 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
         return parse_result(self, args=args, namespace=namespace)
 
     # Public parse that applies the "print leaf help on error" policy.
-    def parse_args(self, args: Sequence[str] | None = None, namespace: argparse.Namespace | None = None) -> argparse.Namespace | None:  # type: ignore
+    def parse_args(
+        self,
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> argparse.Namespace | None:  # type: ignore
         if args is None:
             args = sys.argv[1:]
         # If the caller wants default behavior, defer entirely to argparse.
@@ -922,7 +999,9 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
         return super().parse_args(args, namespace=namespace)  # type: ignore
 
     # Helper: find deepest subparser matched by tokens.
-    def _deepest_subparser_for_argv(self, tokens: Sequence[str] | None = None) -> argparse.ArgumentParser | None:
+    def _deepest_subparser_for_argv(
+        self, tokens: Sequence[str] | None = None
+    ) -> argparse.ArgumentParser | None:
         if tokens is None:
             tokens = sys.argv[1:]
         parser: argparse.ArgumentParser = self

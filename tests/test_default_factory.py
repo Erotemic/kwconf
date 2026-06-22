@@ -5,6 +5,7 @@ class-definition time. It is materialized lazily on first read of a template's
 ``.value`` (and cached there), while each Config instance receives its own
 fresh value via ``clone_default``.
 """
+
 import copy
 import kwconf
 

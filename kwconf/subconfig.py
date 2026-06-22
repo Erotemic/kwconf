@@ -20,6 +20,7 @@ Example:
     >>> cfg2 = Outer.cli(argv=['--inner=inner', '--inner.depth=4'])
     >>> assert isinstance(cfg2.inner, Inner) and cfg2.inner.depth == 4
 """
+
 from __future__ import annotations
 
 import inspect
@@ -81,7 +82,9 @@ def get_stack_frame(stacklevel: int = 0) -> FrameType:
     return frame_cur
 
 
-def resolve_localns(localns : typing.MutableMapping | None, stacklevel: int | None) -> typing.MutableMapping | None:
+def resolve_localns(
+    localns: typing.MutableMapping | None, stacklevel: int | None
+) -> typing.MutableMapping | None:
     """
     Resolve the namespace for selector evaluation, if needed.
 
@@ -107,6 +110,7 @@ class _ForbiddenSelectorAction(argparse.Action):
     """
     argparse action that errors when subconfig selectors are disallowed.
     """
+
     def __init__(self, option_strings, dest, **kwargs):
         self._message = kwargs.pop('_message', None)
         super().__init__(option_strings, dest, **kwargs)
@@ -166,19 +170,27 @@ class SubConfig(Value):
         >>> assert isinstance(inst, Inner)
     """
 
-    def __init__(self, default: Any, *,
-                 choices: Mapping[str, type] | None = None,
-                 allow_import: bool | None = None,
-                 help: str | None = None) -> None:
+    def __init__(
+        self,
+        default: Any,
+        *,
+        choices: Mapping[str, type] | None = None,
+        allow_import: bool | None = None,
+        help: str | None = None,
+    ) -> None:
         default_inst: Any
         if inspect.isclass(default):
             if not issubclass(default, Config):
-                raise TypeError('SubConfig default must be a Config subclass or instance')
+                raise TypeError(
+                    'SubConfig default must be a Config subclass or instance'
+                )
             default_inst = default
         elif isinstance(default, Config):
             default_inst = default
         else:
-            raise TypeError('SubConfig default must be a Config subclass or instance')
+            raise TypeError(
+                'SubConfig default must be a Config subclass or instance'
+            )
 
         super().__init__(default=default_inst, help=help)
         self.allow_import = allow_import
@@ -186,10 +198,14 @@ class SubConfig(Value):
         if self.choices is not None:
             for key, cls in self.choices.items():
                 if not inspect.isclass(cls) or not issubclass(cls, Config):
-                    raise TypeError(f'SubConfig choices must map to Config subclasses. {key!r} -> {cls!r}')
+                    raise TypeError(
+                        f'SubConfig choices must map to Config subclasses. {key!r} -> {cls!r}'
+                    )
 
     def __nice__(self):
-        default_cls = self.value if inspect.isclass(self.value) else self.value.__class__
+        default_cls = (
+            self.value if inspect.isclass(self.value) else self.value.__class__
+        )
         return f'{default_cls.__name__}'
 
     def instantiate(self, *, _dont_call_post_init=False):
@@ -197,6 +213,7 @@ class SubConfig(Value):
         Return a fresh instance of the wrapped config.
         """
         import copy
+
         if inspect.isclass(self.value):
             instance = self.value(_dont_call_post_init=_dont_call_post_init)
         else:
@@ -252,7 +269,9 @@ def wrap_subconfig_defaults(cfg, _dont_call_post_init=False):
         if meta is not None:
             cfg._has_subconfigs = True
             cfg._subconfig_meta[k] = meta
-            cfg._data[k] = meta.instantiate(_dont_call_post_init=_dont_call_post_init)
+            cfg._data[k] = meta.instantiate(
+                _dont_call_post_init=_dont_call_post_init
+            )
 
 
 def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
@@ -274,7 +293,9 @@ def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
         return
     for key, meta in getattr(cfg, '_subconfig_meta', {}).items():
         if not isinstance(cfg._data.get(key), Config):
-            cfg._data[key] = meta.instantiate(_dont_call_post_init=_dont_call_post_init)
+            cfg._data[key] = meta.instantiate(
+                _dont_call_post_init=_dont_call_post_init
+            )
 
 
 def coerce_argv(cmdline: Any) -> tuple[list[str], bool]:
@@ -288,6 +309,7 @@ def coerce_argv(cmdline: Any) -> tuple[list[str], bool]:
     """
     import shlex
     import sys
+
     if not cmdline:
         return [], False
     argv: list[str]
@@ -342,10 +364,12 @@ def coerce_data_updates(data, mode=None):
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
         if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
             import json
+
             try:
                 user_config = json.loads(data)
             except Exception:
                 import io
+
                 yaml = import_yaml('YAML parsing')
                 stream: IO[Any] = io.StringIO(data)
                 user_config = yaml.load(stream, Loader=yaml.SafeLoader)
@@ -361,6 +385,7 @@ def coerce_data_updates(data, mode=None):
                     user_config = yaml.load(file, Loader=yaml.SafeLoader)
                 elif mode == 'json':
                     import json
+
                     user_config = json.load(file)
                 else:
                     raise KeyError(mode)
@@ -402,7 +427,9 @@ def _flatten_nested(mapping):
             yield '.'.join(next_prefix), v  # type: ignore
 
 
-def _split_option_token(argv: list[str], idx: int) -> tuple[str | None, str | None, int]:
+def _split_option_token(
+    argv: list[str], idx: int
+) -> tuple[str | None, str | None, int]:
     """
     Split an argv token into (key, value, consumed).
 
@@ -460,7 +487,9 @@ def _path_is_subconfig(cfg, parts):
     return False
 
 
-def extract_selector_overrides(cfg, argv, allow_import=True, localns=None, stacklevel=None):
+def extract_selector_overrides(
+    cfg, argv, allow_import=True, localns=None, stacklevel=None
+):
     """
     Extract and apply selector-like arguments from argv in a staged manner.
 
@@ -500,7 +529,7 @@ def extract_selector_overrides(cfg, argv, allow_import=True, localns=None, stack
                 i += 1
                 continue
             if key.endswith('.__class__'):
-                sel_key = key[:-len('.__class__')]
+                sel_key = key[: -len('.__class__')]
                 if val is None:
                     raise ValueError(f'Missing value for selector {key}')
                 new_selectors[sel_key] = val
@@ -553,7 +582,9 @@ def _ensure_parent_node(cfg, parts):
         if part in getattr(node, '_subconfig_meta', {}):
             child = node._data.get(part)
             if not isinstance(child, Config):
-                child = node._subconfig_meta[part].instantiate(_dont_call_post_init=True)
+                child = node._subconfig_meta[part].instantiate(
+                    _dont_call_post_init=True
+                )
                 node._data[part] = child
             node = child
         elif part in node._data and isinstance(node._data[part], Config):
@@ -590,7 +621,9 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
             if inspect.isclass(candidate) and issubclass(candidate, Config):
                 return candidate
         if not (meta.allow_import or allow_import):
-            raise ValueError(f'Importing {spec!r} not allowed for this SubConfig')
+            raise ValueError(
+                f'Importing {spec!r} not allowed for this SubConfig'
+            )
         if ':' in spec:
             modname, clsname = spec.split(':', 1)
         else:
@@ -598,6 +631,7 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
             if not modname or not clsname:
                 raise ValueError(f'Cannot interpret class spec {spec!r}')
         import importlib
+
         mod = importlib.import_module(modname)
         if not hasattr(mod, clsname):
             raise ValueError(f'Module {modname!r} has no attribute {clsname!r}')
@@ -656,7 +690,9 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
         raise KeyError(f'Could not resolve selectors for: {sorted(remaining)}')
 
 
-def apply_dot_updates(cfg, updates, *, allow_import=True, localns=None, stacklevel=None):
+def apply_dot_updates(
+    cfg, updates, *, allow_import=True, localns=None, stacklevel=None
+):
     """
     Apply dotted-path updates and selectors to a nested Config.
 
@@ -688,11 +724,13 @@ def apply_dot_updates(cfg, updates, *, allow_import=True, localns=None, stacklev
     leaf_updates = {}
     for key, value in flat_updates.items():
         if key.endswith('.__class__'):
-            selectors[key[:-len('.__class__')]] = value
+            selectors[key[: -len('.__class__')]] = value
         else:
             leaf_updates[key] = value
 
-    _apply_selectors_fixpoint(cfg, selectors, allow_import=allow_import, localns=localns)
+    _apply_selectors_fixpoint(
+        cfg, selectors, allow_import=allow_import, localns=localns
+    )
 
     sugar = {}
     for key, value in list(leaf_updates.items()):
@@ -701,19 +739,25 @@ def apply_dot_updates(cfg, updates, *, allow_import=True, localns=None, stacklev
             parent = _ensure_parent_node(cfg, parts[:-1])
         except KeyError:
             continue
-        if isinstance(parent, Config) and parts[-1] in getattr(parent, '_subconfig_meta', {}):
+        if isinstance(parent, Config) and parts[-1] in getattr(
+            parent, '_subconfig_meta', {}
+        ):
             if key not in selectors:
                 sugar[key] = value
                 leaf_updates.pop(key, None)
     if sugar:
-        _apply_selectors_fixpoint(cfg, sugar, allow_import=allow_import, localns=localns)
+        _apply_selectors_fixpoint(
+            cfg, sugar, allow_import=allow_import, localns=localns
+        )
 
     for key, value in leaf_updates.items():
         parts = key.split('.')
         parent = _ensure_parent_node(cfg, parts[:-1])
         leaf = parts[-1]
         if leaf == '__class__':
-            raise KeyError('The name "__class__" is reserved for selector metadata')
+            raise KeyError(
+                'The name "__class__" is reserved for selector metadata'
+            )
         if leaf not in parent._data:
             leaf = parent._normalize_alias_key(leaf)
         if leaf not in parent._data:
@@ -774,12 +818,22 @@ def flatten_defaults(cfg, prefix=(), include_class_options=False):
             if include_class_options:
                 selector_key = '.'.join(prefix + (key,))
                 class_key = '.'.join(prefix + (key, '__class__'))
-                flat[selector_key] = Value(None, help=f'{key} implementation selector')
-                flat[class_key] = Value(None, help=f'{key} implementation selector')
+                flat[selector_key] = Value(
+                    None, help=f'{key} implementation selector'
+                )
+                flat[class_key] = Value(
+                    None, help=f'{key} implementation selector'
+                )
             if isinstance(value, Config):
-                flat.update(flatten_defaults(value, prefix + (key,), include_class_options))
+                flat.update(
+                    flatten_defaults(
+                        value, prefix + (key,), include_class_options
+                    )
+                )
         elif isinstance(value, Config):
-            flat.update(flatten_defaults(value, prefix + (key,), include_class_options))
+            flat.update(
+                flatten_defaults(value, prefix + (key,), include_class_options)
+            )
         else:
             meta = cfg._default.get(key)
             leaf_key = '.'.join(prefix + (key,))
@@ -805,15 +859,25 @@ def flat_config_from_tree(cfg, include_class_options=False):
         >>> flat = flat_config_from_tree(cfg)
         >>> assert 'inner.x' in flat.__default__
     """
-    defaults = flatten_defaults(cfg, include_class_options=include_class_options)
+    defaults = flatten_defaults(
+        cfg, include_class_options=include_class_options
+    )
     name = f'_Flat_{cfg.__class__.__name__}'
     FlatCls = type(name, (Config,), {'__default__': defaults})
     return FlatCls(_dont_call_post_init=True)
 
 
-def expand_multipass_parser(cfg, parser, argv=None, special_options=True,
-                            allow_import=True, allow_subconfig_overrides=True,
-                            pending_updates=None, localns=None, stacklevel=None):
+def expand_multipass_parser(
+    cfg,
+    parser,
+    argv=None,
+    special_options=True,
+    allow_import=True,
+    allow_subconfig_overrides=True,
+    pending_updates=None,
+    localns=None,
+    stacklevel=None,
+):
     """
     Expand an argparse parser for configs with nested SubConfig nodes.
 
@@ -840,7 +904,9 @@ def expand_multipass_parser(cfg, parser, argv=None, special_options=True,
         config_fpath = scan_config_path(argv_list)
         if config_fpath is not None:
             cfg_updates = coerce_data_updates(config_fpath)
-            if not allow_subconfig_overrides and has_selector_overrides(cfg, cfg_updates):
+            if not allow_subconfig_overrides and has_selector_overrides(
+                cfg, cfg_updates
+            ):
                 raise ValueError(
                     'SubConfig selection overrides require allow_subconfig_overrides=True'
                 )
@@ -854,7 +920,9 @@ def expand_multipass_parser(cfg, parser, argv=None, special_options=True,
 
     if pending_updates is not None:
         cfg_updates = pending_updates
-        if not allow_subconfig_overrides and has_selector_overrides(cfg, cfg_updates):
+        if not allow_subconfig_overrides and has_selector_overrides(
+            cfg, cfg_updates
+        ):
             raise ValueError(
                 'SubConfig selection overrides require allow_subconfig_overrides=True'
             )
@@ -1008,6 +1076,7 @@ def config_to_nested_dict(cfg, include_class=True):
         >>> data = config_to_nested_dict(cfg)
         >>> assert 'inner' in data
     """
+
     def unwrap(val):
         if isinstance(val, Value):
             return val.value

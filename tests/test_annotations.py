@@ -5,6 +5,7 @@ Tests for annotation-driven Value enrichment on Config.
 These cover the cases where kwconf reads runtime information from a class
 variable's type annotation and uses it to populate Value metadata.
 """
+
 import typing
 
 import pytest
@@ -62,6 +63,7 @@ def test_user_choices_win_over_literal():
 
 def test_literal_mixed_types_skips_type_inference():
     """Heterogeneous Literal members can't be coerced to one runtime type."""
+
     class C(kw.Config):
         thing: typing.Literal['x', 1] = 'x'
 
@@ -69,7 +71,6 @@ def test_literal_mixed_types_skips_type_inference():
     assert list(template.parsekw['choices']) == ['x', 1]
     # No single type can be inferred -- leave Value.type alone.
     assert template.type is None
-
 
 
 def test_future_annotations_populate_choices_and_type():

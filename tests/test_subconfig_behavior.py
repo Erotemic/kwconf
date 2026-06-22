@@ -30,8 +30,12 @@ class ModelConfig(kwconf.Config):
 
 
 class TrainConfig(kwconf.Config):
-    optim = kwconf.SubConfig(AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig})
-    model = kwconf.SubConfig(ModelConfig, choices={'base': ModelConfig, 'seg': SegformerConfig})
+    optim = kwconf.SubConfig(
+        AdamConfig, choices={'adam': AdamConfig, 'sgd': SGDConfig}
+    )
+    model = kwconf.SubConfig(
+        ModelConfig, choices={'base': ModelConfig, 'seg': SegformerConfig}
+    )
     epochs = kwconf.Value(10, type=int)
 
 
@@ -45,7 +49,9 @@ def test_flat_fastpath():
 
 
 def test_nested_leaf_override_via_cli():
-    cfg = TrainConfig.cli(argv=['--optim.lr=0.02'], allow_subconfig_overrides=True)
+    cfg = TrainConfig.cli(
+        argv=['--optim.lr=0.02'], allow_subconfig_overrides=True
+    )
     assert cfg.optim.lr == pytest.approx(0.02)
 
 
@@ -57,17 +63,23 @@ def test_selector_via_dunder_class_and_sugar():
     assert isinstance(cfg.optim, SGDConfig)
     assert cfg.optim.momentum == pytest.approx(0.7)
 
-    cfg2 = TrainConfig.cli(argv=['--optim=sgd', '--optim.momentum=0.5'], allow_subconfig_overrides=True)
+    cfg2 = TrainConfig.cli(
+        argv=['--optim=sgd', '--optim.momentum=0.5'],
+        allow_subconfig_overrides=True,
+    )
     assert isinstance(cfg2.optim, SGDConfig)
     assert cfg2.optim.momentum == pytest.approx(0.5)
 
 
 def test_nested_selector_and_deep_leaves():
-    cfg = TrainConfig.cli(argv=[
-        '--model=seg',
-        '--model.backbone=vit',
-        '--model.backbone.patch=16',
-    ], allow_subconfig_overrides=True)
+    cfg = TrainConfig.cli(
+        argv=[
+            '--model=seg',
+            '--model.backbone=vit',
+            '--model.backbone.patch=16',
+        ],
+        allow_subconfig_overrides=True,
+    )
     assert isinstance(cfg.model, SegformerConfig)
     assert isinstance(cfg.model.backbone, BackboneConfig)
     assert cfg.model.backbone.patch == 16
@@ -75,7 +87,9 @@ def test_nested_selector_and_deep_leaves():
 
 def test_variant_aware_help(capsys):
     with pytest.raises(SystemExit):
-        TrainConfig.cli(argv=['--model=seg', '--help'], allow_subconfig_overrides=True)
+        TrainConfig.cli(
+            argv=['--model=seg', '--help'], allow_subconfig_overrides=True
+        )
     out = capsys.readouterr().out
     assert 'model.backbone.patch' in out
 
@@ -83,12 +97,12 @@ def test_variant_aware_help(capsys):
 def test_precedence_default_file_kwargs_cli(tmp_path):
     cfg_path = tmp_path / 'train.yaml'
     cfg_text = textwrap.dedent(
-        '''
+        """
         optim:
             __class__: sgd
             lr: 0.2
         epochs: 5
-        '''
+        """
     )
     cfg_path.write_text(cfg_text)
     kw_overrides = {'epochs': 8}
@@ -106,11 +120,14 @@ def test_precedence_default_file_kwargs_cli(tmp_path):
 
 def test_unknown_key_error():
     with pytest.raises(SystemExit):
-        TrainConfig.cli(argv=['--optim.unknown=1'], allow_subconfig_overrides=True)
+        TrainConfig.cli(
+            argv=['--optim.unknown=1'], allow_subconfig_overrides=True
+        )
 
 
 def test_reserved_class_name_error():
     with pytest.raises(ValueError):
+
         class BadConfig(kwconf.Config):
             __default__ = {'__class__': 1}
 
@@ -148,11 +165,15 @@ def test_dump_and_load_roundtrip(tmp_path):
 
     class Outer(kwconf.Config):
         __default__ = {
-            'inner': kwconf.SubConfig(ChoiceA, choices={'a': ChoiceA, 'b': ChoiceB}),
+            'inner': kwconf.SubConfig(
+                ChoiceA, choices={'a': ChoiceA, 'b': ChoiceB}
+            ),
             'root': 3,
         }
 
-    cfg = Outer.cli(argv=['--inner=b', '--inner.x=10'], allow_subconfig_overrides=True)
+    cfg = Outer.cli(
+        argv=['--inner=b', '--inner.x=10'], allow_subconfig_overrides=True
+    )
     out_path = tmp_path / 'cfg.yaml'
     with open(out_path, 'w') as file:
         cfg.dump(stream=file)
@@ -165,7 +186,9 @@ def test_dump_and_load_roundtrip(tmp_path):
 
 
 def test_subconfig_overrides_disabled(capsys):
-    cfg = TrainConfig.cli(argv=['--optim.beta1=0.3'], allow_subconfig_overrides=False)
+    cfg = TrainConfig.cli(
+        argv=['--optim.beta1=0.3'], allow_subconfig_overrides=False
+    )
     assert cfg.optim.beta1 == pytest.approx(0.3)
 
     with pytest.raises(SystemExit):
@@ -173,7 +196,9 @@ def test_subconfig_overrides_disabled(capsys):
     err = capsys.readouterr().err
     assert 'allow_subconfig_overrides=True' in err
     with pytest.raises(SystemExit):
-        TrainConfig.cli(argv=['--optim.__class__=sgd'], allow_subconfig_overrides=False)
+        TrainConfig.cli(
+            argv=['--optim.__class__=sgd'], allow_subconfig_overrides=False
+        )
 
 
 def test_subconfig_class_in_dict():
@@ -340,22 +365,42 @@ def test_subconfig_config_string_cases():
         beta1 = kwconf.Value(0.9, type=float)
 
     class TrainLocal(kwconf.Config):
-        optim = kwconf.SubConfig(SGDLocal, choices={'adam': AdamLocal, 'sgd': SGDLocal})
+        optim = kwconf.SubConfig(
+            SGDLocal, choices={'adam': AdamLocal, 'sgd': SGDLocal}
+        )
         model = kwconf.Value('vit', choices=['vit', 'resnet50'])
         epochs = kwconf.Value(10, type=int)
 
     cases = [
-        {'argv': '--config "{model: resnet50, optim.momentum: 0.88}"', 'optim': SGDLocal},
-        {'argv': '--config "{model: resnet50, optim: {momentum: 0.88}}"', 'optim': SGDLocal},
-        {'argv': '--config "{model: resnet50, optim: adam, optim.beta1: 0.88}"', 'optim': AdamLocal},
-        {'argv': '--config "{model: resnet50, optim.__class__: adam, optim.beta1: 0.88}"', 'optim': AdamLocal},
-        {'argv': '--config "{model: resnet50, optim: {__class__: adam, beta1: 0.88}}"', 'optim': AdamLocal},
+        {
+            'argv': '--config "{model: resnet50, optim.momentum: 0.88}"',
+            'optim': SGDLocal,
+        },
+        {
+            'argv': '--config "{model: resnet50, optim: {momentum: 0.88}}"',
+            'optim': SGDLocal,
+        },
+        {
+            'argv': '--config "{model: resnet50, optim: adam, optim.beta1: 0.88}"',
+            'optim': AdamLocal,
+        },
+        {
+            'argv': '--config "{model: resnet50, optim.__class__: adam, optim.beta1: 0.88}"',
+            'optim': AdamLocal,
+        },
+        {
+            'argv': '--config "{model: resnet50, optim: {__class__: adam, beta1: 0.88}}"',
+            'optim': AdamLocal,
+        },
     ]
 
     for case in cases:
-        cfg = TrainLocal.cli(argv=case['argv'], allow_import=True,  # ty: ignore[invalid-argument-type]
-                             allow_subconfig_overrides=True,
-                             special_options=True)
+        cfg = TrainLocal.cli(
+            argv=case['argv'],
+            allow_import=True,  # ty: ignore[invalid-argument-type]
+            allow_subconfig_overrides=True,
+            special_options=True,
+        )
         assert cfg.model == 'resnet50'
         assert isinstance(cfg.optim, case['optim'])  # ty: ignore[invalid-argument-type]
         if isinstance(cfg.optim, SGDLocal):

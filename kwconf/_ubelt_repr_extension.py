@@ -14,6 +14,7 @@ def _register_ubelt_repr_extensions() -> None:
 
     def _register_kwconf_extensions():
         import kwconf
+
         @_REPR_EXTENSIONS.register(kwconf.Config)
         def format_kwconf(data, **kwargs):
             name = data.__class__.__name__
