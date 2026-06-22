@@ -5,14 +5,6 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Version 0.10.1] - Unreleased
 
-### Changed
-* Modal command-name precedence: the attribute a command is bound to now wins
-  over the command's `__command__` class attribute. Precedence is
-  `ModalValue(command=)` > attribute name > `__command__` > class name.
-  `__command__` (and the class-name fallback) only applies when there is no
-  binding name (`__subconfigs__` lists, `@register`). This differs from
-  scriptconfig, where `__command__` took precedence.
-
 ### Fixed
 * `__fuzzy_hyphens__ = False` on a `Config` now actually rejects the hyphen
   spelling of option flags on the command line. Previously the variant was still

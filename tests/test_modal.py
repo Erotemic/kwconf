@@ -340,9 +340,9 @@ def test_modal_version():
 
 def test_modal_command_name_resolution():
     """
-    The command name comes from the attribute a command is bound to. A
-    class-level ``__command__`` only applies when there is no binding name (see
-    :func:`test_modal_command_name_precedence`); the attribute name wins over it.
+    The command name comes from the attribute a command is bound to, unless the
+    class sets ``__command__`` (which wins). See
+    :func:`test_modal_command_name_precedence`.
     """
     import kwconf
 
@@ -361,21 +361,20 @@ def test_modal_command_name_resolution():
     class Modal1(kwconf.ModalCLI):
         __version__ = '1.1.1'
 
-        chosen_key = Command1  # attribute name wins over __command__
-        other_key = Command2
+        wont_use_this_key = Command1  # __command__ overrides the attribute name
+        will_use_this_key = Command2  # no __command__: attribute name is used
 
     help_text = Modal1().argparse().format_help()
-    assert 'chosen_key' in help_text
-    assert 'other_key' in help_text
-    # The attribute name overrides __command__ and the class name.
-    assert 'command1' not in help_text
+    assert 'command1' in help_text
+    assert 'wont_use_this_key' not in help_text
+    assert 'will_use_this_key' in help_text
     assert 'Command2' not in help_text
 
 
 def test_modal_command_name_precedence():
     """
     Command-name precedence (high -> low):
-    ``ModalValue(command=)`` > attribute name > ``__command__`` > class name.
+    ``ModalValue(command=)`` > ``__command__`` > attribute name > class name.
     """
     import kwconf
 
@@ -393,28 +392,28 @@ def test_modal_command_name_precedence():
             cls.cli(argv=argv, data=kwargs)
             return 0
 
-    # 1. Attribute name wins over __command__.
+    # 1. __command__ wins over the attribute name.
     class M1(kwconf.ModalCLI):
         my_attr = WithCmd
 
-    assert M1.main(argv=['my_attr'], _noexit=True) == 0
-    assert M1.main(argv=['declared'], _noexit=True) == 1
+    assert M1.main(argv=['declared'], _noexit=True) == 0
+    assert M1.main(argv=['my_attr'], _noexit=True) == 1
 
-    # 2. ModalValue(command=) wins over the attribute name.
+    # 2. ModalValue(command=) wins over __command__.
     class M2(kwconf.ModalCLI):
         my_attr = kwconf.ModalValue(WithCmd, command='explicit')
 
     assert M2.main(argv=['explicit'], _noexit=True) == 0
-    assert M2.main(argv=['my_attr'], _noexit=True) == 1
     assert M2.main(argv=['declared'], _noexit=True) == 1
+    assert M2.main(argv=['my_attr'], _noexit=True) == 1
 
-    # 3. No attribute name (__subconfigs__ list): __command__ is the fallback.
+    # 3. No __command__: the attribute name is used.
     class M3(kwconf.ModalCLI):
-        __subconfigs__ = [WithCmd]
+        my_attr = WithoutCmd
 
-    assert M3.main(argv=['declared'], _noexit=True) == 0
+    assert M3.main(argv=['my_attr'], _noexit=True) == 0
 
-    # 4. No attribute name and no __command__: the class name is the fallback.
+    # 4. No attribute name and no __command__ (__subconfigs__ list): class name.
     class M4(kwconf.ModalCLI):
         __subconfigs__ = [WithoutCmd]
 

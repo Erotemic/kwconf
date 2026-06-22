@@ -49,15 +49,15 @@ Note:
     Command-name precedence (high to low):
 
     1. ``ModalValue(command=...)`` (explicit at the binding site)
-    2. the attribute name the command is bound to (``foo = MyConfig`` -> ``foo``)
-    3. the command's ``__command__`` class attribute
+    2. the command's ``__command__`` class attribute
+    3. the attribute name the command is bound to (``foo = MyConfig`` -> ``foo``)
     4. the class name
 
-    So the attribute name wins over ``__command__``. A class-level
-    ``__command__`` (and the class-name fallback) only applies when there is no
-    binding name, i.e. ``__subconfigs__`` lists and :meth:`register`. To set the
-    command name at a binding site, prefer ``ModalValue(command=...)``. (This
-    differs from ``scriptconfig``, where ``__command__`` took precedence.)
+    You usually do not need ``__command__``: when it is absent the attribute
+    name is used (and the class name for ``__subconfigs__`` lists / argument-less
+    :meth:`register`). Its main use is giving nested classes a clean command
+    name -- a nested ``class Train`` would otherwise become the command
+    ``Train``, so set ``__command__ = 'train'`` to override it.
 
 Note:
     Submodals in :class:`ModalCLI` must be registered as classes (or via
@@ -150,11 +150,11 @@ class MetaModalCLI(type):
             if isinstance(v, type):
                 final_subconfigs.append(
                     {
-                        # The attribute name is the command name. It wins over a
-                        # class-level __command__ (which only applies when there
-                        # is no attribute name -- see _update_metadata for the
-                        # __subconfigs__ / register paths).
-                        'command': k,
+                        # Precedence: __command__ wins over the attribute name,
+                        # so nested classes (whose attribute name is the class
+                        # name) can declare a clean command name. The attribute
+                        # name is the fallback when __command__ is not set.
+                        'command': getattr(v, '__command__', None) or k,
                         'cls': v,
                     }
                 )
@@ -166,8 +166,11 @@ class MetaModalCLI(type):
                     )
                 final_subconfigs.append(
                     {
-                        # Precedence: ModalValue(command=) > attribute name.
-                        'command': v.command if v.command is not None else k,
+                        # Precedence: ModalValue(command=) > __command__ >
+                        # attribute name.
+                        'command': v.command
+                        if v.command is not None
+                        else (getattr(v.value, '__command__', None) or k),
                         'cls': v.value,
                         'alias': v.alias,
                         'group': v.group,
@@ -247,19 +250,22 @@ class ModalCLI(metaclass=MetaModalCLI):
     Example:
         >>> # xdoctest: +REQUIRES(module:ubelt)
         >>> import ubelt as ub
-        >>> # Declarative modal CLI (new in 0.7.9). For nested classes the
-        >>> # class name is the command name (the attribute it binds to).
+        >>> # Declarative modal CLI (new in 0.7.9). Nested classes use
+        >>> # __command__ to get a clean command name (otherwise the command
+        >>> # would be the class name, e.g. "Command1").
         >>> import kwconf
         >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     #
-        >>>     class command1(kwconf.Config):
+        >>>     class Command1(kwconf.Config):
+        >>>         __command__ = 'command1'
         >>>         foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>         @classmethod
         >>>         def main(cls, argv=1, **kwargs):
         >>>             config = cls.cli(argv=argv, data=kwargs)
         >>>             print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>>     #
-        >>>     class command2(kwconf.Config):
+        >>>     class Command2(kwconf.Config):
+        >>>         __command__ = 'command2'
         >>>         foo = 'eggs'
         >>>         baz = 'biz'
         >>>         @classmethod
@@ -410,8 +416,8 @@ class ModalCLI(metaclass=MetaModalCLI):
 
         if metadata.get('command') is None:
             # Reached only when there is no attribute name and no explicit
-            # command= (i.e. __subconfigs__ lists and @register). Here the
-            # class-level __command__ is the fallback, then the class name.
+            # command= (i.e. __subconfigs__ lists and @register). Falls back to
+            # the class-level __command__, then the class name.
             command = getattr(cli_cls, '__command__', None)
             if command is None:
                 command = cli_cls.__name__

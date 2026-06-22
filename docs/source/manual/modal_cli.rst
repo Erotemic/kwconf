@@ -52,14 +52,15 @@ aliases, command-name overrides, or group metadata.
 The command name follows this precedence (high to low):
 
 #. ``ModalValue(command=...)`` -- explicit at the binding site.
-#. the attribute name the command is bound to (``train = Train`` -> ``train``).
 #. the command's ``__command__`` class attribute.
+#. the attribute name the command is bound to (``train = Train`` -> ``train``).
 #. the class name.
 
-So the attribute name wins over ``__command__``; the ``__command__`` /
-class-name fallback only applies when there is no binding name (``__subconfigs__``
-lists and ``@modal.register``). To set the command name at a binding site, prefer
-``ModalValue(..., command=...)``.
+You usually do not need ``__command__``: when it is absent the attribute name is
+used (and the class name for ``__subconfigs__`` lists / argument-less
+``@modal.register``). Its main use is giving nested classes a clean command name
+-- a nested ``class Train`` would otherwise become the command ``Train``, so set
+``__command__ = 'train'`` to override it.
 
 .. code-block:: python
 
