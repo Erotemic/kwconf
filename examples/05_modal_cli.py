@@ -39,7 +39,12 @@ DEMO:
 import shlex
 
 import _bootstrap  # noqa: F401
-from _bootstrap import _styled_line, print_resolved_config, print_rule
+from _bootstrap import (
+    _styled_line,
+    print_resolved_config,
+    print_rule,
+    rich_print,
+)
 
 import kwconf as kw
 
@@ -245,8 +250,42 @@ def _proof_line(passed, label, left, right, sep='  ==  '):
     )
 
 
+def demonstrate_data_tools_equivalence():
+    """Show plainly that ``data-tools`` and ``data_tools`` are one command."""
+    print_rule("Hyphens == underscores: 'data-tools' IS 'data_tools'")
+    underscored = [
+        'data_tools',
+        'export_data',
+        '--out_dir=/tmp/x',
+        '--include_meta',
+    ]
+    hyphenated = [
+        'data-tools',
+        'export-data',
+        '--out-dir=/tmp/x',
+        '--include-meta',
+    ]
+    cfg_a = _run_quiet(underscored)
+    cfg_b = _run_quiet(hyphenated)
+    assert isinstance(cfg_a, kw.Config) and isinstance(cfg_b, kw.Config)
+    rich_print('  underscores:  ' + shlex.join(underscored), 'yellow')
+    rich_print('  hyphens:      ' + shlex.join(hyphenated), 'magenta')
+    rich_print('  both select the SAME command and resolve to:', 'white')
+    resolved = (
+        f'{type(cfg_a).__name__}('
+        f'out_dir={cfg_a.out_dir!r}, include_meta={cfg_a.include_meta!r})'
+    )
+    rich_print('    ' + resolved, 'bold cyan')
+    assert cfg_a.asdict() == cfg_b.asdict()
+    rich_print(
+        '  => identical result; hyphens and underscores are interchangeable.',
+        'bold green',
+    )
+
+
 def prove_fuzzy_hyphens():
     """Prove fuzzy hyphens resolve identically at every modal level."""
+    demonstrate_data_tools_equivalence()
     print_rule('PROVE: equivalent spellings resolve identically')
     for label, canonical, variant in EQUIVALENT_INVOCATIONS:
         base = _run_quiet(canonical)
