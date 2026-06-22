@@ -262,6 +262,22 @@ class ArchiveSource(kwconf.Config):
         return config
 ```
 
+### Modal command names
+
+In scriptconfig the `__command__` class attribute set a command's name and took
+precedence over how it was registered. In `kwconf` the **attribute name wins**:
+
+```python
+class App(kwconf.ModalCLI):
+    train = Train          # command is "train", even if Train.__command__ = "fit"
+```
+
+Full precedence (high to low): `ModalValue(command=...)` > the attribute name >
+`__command__` > the class name. `__command__` (and the class-name fallback) only
+applies when there is no binding name, i.e. `__subconfigs__` lists and
+`@modal.register`. To override the name at a binding site, prefer
+`ModalValue(Train, command='fit')` rather than `__command__`.
+
 ### Lifecycle aliases
 
 Rename old non-dunder helpers:

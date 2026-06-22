@@ -46,11 +46,18 @@ Example
     >>>     print('prevent system exit due to calling --help')
 
 Note:
-    The command name comes from the attribute a command is registered under
-    (or the class name when registered via :meth:`register`). To override it,
-    prefer :class:`kwconf.ModalValue` with ``command=...``. A ``__command__``
-    class attribute also works but is rarely needed -- mainly for argument-less
-    decorator registration where no attribute name is available.
+    Command-name precedence (high to low):
+
+    1. ``ModalValue(command=...)`` (explicit at the binding site)
+    2. the attribute name the command is bound to (``foo = MyConfig`` -> ``foo``)
+    3. the command's ``__command__`` class attribute
+    4. the class name
+
+    So the attribute name wins over ``__command__``. A class-level
+    ``__command__`` (and the class-name fallback) only applies when there is no
+    binding name, i.e. ``__subconfigs__`` lists and :meth:`register`. To set the
+    command name at a binding site, prefer ``ModalValue(command=...)``. (This
+    differs from ``scriptconfig``, where ``__command__`` took precedence.)
 
 Note:
     Submodals in :class:`ModalCLI` must be registered as classes (or via
@@ -143,7 +150,11 @@ class MetaModalCLI(type):
             if isinstance(v, type):
                 final_subconfigs.append(
                     {
-                        'command': getattr(v, '__command__', None) or k,
+                        # The attribute name is the command name. It wins over a
+                        # class-level __command__ (which only applies when there
+                        # is no attribute name -- see _update_metadata for the
+                        # __subconfigs__ / register paths).
+                        'command': k,
                         'cls': v,
                     }
                 )
@@ -155,9 +166,8 @@ class MetaModalCLI(type):
                     )
                 final_subconfigs.append(
                     {
-                        'command': v.command
-                        if v.command is not None
-                        else (getattr(v.value, '__command__', None) or k),
+                        # Precedence: ModalValue(command=) > attribute name.
+                        'command': v.command if v.command is not None else k,
                         'cls': v.value,
                         'alias': v.alias,
                         'group': v.group,
@@ -237,20 +247,19 @@ class ModalCLI(metaclass=MetaModalCLI):
     Example:
         >>> # xdoctest: +REQUIRES(module:ubelt)
         >>> import ubelt as ub
-        >>> # Declarative modal CLI (new in 0.7.9)
+        >>> # Declarative modal CLI (new in 0.7.9). For nested classes the
+        >>> # class name is the command name (the attribute it binds to).
         >>> import kwconf
         >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     #
-        >>>     class Command1(kwconf.Config):
-        >>>         __command__ = 'command1'
+        >>>     class command1(kwconf.Config):
         >>>         foo = kwconf.Value('spam', help='spam spam spam spam')
         >>>         @classmethod
         >>>         def main(cls, argv=1, **kwargs):
         >>>             config = cls.cli(argv=argv, data=kwargs)
         >>>             print('config1 = {}'.format(ub.urepr(dict(config), nl=1)))
         >>>     #
-        >>>     class Command2(kwconf.Config):
-        >>>         __command__ = 'command2'
+        >>>     class command2(kwconf.Config):
         >>>         foo = 'eggs'
         >>>         baz = 'biz'
         >>>         @classmethod
@@ -400,6 +409,9 @@ class ModalCLI(metaclass=MetaModalCLI):
             )
 
         if metadata.get('command') is None:
+            # Reached only when there is no attribute name and no explicit
+            # command= (i.e. __subconfigs__ lists and @register). Here the
+            # class-level __command__ is the fallback, then the class name.
             command = getattr(cli_cls, '__command__', None)
             if command is None:
                 command = cli_cls.__name__

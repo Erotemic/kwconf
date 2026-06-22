@@ -47,10 +47,19 @@ Declarative registration
 
 Commands can be class attributes, registered imperatively with
 ``@modal.register``, or wrapped in :class:`kwconf.ModalValue` when you want
-aliases, command-name overrides, or group metadata. The command name defaults to
-the attribute name (or the class name under ``@modal.register``); to override it
-prefer ``ModalValue(..., command=...)``. A ``__command__`` class attribute also
-works but is rarely needed.
+aliases, command-name overrides, or group metadata.
+
+The command name follows this precedence (high to low):
+
+#. ``ModalValue(command=...)`` -- explicit at the binding site.
+#. the attribute name the command is bound to (``train = Train`` -> ``train``).
+#. the command's ``__command__`` class attribute.
+#. the class name.
+
+So the attribute name wins over ``__command__``; the ``__command__`` /
+class-name fallback only applies when there is no binding name (``__subconfigs__``
+lists and ``@modal.register``). To set the command name at a binding site, prefer
+``ModalValue(..., command=...)``.
 
 .. code-block:: python
 
