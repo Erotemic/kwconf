@@ -637,6 +637,22 @@ class ModalCLI(metaclass=MetaModalCLI):
                 long_names += sorted(extra_long_names)
             return long_names
 
+        def concise_command_display(main, alias_list):
+            # By default show only one spelling of each command in --help:
+            # keep the first (canonical) variant and drop hyphen/underscore
+            # duplicates (e.g. the fuzzy-hyphen alias). All spellings still
+            # route to the command; this only affects the displayed listing.
+            seen: set[str] = set()
+            display: list[str] = []
+            for name in [main] + list(alias_list or []):
+                norm = name.replace('_', '-')
+                if norm not in seen:
+                    seen.add(norm)
+                    display.append(name)
+            if len(display) > 1:
+                return '{} ({})'.format(display[0], ', '.join(display[1:]))
+            return display[0]
+
         for cmdinfo in cmdinfo_list:
             # group = cmdinfo['group']
             # Add a new command to subparser_group
@@ -707,6 +723,14 @@ class ModalCLI(metaclass=MetaModalCLI):
                 subparser.set_defaults(
                     __submodal__=None
                 )  # indicate to the parser that we parsed a leaf command
+
+            # Collapse hyphen/underscore-duplicate spellings in the command
+            # listing (the just-added subcommand is the last pseudo-action).
+            if command_subparsers._choices_actions:
+                pseudo_action = command_subparsers._choices_actions[-1]
+                pseudo_action.metavar = concise_command_display(
+                    main_cmd, parserkw.get('aliases')
+                )
         return parser
 
     build_parser = argparse

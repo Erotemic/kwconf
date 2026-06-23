@@ -631,6 +631,38 @@ def test_modal_fuzzy_hyphens_propagation():
     assert FuzzyRoot.main(argv=['run_leaf', '--out-dir=A'], _noexit=True) == 0
 
 
+def test_modal_command_listing_hides_fuzzy_hyphen_aliases():
+    """
+    By default the command listing shows one spelling per command: the
+    fuzzy-hyphen alias still routes but is hidden from ``--help``, while an
+    intentional alias is shown.
+    """
+    import kwconf
+
+    class ExportData(kwconf.Config):
+        """Export the data."""
+
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            cls.cli(argv=argv, data=kwargs)
+            return 0
+
+    class App(kwconf.ModalCLI):
+        export_data = kwconf.ModalValue(ExportData, alias=['dump_it'])
+
+    help_text = App().argparse().format_help()
+    # Canonical spelling and the intentional alias are shown ...
+    assert 'export_data' in help_text
+    assert 'dump_it' in help_text
+    # ... but their fuzzy-hyphen duplicates are hidden from the listing.
+    assert 'export-data' not in help_text
+    assert 'dump-it' not in help_text
+
+    # All spellings still route to the command.
+    for spelling in ['export_data', 'export-data', 'dump_it', 'dump-it']:
+        assert App.main(argv=[spelling], _noexit=True) == 0
+
+
 def test_arbitrary_opaque_subparser():
     import kwconf
 

@@ -6,6 +6,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 ## [Version 0.10.1] - Unreleased
 
 ### Changed
+* Modal ``--help`` command listings now show a single spelling per command by
+  default (e.g. ``export_data`` instead of ``export_data (export-data)``). The
+  hyphen/underscore-duplicate spellings (such as fuzzy-hyphen aliases) still
+  route to the command; they are just hidden from the listing. Intentional,
+  non-duplicate aliases are still shown.
 * The default ``--help`` description for a config with no docstring and no
   ``__description__`` is now ``no description for <module>.<qualname>`` (naming
   the class that needs documenting) instead of
