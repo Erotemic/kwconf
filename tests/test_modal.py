@@ -108,6 +108,8 @@ def test_modal_customize_command_classlevel():
 
     @MyModalCLI.register(command='command1')
     class Command1(kwconf.Config):
+        """The first subcommand."""
+
         __alias__ = [
             'alias1'
         ]  # should be used because alias not given in the decorator
@@ -119,6 +121,8 @@ def test_modal_customize_command_classlevel():
 
     @MyModalCLI.register(command='command2', alias=['alias2', 'alias3'])
     class Command2(kwconf.Config):
+        """The second subcommand."""
+
         bar = 'biz'
         __alias__ = [
             'overwritten'
@@ -151,6 +155,8 @@ def test_modal_customize_command_instancelevel():
 
     @modal.register(command='command1')
     class Command1(kwconf.Config):
+        """The first subcommand."""
+
         __alias__ = 'alias1'
         foo = kwconf.Value('spam', help='spam spam spam spam')
 
@@ -160,6 +166,8 @@ def test_modal_customize_command_instancelevel():
 
     @modal.register(command='command2', alias=['alias2', 'alias3'])
     class Command2(kwconf.Config):
+        """The second subcommand."""
+
         __alias__ = ['overwritten']
         bar = 'biz'
 
@@ -347,6 +355,8 @@ def test_modal_command_name_resolution():
     import kwconf
 
     class Command1(kwconf.Config):
+        """The first subcommand."""
+
         __command__ = 'command1'
 
         @classmethod
@@ -354,6 +364,8 @@ def test_modal_command_name_resolution():
             cls.cli(argv=argv, data=kwargs)
 
     class Command2(kwconf.Config):
+        """The second subcommand."""
+
         @classmethod
         def main(cls, argv=None, **kwargs):
             cls.cli(argv=argv, data=kwargs)
