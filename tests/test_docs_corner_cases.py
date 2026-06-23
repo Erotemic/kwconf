@@ -46,14 +46,14 @@ def test_yaml_is_the_structured_tool():
 def test_value_and_flag_classes_are_exported():
     import inspect
 
-    assert inspect.isclass(kwconf.ValueClass)
-    assert inspect.isclass(kwconf.FlagClass)
-    assert issubclass(kwconf.FlagClass, kwconf.ValueClass)
+    assert inspect.isclass(kwconf.value._Value)
+    assert inspect.isclass(kwconf.value._Flag)
+    assert issubclass(kwconf.value._Flag, kwconf.value._Value)
 
 
 def test_valueclass_is_subclassable_for_custom_coerce():
     # The migration guide's "roll your own Path" recipe.
-    class Path(kwconf.ValueClass):
+    class Path(kwconf.value._Value):
         def __init__(self, value=None, **kw):
             super().__init__(value, parser=str, **kw)
 
@@ -66,7 +66,7 @@ def test_valueclass_is_subclassable_for_custom_coerce():
 
 
 def test_valueclass_subclass_usable_as_a_field():
-    class Path(kwconf.ValueClass):
+    class Path(kwconf.value._Value):
         def __init__(self, value=None, **kw):
             super().__init__(value, parser=str, **kw)
 

@@ -11,7 +11,7 @@ def test_leaf_defaults_are_normalized():
         }
 
     # kwconf.Value is now a factory function; the runtime wrapper class is
-    # kwconf.value._Value (a.k.a. kwconf.ValueClass).
+    # kwconf.value._Value .
     assert isinstance(LeafConfig.__default__['alpha'], kwconf.value._Value)
     assert LeafConfig.__default__['alpha'].value == 1
     assert isinstance(LeafConfig.__default__['beta'], kwconf.value._Value)
