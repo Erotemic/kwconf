@@ -14,6 +14,7 @@ metaclass, the checker also synthesizes ``__init__(*, x: int, ...)`` so
 at the Python boundary, let the type checker catch it" decision, enforced
 statically.
 """
+
 from __future__ import annotations
 
 from typing import (
@@ -25,16 +26,25 @@ from typing import (
     overload,
 )
 
-T = TypeVar("T")
+T = TypeVar('T')
 
 
 class _Value:
     """Runtime wrapper. Isinstance/`.value` checks use this; the typed
     ``Value`` factory below hides it behind a ``-> T`` signature."""
 
-    def __init__(self, default: Any = None, *, default_factory: Any = None,
-                 coerce: Any = None, help: Any = None, required: bool = False) -> None:
-        self.value = default_factory() if default_factory is not None else default
+    def __init__(
+        self,
+        default: Any = None,
+        *,
+        default_factory: Any = None,
+        coerce: Any = None,
+        help: Any = None,
+        required: bool = False,
+    ) -> None:
+        self.value = (
+            default_factory() if default_factory is not None else default
+        )
         self.coerce = coerce
         self.required = required
 
@@ -75,10 +85,21 @@ def Value(
 ) -> Any: ...
 
 
-def Value(default=None, *, default_factory=None, coerce=None, help=None,  # type: ignore[no-untyped-def]
-          required=False):
-    return _Value(default, default_factory=default_factory, coerce=coerce,
-                  help=help, required=required)
+def Value(
+    default=None,
+    *,
+    default_factory=None,
+    coerce=None,
+    help=None,  # type: ignore[no-untyped-def]
+    required=False,
+):
+    return _Value(
+        default,
+        default_factory=default_factory,
+        coerce=coerce,
+        help=help,
+        required=required,
+    )
 
 
 def Flag(default: bool = False, *, help: str | None = ...) -> bool:  # type: ignore[no-untyped-def]

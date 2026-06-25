@@ -23,6 +23,7 @@ Example:
 Notes:
     https://docs.python.org/3/library/dataclasses.html
 """
+
 from __future__ import annotations
 
 import inspect
@@ -140,6 +141,7 @@ def __example__() -> None:
     Doctests are broken for Configs, so putting them here.
     """
     import kwconf
+
     dataclasses: Any
     try:
         import dataclasses
@@ -167,26 +169,38 @@ def __example__() -> None:
     class ExampleConfig2:
         chip_dims = kwconf.Value((256, 256), help='chip size')
         time_dim = kwconf.Value(3, help='number of time steps')
-        channels = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
+        channels = kwconf.Value(
+            '*:(red|green|blue)', help='sensor / channel code'
+        )
         time_sampling = kwconf.Value('soft2')
 
     @dataclasses.dataclass
     class ExampleConfig2d:
         chip_dims = kwconf.Value((256, 256), help='chip size')
         time_dim: Any = kwconf.Value(3, help='number of time steps')
-        channels: Any = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
+        channels: Any = kwconf.Value(
+            '*:(red|green|blue)', help='sensor / channel code'
+        )
         time_sampling: Any = kwconf.Value('soft2')
 
     class ExampleConfig3:
         __default__ = {
             'chip_dims': kwconf.Value((256, 256), help='chip size'),
             'time_dim': kwconf.Value(3, type=int, help='number of time steps'),
-            'channels': kwconf.Value('*:(red|green|blue)', type=str, help='sensor / channel code'),
+            'channels': kwconf.Value(
+                '*:(red|green|blue)', type=str, help='sensor / channel code'
+            ),
             'time_sampling': kwconf.Value('soft2', type=str),
         }
 
-    classes = [ExampleConfig0, ExampleConfig1, ExampleConfig1d,
-               ExampleConfig2, ExampleConfig2d, ExampleConfig3]
+    classes = [
+        ExampleConfig0,
+        ExampleConfig1,
+        ExampleConfig1d,
+        ExampleConfig2,
+        ExampleConfig2d,
+        ExampleConfig3,
+    ]
     for cls in classes:
         dcls = dataconf(cls)
         self = dcls()

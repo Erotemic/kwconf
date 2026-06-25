@@ -14,7 +14,6 @@ Example
     >>> import kwconf
     >>> #
     >>> class DoFooCLI(kwconf.Config):
-    >>>     __command__ = 'do_foo'
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
     >>>     @classmethod
@@ -23,7 +22,6 @@ Example
     >>>         print('Called Foo with: ' + str(self))
     >>> #
     >>> class DoBarCLI(kwconf.Config):
-    >>>     __command__ = 'do_bar'
     >>>     option1 = kwconf.Value(None, help='option1')
     >>>     #
     >>>     @classmethod
@@ -33,9 +31,10 @@ Example
     >>> #
     >>> #
     >>> class MyModalCLI(kwconf.ModalCLI):
+    >>>     # The attribute name is the command name.
     >>>     __version__ = '1.2.3'
-    >>>     foo = DoFooCLI
-    >>>     bar = DoBarCLI
+    >>>     do_foo = DoFooCLI
+    >>>     do_bar = DoBarCLI
     >>> #
     >>> modal = MyModalCLI()
     >>> MyModalCLI.main(argv=['do_foo'])
@@ -45,6 +44,20 @@ Example
     >>>     MyModalCLI.main(argv=['--help'])
     >>> except SystemExit:
     >>>     print('prevent system exit due to calling --help')
+
+Note:
+    Command-name precedence (high to low):
+
+    1. ``ModalValue(command=...)`` (explicit at the binding site)
+    2. the command's ``__command__`` class attribute
+    3. the attribute name the command is bound to (``foo = MyConfig`` -> ``foo``)
+    4. the class name
+
+    You usually do not need ``__command__``: when it is absent the attribute
+    name is used (and the class name for ``__subconfigs__`` lists / argument-less
+    :meth:`register`). Its main use is giving nested classes a clean command
+    name -- a nested ``class Train`` would otherwise become the command
+    ``Train``, so set ``__command__ = 'train'`` to override it.
 
 Note:
     Submodals in :class:`ModalCLI` must be registered as classes (or via
@@ -62,6 +75,7 @@ Note:
     If you want nested config nodes that are wrapped in ``Value(...)``, see
     :class:`kwconf.SubConfig` in ``docs/source/manual/nested_configs.rst``.
 """
+
 from __future__ import annotations
 
 import sys
@@ -92,11 +106,13 @@ class ModalValue(NiceRepr):
         ...     child = kwconf.ModalValue(Child, alias=['kid'])
     """
 
-    def __init__(self,
-                 value: type,
-                 command: Optional[str] = None,
-                 alias: Optional[Union[str, List[str]]] = None,
-                 group: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        value: type,
+        command: Optional[str] = None,
+        alias: Optional[Union[str, List[str]]] = None,
+        group: Optional[str] = None,
+    ) -> None:
         self.value = value
         self.command = command
         self.alias = alias
@@ -113,12 +129,14 @@ class MetaModalCLI(type):
     """
 
     @staticmethod
-    def __new__(mcls: type,
-                name: str,
-                bases: Tuple[type, ...],
-                namespace: Dict[str, Any],
-                *args: Any,
-                **kwargs: Any) -> type:
+    def __new__(
+        mcls: type,
+        name: str,
+        bases: Tuple[type, ...],
+        namespace: Dict[str, Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> type:
         # Note: this code has an impact on startuptime efficiency.
         # optimizations here can help.
 
@@ -130,22 +148,34 @@ class MetaModalCLI(type):
             if k.startswith('_'):
                 continue
             if isinstance(v, type):
-                final_subconfigs.append({
-                    'command': getattr(v, '__command__', None) or k,
-                    'cls': v,
-                })
+                final_subconfigs.append(
+                    {
+                        # Precedence: __command__ wins over the attribute name,
+                        # so nested classes (whose attribute name is the class
+                        # name) can declare a clean command name. The attribute
+                        # name is the fallback when __command__ is not set.
+                        'command': getattr(v, '__command__', None) or k,
+                        'cls': v,
+                    }
+                )
             elif isinstance(v, ModalValue):
                 if not isinstance(v.value, type):
                     raise TypeError(
                         f'ModalValue for attribute {k!r} must wrap a class, '
                         f'got {type(v.value)!r}'
                     )
-                final_subconfigs.append({
-                    'command': v.command if v.command is not None else (getattr(v.value, '__command__', None) or k),
-                    'cls': v.value,
-                    'alias': v.alias,
-                    'group': v.group,
-                })
+                final_subconfigs.append(
+                    {
+                        # Precedence: ModalValue(command=) > __command__ >
+                        # attribute name.
+                        'command': v.command
+                        if v.command is not None
+                        else (getattr(v.value, '__command__', None) or k),
+                        'cls': v.value,
+                        'alias': v.alias,
+                        'group': v.group,
+                    }
+                )
         cls_subconfigs = namespace.get('__subconfigs__', [])
         if cls_subconfigs:
             final_subconfigs.extend(cls_subconfigs)
@@ -202,8 +232,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         ...
         commands:
           {command1,command2}  specify a command to run
-            command1           argparse CLI generated by kwconf...
-            command2           argparse CLI generated by kwconf...
+            command1           no description for kwconf.modal.Command1Config
+            command2           no description for kwconf.modal.Command2Config
         >>> self.run(argv=['command1'])
         config1 = {
             'foo': 'spam',
@@ -220,7 +250,9 @@ class ModalCLI(metaclass=MetaModalCLI):
     Example:
         >>> # xdoctest: +REQUIRES(module:ubelt)
         >>> import ubelt as ub
-        >>> # Declarative modal CLI (new in 0.7.9)
+        >>> # Declarative modal CLI (new in 0.7.9). Nested classes use
+        >>> # __command__ to get a clean command name (otherwise the command
+        >>> # would be the class name, e.g. "Command1").
         >>> import kwconf
         >>> class MyModalCLI(kwconf.ModalCLI):
         >>>     #
@@ -300,12 +332,15 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> MyModalCLI.main(argv=['command1'])
         >>> MyModalCLI.main(argv=['command2', '--baz=buz'])
     """
+
     __subconfigs__: List[Dict[str, Any]] = []
 
-    def __init__(self,
-                 description: str = '',
-                 sub_clis: Optional[List[Dict[str, Any]]] = None,
-                 version: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        description: str = '',
+        sub_clis: Optional[List[Dict[str, Any]]] = None,
+        version: Optional[str] = None,
+    ) -> None:
         if sub_clis is None:
             sub_clis = []
 
@@ -320,8 +355,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         # table of dictionaries containing the class and its overridden
         # metadata.
         self._subconfig_metadata: List[Dict] = [
-            self._init_subconfig_metadata(cls)
-            for cls in _instance_subconfigs
+            self._init_subconfig_metadata(cls) for cls in _instance_subconfigs
         ]
 
         if version is None:
@@ -369,24 +403,33 @@ class ModalCLI(metaclass=MetaModalCLI):
             return
 
         if not hasattr(cli_cls, 'main'):
-            raise ValueError(paragraph(
-                f'''
+            raise ValueError(
+                paragraph(
+                    f"""
                 The ModalCLI expects that registered subconfigs have a
                 ``main`` classmethod with the signature
                 ``main(cls, argv: bool, **kwargs)``,
                 but {cli_cls} is missing one.
-            '''))
+            """
+                )
+            )
 
         if metadata.get('command') is None:
+            # Reached only when there is no attribute name and no explicit
+            # command= (i.e. __subconfigs__ lists and @register). Falls back to
+            # the class-level __command__, then the class name.
             command = getattr(cli_cls, '__command__', None)
             if command is None:
                 command = cli_cls.__name__
             if command is None:
-                raise ValueError(paragraph(
-                    f'''
+                raise ValueError(
+                    paragraph(
+                        f"""
                     The ModalCLI expects that registered subconfigs have a
                     ``__command__: str`` attribute, but {cli_cls} is missing one.
-                '''))
+                """
+                    )
+                )
             metadata['command'] = command
 
         if metadata.get('alias') is None:
@@ -415,35 +458,41 @@ class ModalCLI(metaclass=MetaModalCLI):
                 modal = cli_cls
             parserkw.update(modal._parserkw())
             parserkw['help'] = parserkw['description'].split('\n')[0]
-            metadata.update({
-                'is_modal': True,
-                'parserkw': parserkw,
-                'main_func': cli_cls.main,
-                'subconfig': modal,
-            })
+            metadata.update(
+                {
+                    'is_modal': True,
+                    'parserkw': parserkw,
+                    'main_func': cli_cls.main,
+                    'subconfig': modal,
+                }
+            )
         else:
             # A leaf Config CLI
             subconfig = cli_cls()
             parserkw.update(subconfig._parserkw())
             parserkw['help'] = parserkw['description'].split('\n')[0]
-            metadata.update({
-                'is_modal': False,
-                'parserkw': parserkw,
-                'main_func': cli_cls.main,
-                'subconfig': subconfig,
-            })
+            metadata.update(
+                {
+                    'is_modal': False,
+                    'parserkw': parserkw,
+                    'main_func': cli_cls.main,
+                    'subconfig': subconfig,
+                }
+            )
 
     def __call__(self, cli_cls: type) -> type:
-        """ alias of register """
+        """alias of register"""
         return self.register(cli_cls)
 
     @class_or_instancemethod  # type: ignore
-    def register(cls_or_self,
-                 cli_cls: Optional[type] = None,
-                 command: Optional[str] = None,
-                 alias: Optional[List[str]] = None,
-                 group: Optional[str] = None,
-                 main: Optional[Any] = None) -> Any:
+    def register(
+        cls_or_self,
+        cli_cls: Optional[type] = None,
+        command: Optional[str] = None,
+        alias: Optional[List[str]] = None,
+        group: Optional[str] = None,
+        main: Optional[Any] = None,
+    ) -> Any:
         """
         Add a sub-CLI to this modal CLI
 
@@ -478,12 +527,13 @@ class ModalCLI(metaclass=MetaModalCLI):
         else:
             return _wrapper(cli_cls)
 
-    def _parserkw(self):
+    def _parserkw(self) -> Dict[str, Any]:
         """
         Generate the kwargs for making a new argparse.ArgumentParser
         """
         from kwconf.argparse_ext import RawDescriptionDefaultsHelpFormatter
-        parserkw = dict(
+
+        parserkw: Dict[str, Any] = dict(
             description=self.description,
             formatter_class=RawDescriptionDefaultsHelpFormatter,
             epilog=getattr(self, '__epilog__', None),
@@ -493,17 +543,33 @@ class ModalCLI(metaclass=MetaModalCLI):
             parserkw['allow_abbrev'] = self.__allow_abbrev__
         return parserkw
 
-    def argparse(self, parser: Optional[Any] = None, special_options: Any = ...) -> Any:
+    def argparse(
+        self,
+        parser: Optional[Any] = None,
+        special_options: Any = ...,
+        fuzzy_hyphens: Optional[int] = None,
+    ) -> Any:
         """
         Builds a new argparse object for this ModalCLI or extends an existing
         one with it.
+
+        Args:
+            fuzzy_hyphens (int | None):
+                Effective fuzzy-hyphen setting inherited from a parent modal at
+                resolve time. ``None`` (the default, top-level) means use this
+                modal's own ``__fuzzy_hyphens__``. A falsy value forces fuzzy
+                hyphens off for this whole subtree regardless of the children's
+                own settings (an ancestor opting out propagates down). This is
+                threaded per-call, so the same Config/ModalCLI reused under two
+                different parents resolves independently.
         """
 
         if parser is None:
-            parserkw = self._parserkw()
+            parserkw: Dict[str, Any] = self._parserkw()
             # import argparse as argparse_mod
             # parser = argparse_mod.ArgumentParser(**parserkw)
             from kwconf import argparse_ext
+
             parser = argparse_ext.ExtendedArgumentParser(**parserkw)
 
         if hasattr(self, 'version') and self.version is not None:
@@ -512,16 +578,23 @@ class ModalCLI(metaclass=MetaModalCLI):
             # know if version should be passed to the subcommand or not.
             # We work around this by using a special destination for
             # the modal version flag.
-            parser.add_argument('--version', action='store_true',
-                                dest='__modal_version_request__',
-                                help='show version number and exit')
+            parser.add_argument(
+                '--version',
+                action='store_true',
+                dest='__modal_version_request__',
+                help='show version number and exit',
+            )
         parser.set_defaults(__submodal__=self)
 
         # Prepare information to be added to the subparser before it is created
         for metadata in self._subconfig_metadata:
             self._update_metadata(metadata)
         cmdinfo_list = self._subconfig_metadata
-        fuzzy_hyphens = getattr(self, '__fuzzy_hyphens__', 1)
+        own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
+        # Effective = own setting, but forced off if an ancestor opted out.
+        fuzzy_hyphens = (
+            own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
+        )
 
         # Build a list of primary command names to display as the valid options
         # for subparsers. This avoids cluttering the screen with all aliases
@@ -539,7 +612,9 @@ class ModalCLI(metaclass=MetaModalCLI):
         command_subparsers = parser.add_subparsers(
             title='commands',
             # dest='__command__',
-            help='specify a command to run', metavar=_metavar)
+            help='specify a command to run',
+            metavar=_metavar,
+        )
 
         # group_to_subparser = {}
         # for group, cmdinfos in group_to_cmdinfos.items():
@@ -555,10 +630,28 @@ class ModalCLI(metaclass=MetaModalCLI):
                 # Match Value._resolve_alias behavior:
                 # only add underscore->hyphen variants.
                 unique_long_names = set(long_names)
-                modified_long_names = {n.replace('_', '-') for n in unique_long_names}
+                modified_long_names = {
+                    n.replace('_', '-') for n in unique_long_names
+                }
                 extra_long_names = modified_long_names - unique_long_names
                 long_names += sorted(extra_long_names)
             return long_names
+
+        def concise_command_display(main, alias_list):
+            # By default show only one spelling of each command in --help:
+            # keep the first (canonical) variant and drop hyphen/underscore
+            # duplicates (e.g. the fuzzy-hyphen alias). All spellings still
+            # route to the command; this only affects the displayed listing.
+            seen: set[str] = set()
+            display: list[str] = []
+            for name in [main] + list(alias_list or []):
+                norm = name.replace('_', '-')
+                if norm not in seen:
+                    seen.add(norm)
+                    display.append(name)
+            if len(display) > 1:
+                return '{} ({})'.format(display[0], ', '.join(display[1:]))
+            return display[0]
 
         for cmdinfo in cmdinfo_list:
             # group = cmdinfo['group']
@@ -569,8 +662,11 @@ class ModalCLI(metaclass=MetaModalCLI):
 
             if cmdinfo.get('is_opaque'):
                 external_parser = command_subparsers.add_parser(
-                    main_cmd, add_help=False, **parserkw)
-                external_parser.set_defaults(__opaque_main__=cmdinfo['main_func'])
+                    main_cmd, add_help=False, **parserkw
+                )
+                external_parser.set_defaults(
+                    __opaque_main__=cmdinfo['main_func']
+                )
                 continue
 
             # copy so we dont have inplace issues
@@ -580,7 +676,9 @@ class ModalCLI(metaclass=MetaModalCLI):
             aliases = value_like_fuzzy_long_names(aliases)
 
             if 'aliases' in parserkw:
-                parserkw['aliases'] = value_like_fuzzy_long_names(list(parserkw['aliases']) + list(aliases))
+                parserkw['aliases'] = value_like_fuzzy_long_names(
+                    list(parserkw['aliases']) + list(aliases)
+                )
             else:
                 if aliases:
                     parserkw['aliases'] = aliases
@@ -603,20 +701,36 @@ class ModalCLI(metaclass=MetaModalCLI):
                 # parserkw['prog'] = ' '.join([parser.prog, main_cmd])
                 modal_inst = cmdinfo['subconfig']
                 modal_parser = command_subparsers.add_parser(
-                    main_cmd, **parserkw)
-                modal_parser = modal_inst.argparse(parser=modal_parser)
-                modal_parser.set_defaults(__main_function__=cmdinfo['main_func'])
+                    main_cmd, **parserkw
+                )
+                modal_parser = modal_inst.argparse(
+                    parser=modal_parser, fuzzy_hyphens=fuzzy_hyphens
+                )
+                modal_parser.set_defaults(
+                    __main_function__=cmdinfo['main_func']
+                )
                 modal_parser.set_defaults(__submodal__=modal_inst)
             else:
                 # When an error occurs we want usage to print out the command
                 # the user used to invoke the subparser. has a few corner
                 # cases, but this works better than defaults
                 parserkw['prog'] = ' '.join([parser.prog, main_cmd])
-                subparser = command_subparsers.add_parser(
-                    main_cmd, **parserkw)
-                subparser = cmdinfo['subconfig'].argparse(subparser)
+                subparser = command_subparsers.add_parser(main_cmd, **parserkw)
+                subparser = cmdinfo['subconfig'].argparse(
+                    subparser, fuzzy_hyphens=fuzzy_hyphens
+                )
                 subparser.set_defaults(__main_function__=cmdinfo['main_func'])
-                subparser.set_defaults(__submodal__=None)  # indicate to the parser that we parsed a leaf command
+                subparser.set_defaults(
+                    __submodal__=None
+                )  # indicate to the parser that we parsed a leaf command
+
+            # Collapse hyphen/underscore-duplicate spellings in the command
+            # listing (the just-added subcommand is the last pseudo-action).
+            if command_subparsers._choices_actions:
+                pseudo_action = command_subparsers._choices_actions[-1]
+                pseudo_action.metavar = concise_command_display(
+                    main_cmd, parserkw.get('aliases')
+                )
         return parser
 
     build_parser = argparse
@@ -626,6 +740,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         if autocomplete:
             try:
                 import importlib
+
                 _argcomplete = importlib.import_module('argcomplete')
                 # Need to run: "$(register-python-argcomplete xdev)"
                 # or activate-global-python-argcomplete --dest=-
@@ -640,19 +755,25 @@ class ModalCLI(metaclass=MetaModalCLI):
             _argcomplete.autocomplete(parser)
 
     @class_or_instancemethod  # type: ignore
-    def main(self,
-             argv: Optional[Sequence[str]] = None,
-             strict: bool = True,
-             autocomplete: Any = 'auto',
-             _noexit: bool = False) -> Any:
+    def main(
+        self,
+        argv: Optional[Sequence[str]] = None,
+        strict: bool = True,
+        autocomplete: Any = 'auto',
+        _noexit: bool = False,
+    ) -> Any:
         """
         Execute the modal CLI as the main script
         """
         if diagnostics.DEBUG_MODAL:
             if argv is None:
-                print(f'[kwconf.modal.ModalCLI.main] Calling main of {self} with argv={argv}, sys.argv={sys.argv}')
+                print(
+                    f'[kwconf.modal.ModalCLI.main] Calling main of {self} with argv={argv}, sys.argv={sys.argv}'
+                )
             else:
-                print(f'[kwconf.modal.ModalCLI.main] Calling main of {self} with argv={argv}')
+                print(
+                    f'[kwconf.modal.ModalCLI.main] Calling main of {self} with argv={argv}'
+                )
 
         # Create an instance of we called as a classmethod
         if isinstance(self, type):
@@ -672,10 +793,13 @@ class ModalCLI(metaclass=MetaModalCLI):
             argv = None
         try:
             from kwconf import argparse_ext
+
             parse_result = argparse_ext.parse_known_result(parser, args=argv)
         except SystemExit as ex:
             if diagnostics.DEBUG_MODAL:
-                print(f'[kwconf.modal.ModalCLI.main] Modal main {self} caught an SystemExit error {ex}')
+                print(
+                    f'[kwconf.modal.ModalCLI.main] Modal main {self} caught an SystemExit error {ex}'
+                )
             if _noexit:
                 return 1
             raise
@@ -683,9 +807,15 @@ class ModalCLI(metaclass=MetaModalCLI):
         unknown_args = parse_result.unknown_args
 
         if diagnostics.DEBUG_MODAL:
-            print(f'[kwconf.modal.ModalCLI.main] Modal main {self} parsed arguments: ' + pprint.pformat(kw))
+            print(
+                f'[kwconf.modal.ModalCLI.main] Modal main {self} parsed arguments: '
+                + pprint.pformat(kw)
+            )
             if unknown_args:
-                print(f'[kwconf.modal.ModalCLI.main] Modal main {self} unknown args: ' + pprint.pformat(unknown_args))
+                print(
+                    f'[kwconf.modal.ModalCLI.main] Modal main {self} unknown args: '
+                    + pprint.pformat(unknown_args)
+                )
 
         __opaque_main__ = kw.pop('__opaque_main__', None)
         if __opaque_main__ is not None:
@@ -694,7 +824,9 @@ class ModalCLI(metaclass=MetaModalCLI):
             # sys.argv while this happens.
             if diagnostics.DEBUG_MODAL:
                 print(f'Want to call __opaque_main__={__opaque_main__}')
-            forwarded = unknown_args[1:] if unknown_args[:1] == ["--"] else unknown_args
+            forwarded = (
+                unknown_args[1:] if unknown_args[:1] == ['--'] else unknown_args
+            )
             # TODO: need a better leading arg for the command name, we can
             # probably add one to the metadata.
             their_argv = ['opaque-script-name'] + forwarded
@@ -703,6 +835,7 @@ class ModalCLI(metaclass=MetaModalCLI):
 
         if strict and unknown_args:
             from gettext import gettext
+
             msg = gettext('unrecognized arguments: %s') % ' '.join(unknown_args)
             try:
                 if getattr(parser, 'exit_on_error', True):
@@ -713,10 +846,13 @@ class ModalCLI(metaclass=MetaModalCLI):
                     deepest.error(msg)  # type: ignore
                 else:
                     from argparse import ArgumentError
+
                     raise ArgumentError(None, msg)
             except SystemExit as ex:
                 if diagnostics.DEBUG_MODAL:
-                    print(f'[kwconf.modal.ModalCLI.main] Modal main {self} caught an SystemExit error {ex}')
+                    print(
+                        f'[kwconf.modal.ModalCLI.main] Modal main {self} caught an SystemExit error {ex}'
+                    )
                 if _noexit:
                     return 1
                 raise
@@ -728,39 +864,49 @@ class ModalCLI(metaclass=MetaModalCLI):
         sub_modal = kw.pop('__submodal__', None)
         sub_main = kw.pop('__main_function__', None)
         explicit_kw = {
-            key: kw[key]
-            for key in parse_result.explicit_keys
-            if key in kw
+            key: kw[key] for key in parse_result.explicit_keys if key in kw
         }
         if version_request:
             if sub_modal is None:
                 if diagnostics.DEBUG_MODAL:
-                    print('[kwconf.modal.ModalCLI.main] Our modal CLI got a modal version request for the root modal')
+                    print(
+                        '[kwconf.modal.ModalCLI.main] Our modal CLI got a modal version request for the root modal'
+                    )
                 print(self.version)
             else:
                 if diagnostics.DEBUG_MODAL:
-                    print(f'[kwconf.modal.ModalCLI.main] Our modal CLI got a modal version request for a submodal {sub_modal}')
+                    print(
+                        f'[kwconf.modal.ModalCLI.main] Our modal CLI got a modal version request for a submodal {sub_modal}'
+                    )
                 print(sub_modal.version)
             return 0
 
         if sub_modal is not None:
             # This case happens when a submodal is not given any commands
             if diagnostics.DEBUG_MODAL:
-                print(f'[kwconf.modal.ModalCLI.main] returned main, but it belongs to a different ModalCLI {sub_modal}, using our hack to print help and exit')
+                print(
+                    f'[kwconf.modal.ModalCLI.main] returned main, but it belongs to a different ModalCLI {sub_modal}, using our hack to print help and exit'
+                )
             sub_modal.argparse().print_usage(sys.stderr)
             # sub_modal.argparse().print_help(sys.stderr)
             if not _noexit:
-                raise NoCommandError('A submodal CLI was executed but no command was given.')
+                raise NoCommandError(
+                    'A submodal CLI was executed but no command was given.'
+                )
             return 1
 
         if sub_main is None:
             # This case happens when the root modal is not given any commands
             if diagnostics.DEBUG_MODAL:
-                print('[kwconf.modal.ModalCLI.main] returned modal options did not specify the main function, printing help and exiting')
+                print(
+                    '[kwconf.modal.ModalCLI.main] returned modal options did not specify the main function, printing help and exiting'
+                )
             parser.print_usage(sys.stderr)
             # parser.print_help(sys.stderr)
             if not _noexit:
-                raise NoCommandError('A modal CLI was executed but no command was given.')
+                raise NoCommandError(
+                    'A modal CLI was executed but no command was given.'
+                )
             return 1
 
         # Check how main wants to be invoked
@@ -770,6 +916,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         # already did).
         # TODO: should ensure this works in a standardized way
         import inspect
+
         main_sig = inspect.signature(sub_main)
         control_kw = {}
         if 'argv' in main_sig.parameters:
@@ -794,22 +941,22 @@ class ModalCLI(metaclass=MetaModalCLI):
 
 def _dump_parser(parser, indent=0):
     import argparse
-    pad = "  " * indent
-    print(f"{pad}Parser: {parser.prog!r}")
+
+    pad = '  ' * indent
+    print(f'{pad}Parser: {parser.prog!r}')
     for a in parser._actions:
-        opts = ", ".join(a.option_strings) if a.option_strings else a.dest
-        print(f"{pad}  Arg: {opts}  (action={a.__class__.__name__})")
+        opts = ', '.join(a.option_strings) if a.option_strings else a.dest
+        print(f'{pad}  Arg: {opts}  (action={a.__class__.__name__})')
 
     # Find subparsers (if any)
     for a in parser._actions:
         if isinstance(a, argparse._SubParsersAction):
             for name, sp in a.choices.items():
-                print(f"{pad}  Subcommand: {name}")
+                print(f'{pad}  Subcommand: {name}')
                 _dump_parser(sp, indent + 1)
 
 
-class NoCommandError(SystemExit):
-    ...
+class NoCommandError(SystemExit): ...
 
 
 from contextlib import contextmanager  # NOQA

@@ -27,23 +27,24 @@ def test_inheritence():
     c1 = Config1()
     c2 = Config2()
     c3 = Config3()
-    text1 = ('c1 = {}'.format(ub.urepr(c1, nl=1)))
-    text2 = ('c2 = {}'.format(ub.urepr(c2, nl=1)))
-    text3 = ('c3 = {}'.format(ub.urepr(c3, nl=1)))
+    text1 = 'c1 = {}'.format(ub.urepr(c1, nl=1))
+    text2 = 'c2 = {}'.format(ub.urepr(c2, nl=1))
+    text3 = 'c3 = {}'.format(ub.urepr(c3, nl=1))
 
     print(text1)
     print(text2)
     print(text3)
     assert text1 == ub.codeblock(
-        '''
+        """
         c1 = Config1(**{
             'arg1': 1,
             'arg2': 2,
             'arg3': 3,
         })
-        ''')
+        """
+    )
     assert text2 == ub.codeblock(
-        '''
+        """
         c2 = Config2(**{
             'arg1': 1,
             'arg2': 2,
@@ -52,9 +53,10 @@ def test_inheritence():
             'arg5': 5,
             'arg6': 6,
         })
-        ''')
+        """
+    )
     assert text3 == ub.codeblock(
-        '''
+        """
         c3 = Config3(**{
             'arg1': 1,
             'arg2': 22,
@@ -63,7 +65,8 @@ def test_inheritence():
             'arg5': 55,
             'arg6': 6,
         })
-        ''')
+        """
+    )
 
 
 def test_multiple_inheritence():
@@ -93,10 +96,11 @@ def test_multiple_inheritence():
 
     config = Foobarable()
     import ubelt as ub
+
     text = ub.urepr(config, nl=1)
     print(text)
     assert text == ub.codeblock(
-        '''
+        """
         Foobarable(**{
             'bar_arg1': 'a',
             'bar_arg2': Ellipsis,
@@ -106,7 +110,8 @@ def test_multiple_inheritence():
             'foo_arg2': Ellipsis,
             'new_arg': 'NEW',
         })
-        ''')
+        """
+    )
 
 
 def test_multiple_inheritence_diamond():
@@ -138,10 +143,11 @@ def test_multiple_inheritence_diamond():
 
     config = Joined()
     import ubelt as ub
+
     text = ub.urepr(config, nl=1)
     print(text)
     assert text == ub.codeblock(
-        '''
+        """
         Joined(**{
             'base_arg1': 'B1',
             'base_arg2': 'L_B2',
@@ -152,4 +158,5 @@ def test_multiple_inheritence_diamond():
             'left_arg1': 'L1',
             'left_arg2': 'J1',
         })
-        ''')
+        """
+    )

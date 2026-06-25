@@ -10,6 +10,7 @@ The helpers are intentionally best-effort: unresolved forward references and
 annotation forms that kwconf does not understand are preserved or treated as
 unknown instead of causing class creation to fail.
 """
+
 from __future__ import annotations
 
 import sys
@@ -94,7 +95,9 @@ def resolve_annotation(
             return eval(annotation, globalns, localns)
         except Exception:
             return annotation
-    if hasattr(annotation, '__forward_arg__') and hasattr(annotation, 'evaluate'):
+    if hasattr(annotation, '__forward_arg__') and hasattr(
+        annotation, 'evaluate'
+    ):
         globalns, localns = annotation_eval_context(namespace)
         try:
             return annotation.evaluate(globals=globalns, locals=localns)
@@ -126,7 +129,9 @@ def resolve_annotations(
     }
 
 
-def get_class_namespace_annotations(namespace: Mapping[str, Any]) -> dict[str, Any]:
+def get_class_namespace_annotations(
+    namespace: Mapping[str, Any],
+) -> dict[str, Any]:
     """
     Return class-body annotations during metaclass construction.
 
@@ -160,11 +165,13 @@ def get_class_namespace_annotations(namespace: Mapping[str, Any]) -> dict[str, A
         return {}
     try:
         annotations = annotationlib.call_annotate_function(
-            annotate, annotationlib.Format.FORWARDREF)
+            annotate, annotationlib.Format.FORWARDREF
+        )
     except Exception:
         try:
             annotations = annotationlib.call_annotate_function(
-                annotate, annotationlib.Format.STRING)
+                annotate, annotationlib.Format.STRING
+            )
         except Exception:
             return {}
     return resolve_annotations(annotations, namespace)
@@ -201,7 +208,9 @@ def runtime_type_from_annotation(annotation: Any) -> type | None:
             return only_type
         return None
     if origin in {Union, types.UnionType}:
-        args = [arg for arg in typing.get_args(annotation) if arg is not NoneType]
+        args = [
+            arg for arg in typing.get_args(annotation) if arg is not NoneType
+        ]
         for arg in args:
             runtime_type = runtime_type_from_annotation(arg)
             if runtime_type is not None:

@@ -17,6 +17,7 @@ Two ideas under test:
 
 Run directly:  python auto_parser.py   (prints a matrix + asserts PASS)
 """
+
 from __future__ import annotations
 
 import types
@@ -34,16 +35,16 @@ _PRECEDENCE: list[type] = [NoneType, int, float, complex, bool, str]
 
 
 def _parse_none(tok: str) -> None:
-    if tok.strip().lower() in {"none", "null"}:
+    if tok.strip().lower() in {'none', 'null'}:
         return None
     raise ValueError(tok)
 
 
 def _parse_bool(tok: str) -> bool:
     low = tok.strip().lower()
-    if low in {"true", "yes", "on"}:
+    if low in {'true', 'yes', 'on'}:
         return True
-    if low in {"false", "no", "off"}:
+    if low in {'false', 'no', 'off'}:
         return False
     return bool(int(tok))  # "1"/"0"; raises ValueError otherwise
 
@@ -94,7 +95,7 @@ def auto_parse(token: str, annotation: Any = Any) -> Any:
         candidates = _candidate_types(annotation)
     except CannotAutoParse:
         warnings.warn(
-            f"auto parser cannot build {annotation!r} from the single token "
+            f'auto parser cannot build {annotation!r} from the single token '
             f"{token!r}; use coerce='csv'|'yaml' or nargs. Keeping string.",
             stacklevel=2,
         )
@@ -110,7 +111,7 @@ def auto_parse(token: str, annotation: Any = Any) -> Any:
     # do NOT raise -- we warn and keep the string (annotations are statically
     # binding but runtime-advisory).
     warnings.warn(
-        f"could not parse {token!r} into any of {annotation!r}; keeping string",
+        f'could not parse {token!r} into any of {annotation!r}; keeping string',
         stacklevel=2,
     )
     return token
@@ -128,7 +129,7 @@ class Config:
         self.__dict__.update(data)
 
     @classmethod
-    def coerce(cls, **kwargs: Any) -> "Config":
+    def coerce(cls, **kwargs: Any) -> 'Config':
         # Opt-in textual ingestion (mirrors what argv/env parsing will do).
         # Parse iff the incoming value is a string; pass real objects through.
         hints = get_type_hints(cls)
@@ -146,84 +147,93 @@ def _is(value: Any, expect_type: type) -> bool:
 def _selftest() -> None:
     A = Any
     # --- full auto (untyped / Any) ------------------------------------
-    assert auto_parse("True", A) is True
-    assert auto_parse("None", A) is None
-    assert auto_parse("123", A) == 123 and _is(auto_parse("123", A), int)
-    assert auto_parse("1.5", A) == 1.5 and _is(auto_parse("1.5", A), float)
-    assert auto_parse("foo123", A) == "foo123"
-    assert auto_parse("1,2,3", A) == "1,2,3"          # CHANGED: no comma split
+    assert auto_parse('True', A) is True
+    assert auto_parse('None', A) is None
+    assert auto_parse('123', A) == 123 and _is(auto_parse('123', A), int)
+    assert auto_parse('1.5', A) == 1.5 and _is(auto_parse('1.5', A), float)
+    assert auto_parse('foo123', A) == 'foo123'
+    assert auto_parse('1,2,3', A) == '1,2,3'  # CHANGED: no comma split
 
     # --- bare str annotation pins everything to string ----------------
-    assert auto_parse("123", str) == "123"
-    assert auto_parse("None", str) == "None"
-    assert auto_parse("True", str) == "True"
+    assert auto_parse('123', str) == '123'
+    assert auto_parse('None', str) == 'None'
+    assert auto_parse('True', str) == 'True'
 
     # --- str | int | None: ints pass, non-numeric stays string --------
     U = str | int | None
-    assert auto_parse("123", U) == 123 and _is(auto_parse("123", U), int)
-    assert auto_parse("foo", U) == "foo"
-    assert auto_parse("None", U) is None
+    assert auto_parse('123', U) == 123 and _is(auto_parse('123', U), int)
+    assert auto_parse('foo', U) == 'foo'
+    assert auto_parse('None', U) is None
 
     # --- int | None, str NOT allowed: warn + fall back to string ------
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        got = auto_parse("foo", int | None)
-    assert got == "foo"
-    assert any("could not parse" in str(x.message) for x in w)
+        warnings.simplefilter('always')
+        got = auto_parse('foo', int | None)
+    assert got == 'foo'
+    assert any('could not parse' in str(x.message) for x in w)
 
     # --- bool / int interplay -----------------------------------------
-    assert auto_parse("1", int | bool) == 1 and _is(auto_parse("1", int | bool), int)
-    assert auto_parse("1", bool | None) is True       # no int -> bool claims "1"
-    assert auto_parse("true", bool | None) is True
-    with warnings.catch_warnings(record=True) as w:   # "true" w/ only int -> fallback
-        warnings.simplefilter("always")
-        assert auto_parse("true", int | None) == "true"
-    assert any("could not parse" in str(x.message) for x in w)
+    assert auto_parse('1', int | bool) == 1 and _is(
+        auto_parse('1', int | bool), int
+    )
+    assert auto_parse('1', bool | None) is True  # no int -> bool claims "1"
+    assert auto_parse('true', bool | None) is True
+    with warnings.catch_warnings(
+        record=True
+    ) as w:  # "true" w/ only int -> fallback
+        warnings.simplefilter('always')
+        assert auto_parse('true', int | None) == 'true'
+    assert any('could not parse' in str(x.message) for x in w)
 
     # --- containers can't be built from a single token ----------------
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        assert auto_parse("1,2,3", list[int]) == "1,2,3"
+        warnings.simplefilter('always')
+        assert auto_parse('1,2,3', list[int]) == '1,2,3'
     assert any("coerce='csv'" in str(x.message) for x in w)
 
     # --- boundary discipline ------------------------------------------
     class Demo(Config):
         data: Any = None
-        name: str = None        # type: ignore[assignment]
+        name: str = None  # type: ignore[assignment]
         n: int | None = None
 
     # Python constructor trusts: string stays string even for an int field.
-    assert Demo(n="123").n == "123"
+    assert Demo(n='123').n == '123'
     # Opt-in coerce parses, gated by the annotation.
-    assert Demo.coerce(n="123").n == 123
-    assert Demo.coerce(name="123").name == "123"      # str annotation pins it
-    assert Demo.coerce(data="True").data is True       # Any -> full auto
-    assert Demo.coerce(data="1,2,3").data == "1,2,3"   # no comma split
+    assert Demo.coerce(n='123').n == 123
+    assert Demo.coerce(name='123').name == '123'  # str annotation pins it
+    assert Demo.coerce(data='True').data is True  # Any -> full auto
+    assert Demo.coerce(data='1,2,3').data == '1,2,3'  # no comma split
     # Non-string values pass through coerce untouched.
     assert Demo.coerce(n=7).n == 7
 
-    print("auto_parser self-test: PASS")
+    print('auto_parser self-test: PASS')
 
 
 def _matrix() -> None:
-    tokens = ["True", "None", "123", "1.5", "foo123", "1,2,3", "1"]
-    cols = [("Any", Any), ("str", str), ("int|None", int | None),
-            ("str|int|None", str | int | None), ("bool|None", bool | None)]
+    tokens = ['True', 'None', '123', '1.5', 'foo123', '1,2,3', '1']
+    cols = [
+        ('Any', Any),
+        ('str', str),
+        ('int|None', int | None),
+        ('str|int|None', str | int | None),
+        ('bool|None', bool | None),
+    ]
     width = 14
-    header = "token".ljust(10) + "".join(name.ljust(width) for name, _ in cols)
+    header = 'token'.ljust(10) + ''.join(name.ljust(width) for name, _ in cols)
     print(header)
-    print("-" * len(header))
+    print('-' * len(header))
     for tok in tokens:
         row = tok.ljust(10)
         for _, ann in cols:
             with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+                warnings.simplefilter('ignore')
                 val = auto_parse(tok, ann)
-            row += f"{val!r}".ljust(width)
+            row += f'{val!r}'.ljust(width)
         print(row)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     _matrix()
     print()
     _selftest()

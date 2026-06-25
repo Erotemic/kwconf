@@ -14,7 +14,6 @@ Basic modal
 
 
     class Train(kwconf.Config):
-        __command__ = 'train'
         epochs = kwconf.Value(1, help='number of epochs')
         dry_run = kwconf.Flag(False, help='only print what would run')
 
@@ -26,7 +25,6 @@ Basic modal
 
 
     class Eval(kwconf.Config):
-        __command__ = 'eval'
         dataset = kwconf.Value('demo', help='dataset name')
 
         @classmethod
@@ -51,6 +49,19 @@ Commands can be class attributes, registered imperatively with
 ``@modal.register``, or wrapped in :class:`kwconf.ModalValue` when you want
 aliases, command-name overrides, or group metadata.
 
+The command name follows this precedence (high to low):
+
+#. ``ModalValue(command=...)`` -- explicit at the binding site.
+#. the command's ``__command__`` class attribute.
+#. the attribute name the command is bound to (``train = Train`` -> ``train``).
+#. the class name.
+
+You usually do not need ``__command__``: when it is absent the attribute name is
+used (and the class name for ``__subconfigs__`` lists / argument-less
+``@modal.register``). Its main use is giving nested classes a clean command name
+-- a nested ``class Train`` would otherwise become the command ``Train``, so set
+``__command__ = 'train'`` to override it.
+
 .. code-block:: python
 
     class App(kwconf.ModalCLI):
@@ -65,7 +76,6 @@ A modal can contain another modal:
 .. code-block:: python
 
     class Tools(kwconf.ModalCLI):
-        __command__ = 'tools'
         score = kwconf.ModalValue(Eval, command='score')
 
 

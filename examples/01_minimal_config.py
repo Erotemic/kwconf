@@ -24,9 +24,13 @@ class ResizeConfig(kw.Config):
 
     width: int = kw.Value(512, short_alias=['w'], help='output width')
     height: int = kw.Value(512, short_alias=['H'], help='output height')
-    method: str = kw.Value('bilinear', choices=['nearest', 'bilinear', 'lanczos'])
+    method: str = kw.Value(
+        'bilinear', choices=['nearest', 'bilinear', 'lanczos']
+    )
     output: str = kw.Value('resized.png', alias=['dst'], help='output file')
-    tags: list = kw.Value(default_factory=list, nargs='*', help='free-form labels')
+    tags: list = kw.Value(
+        default_factory=list, nargs='*', help='free-form labels'
+    )
     dry_run = kw.Flag(False, help='print work without doing it')
 
     def __post_init__(self):
@@ -57,7 +61,7 @@ def main(argv=None):
     config = ResizeConfig.cli(argv=argv)
     print_resolved_config(config)
     print_rule('Why this is interesting')
-    rich_print('--dst populated output because output declared alias=[\'dst\'].')
+    rich_print("--dst populated output because output declared alias=['dst'].")
     rich_print('--dry-run became True because dry_run is a kw.Flag.')
     rich_print('--tags demo small stayed a list instead of a single string.')
     rich_print(

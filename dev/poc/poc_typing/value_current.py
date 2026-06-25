@@ -11,6 +11,7 @@ With ``default: Any`` the type checker has nothing to validate the default
 against, so mistakes like ``x: int = Value(None)`` are silently accepted.
 See ``check_current_gap.py``.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable, dataclass_transform

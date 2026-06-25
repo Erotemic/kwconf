@@ -7,8 +7,9 @@ from typing import IO, Any, Iterator, Union
 
 
 @contextmanager
-def open_text_input(path_or_file: Union[str, os.PathLike, IO[Any]],
-                    mode: str = 'r') -> Iterator[IO[Any]]:
+def open_text_input(
+    path_or_file: Union[str, os.PathLike, IO[Any]], mode: str = 'r'
+) -> Iterator[IO[Any]]:
     """
     Yield a readable file object from either a path or an already-open file.
 

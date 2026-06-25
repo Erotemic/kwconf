@@ -262,6 +262,15 @@ class ArchiveSource(kwconf.Config):
         return config
 ```
 
+### Modal command names
+
+`__command__` works the same as in scriptconfig (it sets the command name and
+takes precedence over the attribute a command is bound to). `kwconf` adds a
+convenience: when `__command__` is absent the attribute name is used, so you only
+need `__command__` to override that -- most commonly to give a nested class a
+clean command name. Full precedence (high to low): `ModalValue(command=...)` >
+`__command__` > attribute name > class name.
+
 ### Lifecycle aliases
 
 Rename old non-dunder helpers:

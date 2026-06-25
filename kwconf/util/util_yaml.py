@@ -5,6 +5,7 @@ YAML file/string load, ``dump``/``dumps`` in yaml mode (the default), and the
 ``'yaml'`` parser all require PyYAML. It is an optional dependency, so import it
 through here to get a consistent, actionable error when it is missing.
 """
+
 from __future__ import annotations
 
 from typing import Any

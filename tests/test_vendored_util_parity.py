@@ -4,6 +4,7 @@ The small helpers in kwconf.util were vendored from ubelt when ubelt became an
 optional dependency. These tests assert they stay byte-compatible with ubelt
 (which remains a test dependency), so future edits cannot silently drift.
 """
+
 import pytest
 
 from kwconf.util.util_text import codeblock, paragraph, indent
@@ -14,12 +15,12 @@ ub = pytest.importorskip('ubelt')
 
 
 TEXT_CASES = [
-    "\n    a\n        b\n    c\n    ",
-    "x",
-    "\nfoo\nbar\n",
-    "    only indented\n    lines\n",
-    "\n\n  a\n\n  b\n\n",
-    "single line no newline",
+    '\n    a\n        b\n    c\n    ',
+    'x',
+    '\nfoo\nbar\n',
+    '    only indented\n    lines\n',
+    '\n\n  a\n\n  b\n\n',
+    'single line no newline',
 ]
 
 
@@ -54,9 +55,11 @@ def test_noparam_behaves_like_ubelt():
     assert bool(NoParam) is False
     # Singleton + copy/deepcopy stability (identity must be preserved).
     import copy
+
     assert NoParam is copy.copy(NoParam)
     assert NoParam is copy.deepcopy(NoParam)
     from kwconf.util.util_misc import _NoParamType
+
     assert _NoParamType() is NoParam
 
 

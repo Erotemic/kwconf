@@ -6,6 +6,7 @@ This records the canonical (possibly dotted) destinations that were explicitly
 supplied on the command line for the most recent parse. It is intentionally
 argv-scoped: it is *not* a general "was this key set by any source" flag.
 """
+
 import copy
 import kwconf
 
@@ -64,7 +65,9 @@ def test_subconfig_class_swap_lands_on_final_instance():
 
     class App(kwconf.Config):
         __default__ = {
-            'engine': kwconf.SubConfig(Fast, choices={'fast': Fast, 'slow': Slow})
+            'engine': kwconf.SubConfig(
+                Fast, choices={'fast': Fast, 'slow': Slow}
+            )
         }
 
     cfg = App.cli(argv=['--engine.__class__=slow', '--engine.speed=7'])
@@ -74,7 +77,9 @@ def test_subconfig_class_swap_lands_on_final_instance():
     child = cfg._data['engine']
     assert cfg['engine'] is child
     assert child._explicit_argv_keys == frozenset({'__class__', 'speed'})
-    assert cfg._explicit_argv_keys == frozenset({'engine.__class__', 'engine.speed'})
+    assert cfg._explicit_argv_keys == frozenset(
+        {'engine.__class__', 'engine.speed'}
+    )
 
 
 def test_deepcopy_carries_provenance():

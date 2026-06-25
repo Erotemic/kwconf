@@ -10,16 +10,20 @@ def mark_requires_yaml():
         import yaml  # NOQA
     except ImportError:
         import pytest
+
         pytest.skip('requires yaml')
 
 
 def test_json_dump():
     import json
+
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
+
     class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
+
     config = MyConfig(option1=2, option2='foobar')
     fpath = dpath / 'test_dump_config.json'
     with open(fpath, 'w') as file:
@@ -31,10 +35,12 @@ def test_json_dump():
 def test_yaml_dump():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
+
     class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
+
     config = MyConfig(option1=2, option2='foobar')
     fpath = dpath / 'test_dump_config.yaml'
     with open(fpath, 'w') as file:
@@ -46,10 +52,12 @@ def test_yaml_dump():
 def test_yaml_load():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
+
     class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
+
     config = MyConfig(option1=3, option2='baz')
     fpath = dpath / 'test_load_config.yaml'
     with open(fpath, 'w') as file:
@@ -68,10 +76,12 @@ def test_yaml_load():
 
 def test_json_load():
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
+
     class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
+
     config = MyConfig(option1=3, option2='baz')
     fpath = dpath / 'test_load_config.json'
     with open(fpath, 'w') as file:
@@ -93,9 +103,11 @@ def test_load_from_open_file_object():
     # close a caller-supplied stream (open_text_input only closes paths it
     # opened itself). This branch was previously untested.
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
+
     class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
+
     config = MyConfig(option1=3, option2='baz')
     fpath = dpath / 'test_load_fileobj.json'
     with open(fpath, 'w') as file:
@@ -112,6 +124,7 @@ def test_load_from_open_file_object():
 def test_open_text_input_rejects_bad_input():
     import pytest
     from kwconf.util.util_fileio import open_text_input
+
     with pytest.raises(ValueError):
         with open_text_input('/this/path/does/not/exist.yaml', 'r'):
             pass
@@ -123,10 +136,12 @@ def test_open_text_input_rejects_bad_input():
 def test_config_dumps_load_cli():
     mark_requires_yaml()
     dpath = ub.Path.appdir('kwconf', 'tests', 'test_file_config').ensuredir()
+
     class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
+
     fpath = dpath / 'test_dump_load_config.json'
     fpath.delete()
     assert not fpath.exists()
@@ -134,12 +149,14 @@ def test_config_dumps_load_cli():
     try:
         MyConfig.cli(
             argv=['--option1=dumped', '--dump', os.fspath(fpath)],
-            special_options=True)
+            special_options=True,
+        )
     except SystemExit:
         assert fpath.exists()
 
-    config = MyConfig.cli(argv=['--config', os.fspath(fpath)],
-                          special_options=True)
+    config = MyConfig.cli(
+        argv=['--config', os.fspath(fpath)], special_options=True
+    )
     assert config['option1'] == 'dumped'
 
 
@@ -147,13 +164,16 @@ def test_config_load_from_json_text():
     """
     Check that the config can load from raw text on the command line
     """
+
     class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
+
     config = MyConfig(option1=3, option2='baz')
-    config2 = MyConfig.cli(argv=['--config', config.dumps(mode='json')],
-                           special_options=True)
+    config2 = MyConfig.cli(
+        argv=['--config', config.dumps(mode='json')], special_options=True
+    )
     assert dict(config2) == dict(config)
 
 
@@ -162,11 +182,14 @@ def test_config_load_from_yaml_text():
     Check that the config can load from raw text on the command line
     """
     mark_requires_yaml()
+
     class MyConfig(kwconf.Config):
         option1: typing.Any = 'a'
         option2: str = 'b'
         option3: str = 'c'
+
     config = MyConfig(option1=3, option2='baz')
-    config2 = MyConfig.cli(argv=['--config', config.dumps(mode='yaml')],
-                           special_options=True)
+    config2 = MyConfig.cli(
+        argv=['--config', config.dumps(mode='yaml')], special_options=True
+    )
     assert dict(config2) == dict(config)

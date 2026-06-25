@@ -34,6 +34,7 @@ def test_cli_config():
     class ConfigCls(kwconf.Config):
         x: int = 0
         y: str = '3'
+
     _test_common_cli_classmethod(ConfigCls)
 
 
@@ -49,6 +50,7 @@ def _test_common_cli_classmethod(ConfigCls):
     assert config['x'] == 0
 
     import pytest
+
     with pytest.raises(SystemExit):
         config = ConfigCls.cli(argv=['--z', '3'], strict=True)
 

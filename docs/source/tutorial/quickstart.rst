@@ -111,15 +111,13 @@ Subcommands
 .. code-block:: python
 
     class Foo(kwconf.Config):
-        __command__ = 'foo'
-
         @classmethod
         def main(cls, argv=None, **kwargs):
             print(cls.cli(argv=argv, data=kwargs))
 
 
     class App(kwconf.ModalCLI):
-        foo = Foo
+        foo = Foo  # the attribute name is the command name
 
 
     App.main(argv=['foo'])

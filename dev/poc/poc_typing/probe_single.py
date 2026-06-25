@@ -1,9 +1,10 @@
 """Probe: does positional-default detection work WITHOUT @overload?"""
+
 from __future__ import annotations
 
 from typing import Any, Callable, TypeVar, dataclass_transform
 
-T = TypeVar("T")
+T = TypeVar('T')
 
 
 # Single (non-overloaded) field specifier. `default` is the first positional.
@@ -22,10 +23,10 @@ class Conf(metaclass=Meta):
 
 
 class C(Conf):
-    p: int = V(5)              # positional default
-    q: int = V(default=5)      # keyword default
+    p: int = V(5)  # positional default
+    q: int = V(default=5)  # keyword default
     r: int = V(5, coerce=str)  # positional default + extra kwarg
 
 
 c = C()  # legal iff p, q, r are all treated as optional
-bad = C(p="nope")  # E: str not assignable to int
+bad = C(p='nope')  # E: str not assignable to int

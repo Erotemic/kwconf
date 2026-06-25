@@ -4,6 +4,7 @@ The default passed to ``kwconf.Value`` is a Python-boundary value and is stored
 verbatim (WYSIWYG). It is NOT run through the coerce/auto parser. Coercion only
 happens at the text boundary (argv/env/``Config.coerce``). See design.md §4.
 """
+
 import kwconf
 
 

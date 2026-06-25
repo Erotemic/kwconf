@@ -8,16 +8,22 @@ class TemplateCLI(kwconf.Config):
     """
     Generate boilerplate for a template CLI script.
     """
+
     __command__ = 'template'
 
-    type = kwconf.Value('single', help='The type of CLI to make', choices=['single', 'modal'], position=1)
+    type = kwconf.Value(
+        'single',
+        help='The type of CLI to make',
+        choices=['single', 'modal'],
+        position=1,
+    )
 
     name = kwconf.Value('Template', help='The name of the config', position=2)
 
     verbose = kwconf.Value(False)
 
     @classmethod
-    def main(cls, argv : int | bool = 1, **kwargs):
+    def main(cls, argv: int | bool = 1, **kwargs):
         """
         Example:
             >>> # xdoctest: +SKIP
@@ -35,6 +41,7 @@ class TemplateCLI(kwconf.Config):
             text = _build_modal_template(config)
         try:
             import ubelt as ub
+
             text = ub.highlight_code(text, 'python')
         except ImportError:
             pass  # syntax highlighting is an optional (ubelt) nicety
@@ -78,7 +85,8 @@ def _build_single_template(config):
 
         if __name__ == '__main__':
             __cli__.main()
-        ''')
+        '''
+    )
     return text
 
 
@@ -110,8 +118,10 @@ def _build_modal_template(config):
         if __name__ == '__main__':
             main()
 
-        ''')
+        '''
+    )
     return text
+
 
 __cli__ = TemplateCLI
 

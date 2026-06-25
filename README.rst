@@ -201,6 +201,67 @@ core contract, parser model, nested configs, modal CLIs, and migration notes.
 The ``examples/`` directory contains runnable scripts for the main patterns.
 
 
+Related Work
+------------
+
+``kwconf`` sits at the intersection of argument parsing, settings management,
+and typed data models. Like its predecessor `scriptconfig
+<https://pypi.org/project/scriptconfig/>`_, it builds on the standard library
+`argparse <https://docs.python.org/3/library/argparse.html>`_, but adds flags
+that double as key/value pairs, defaults drawn from kwargs / env / files, and
+the ability to call a CLI as a plain Python function.
+
+Closely related / complementary
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* `jsonargparse <https://jsonargparse.readthedocs.io/>`_ -- argparse plus config
+  files and class / dataclass / pydantic signatures (and the engine behind
+  Lightning's CLI). Its nested-configuration support is complementary to
+  ``kwconf`` and a natural integration target.
+* `configargparse <https://pypi.org/project/ConfigArgParse/>`_ -- augments
+  argparse with config-file and env-var defaults, but is more limited and does
+  not handle the "call the CLI as a Python function" use case well.
+
+Typed classes to CLIs
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Like ``kwconf``, these derive a parser from a class of typed fields (most via
+:pep:`681` ``dataclass_transform``):
+
+* `pydantic <https://pypi.org/project/pydantic/>`_ /
+  `pydantic-settings <https://pypi.org/project/pydantic-settings/>`_ --
+  validated data models and layered settings (env, dotenv, secrets).
+* `pydantic-cli <https://pypi.org/project/pydantic-cli/>`_ -- an argparse CLI
+  built from a pydantic model.
+* `simple-parsing <https://pypi.org/project/simple-parsing/>`_ -- adds
+  dataclasses to ``argparse``.
+* `tyro <https://github.com/brentyi/tyro>`_ -- typed CLIs from dataclasses,
+  functions, and unions.
+* `typer <https://typer.tiangolo.com/>`_ -- ``click``-based CLIs from type hints.
+
+CLI frameworks
+~~~~~~~~~~~~~~~
+
+* `click <https://pypi.org/project/click/>`_ -- composable decorator-based CLIs.
+* `fire <https://pypi.org/project/fire/>`_ -- generates a CLI from arbitrary
+  Python objects.
+
+Hierarchical configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* `Hydra <https://hydra.cc/>`_ / `OmegaConf
+  <https://omegaconf.readthedocs.io/>`_ -- composable, hierarchical YAML
+  configuration with command-line overrides.
+
+Standard-library building blocks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* `dataclasses <https://docs.python.org/3/library/dataclasses.html>`_ and
+  `attrs <https://pypi.org/project/attrs/>`_ -- the field-with-default class
+  pattern (formalized by :pep:`681`) that ``kwconf``'s static typing surface
+  mirrors.
+
+
 .. |Pypi| image:: https://img.shields.io/pypi/v/kwconf.svg
     :target: https://pypi.python.org/pypi/kwconf
 

@@ -40,12 +40,15 @@ def test_class_inst_default_attr():
     config_instances = [config1, config2, config3]
 
     import ubelt as ub
+
     for config in config_instances:
-        defaults = ub.udict({
-            'self._default': config._default,
-            'self.__default__': config.__default__,
-            'cls.__default__': config.__class__.__default__,
-        })
+        defaults = ub.udict(
+            {
+                'self._default': config._default,
+                'self.__default__': config.__default__,
+                'cls.__default__': config.__class__.__default__,
+            }
+        )
         default_ids = defaults.map_values(id)
         print('default_ids = {}'.format(ub.urepr(default_ids, nl=1, align=':')))
         assert default_ids['self._default'] != default_ids['self.__default__']
@@ -67,12 +70,14 @@ def test_class_inst_post_init_attr():
 
     class Config1(kwconf.Config):
         __default__ = common_default
+
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
 
     class Config2(kwconf.Config):
         __default__ = common_default
+
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
