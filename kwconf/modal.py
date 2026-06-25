@@ -527,13 +527,13 @@ class ModalCLI(metaclass=MetaModalCLI):
         else:
             return _wrapper(cli_cls)
 
-    def _parserkw(self):
+    def _parserkw(self) -> Dict[str, Any]:
         """
         Generate the kwargs for making a new argparse.ArgumentParser
         """
         from kwconf.argparse_ext import RawDescriptionDefaultsHelpFormatter
 
-        parserkw = dict(
+        parserkw: Dict[str, Any] = dict(
             description=self.description,
             formatter_class=RawDescriptionDefaultsHelpFormatter,
             epilog=getattr(self, '__epilog__', None),
@@ -565,7 +565,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         """
 
         if parser is None:
-            parserkw = self._parserkw()
+            parserkw: Dict[str, Any] = self._parserkw()
             # import argparse as argparse_mod
             # parser = argparse_mod.ArgumentParser(**parserkw)
             from kwconf import argparse_ext

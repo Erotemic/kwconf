@@ -5,7 +5,7 @@ Argparse Extensions
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Sequence, Tuple
+from typing import Any, Iterable, List, Sequence, Tuple
 import argparse
 import os
 import sys
@@ -601,9 +601,9 @@ class CompatArgumentParser(argparse.ArgumentParser):
         self.exit_on_error = kwargs.pop('exit_on_error', True)
         super().__init__(*args, **kwargs)
 
-    def parse_known_args(
-        self,  # type: ignore[override]  # ty: ignore[invalid-method-override]
-        args: Sequence[str] | None = None,
+    def parse_known_args(  # type: ignore[override]
+        self,
+        args: Iterable[str] | None = None,
         namespace: argparse.Namespace | None = None,
     ) -> Tuple[argparse.Namespace, List[str]]:
         """

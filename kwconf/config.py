@@ -2847,7 +2847,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # Let the parser honor this setting on the input side too, so
         # __fuzzy_hyphens__ = False actually stops "_"/"-" being interchangeable
         # (not just stops advertising the hyphen variant in --help).
-        parser._kwconf_fuzzy_hyphens = bool(FUZZY_HYPHENS)  # type: ignore[attr-defined]
+        # Use setattr: ``parser`` is typed as a stdlib ArgumentParser, which
+        # does not declare this kwconf-private attribute (read back via getattr
+        # in argparse_ext). setattr keeps both mypy and ty quiet.
+        setattr(parser, '_kwconf_fuzzy_hyphens', bool(FUZZY_HYPHENS))
 
         # Need to clean this up, metadata probably isn't necessary.
         for key, value in self._data.items():
