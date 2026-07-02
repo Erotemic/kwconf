@@ -185,3 +185,50 @@ def test_value_default_factory():
     cfg1.tags.append('alpha')
     assert cfg1.tags == ['alpha']
     assert cfg2.tags == []
+
+
+def test_dataconf_preserves_hooks_and_helpers():
+    """@dataconf on a plain class must keep dunder hooks (__post_init__,
+    __validate__) and underscore helpers, not silently drop them."""
+    hits = []
+
+    @kwconf.dataconf
+    class C:
+        x: int = 1
+
+        def __post_init__(self):
+            hits.append(self['x'])
+
+        def _helper(self):
+            return 'helped'
+
+    c = C(x=5)
+    assert hits == [5]
+    assert c._helper() == 'helped'
+
+
+def test_dataconf_inherits_fields_from_plain_base():
+    """@dataconf must pick up fields inherited from plain (non-Config) base
+    classes via the MRO, not just the decorated class's own namespace."""
+
+    class Base:
+        base_field: int = 10
+
+    @kwconf.dataconf
+    class Child(Base):
+        child_field: int = 20
+
+    cfg = Child()
+    assert set(cfg.keys()) == {'base_field', 'child_field'}
+    assert cfg['base_field'] == 10
+    assert cfg['child_field'] == 20
+
+    # Subclass field overrides the base default.
+    class Base2:
+        val: int = 1
+
+    @kwconf.dataconf
+    class Child2(Base2):
+        val: int = 2
+
+    assert Child2()['val'] == 2

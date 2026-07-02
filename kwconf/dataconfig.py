@@ -110,28 +110,45 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
         # Already a Config subclass; the metaclass handled everything.
         return cls
 
+    # Python-internal attributes that must not be copied verbatim: some are
+    # set explicitly below, others belong to the original class object.
+    _INTERNAL = {
+        '__dict__',
+        '__weakref__',
+        '__name__',
+        '__qualname__',
+        '__module__',
+        '__doc__',
+        '__annotations__',
+        '__hash__',
+        '__slots__',
+        '__orig_bases__',
+    }
+
     namespace: Dict[str, Any] = {
         '__doc__': getattr(cls, '__doc__', None),
         '__qualname__': cls.__qualname__,
         '__module__': cls.__module__,
         '__description__': getattr(cls, '__description__', None),
         '__epilog__': getattr(cls, '__epilog__', None),
-        '__annotations__': dict(getattr(cls, '__annotations__', {}) or {}),
     }
-    # Carry over the class-level fields. The metaclass turns them into
-    # ``__default__`` entries during class construction.
-    for k, v in vars(cls).items():
-        if k.startswith('_'):
+
+    # Walk the MRO base-first so a subclass overrides its bases, picking up
+    # fields, hooks (``__post_init__``, ``__validate__``, ...), and helpers
+    # inherited from plain (non-Config) base classes too. Both the field
+    # attributes and their annotations are merged.
+    annotations: Dict[str, Any] = {}
+    for klass in reversed(inspect.getmro(cls)):
+        if klass is object:
             continue
-        if isinstance(v, (classmethod, staticmethod)):
+        annotations.update(getattr(klass, '__annotations__', {}) or {})
+        for k, v in vars(klass).items():
+            if k in _INTERNAL:
+                continue
+            # Preserve everything else, including underscore-prefixed hooks
+            # and helpers; the metaclass reads the dunders it cares about.
             namespace[k] = v
-            continue
-        if callable(v) and not (inspect.isclass(v) and issubclass(v, Config)):
-            namespace[k] = v
-            continue
-        namespace[k] = v
-    if '__default__' in vars(cls):
-        namespace['__default__'] = vars(cls)['__default__']
+    namespace['__annotations__'] = annotations
 
     return MetaConfig(cls.__name__, (Config,), namespace)
 

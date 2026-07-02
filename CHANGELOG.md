@@ -23,6 +23,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `@dataconf` on a plain class now preserves underscore-prefixed hooks and
+  helpers (`__post_init__`, `__validate__`, `_helper`, ...) and picks up
+  fields inherited from plain base classes by walking the MRO. Previously it
+  skipped every underscore attribute and only read the decorated class's own
+  namespace, silently losing both.
 * `position=` now controls positional binding order. The position-sorted key
   order was computed but the parser build loop still iterated declaration
   order, so `second = Value(position=2); first = Value(position=1)` bound the
