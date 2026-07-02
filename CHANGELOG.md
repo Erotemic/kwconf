@@ -23,6 +23,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `Optional` container annotations now coerce their elements. A field typed
+  `list[int] | None` (or `Optional[list[int]]`) with `nargs`, or parsed via
+  `parser='csv'`, kept its tokens as strings; `element_annotation` now
+  unwraps the `Optional`/`Union` wrapper first. Union coercion also handles
+  `Literal` members (`Literal['a'] | Literal['b']` parses like `str`).
 * A `Literal[...] | str` annotation no longer restricts the CLI to the
   literal values (the `str` member admits any string, so no `choices` are
   applied). A union of several `Literal`s now combines all members' values

@@ -237,3 +237,35 @@ class TestAutoIsDefaultParser:
         v = kwconf.Value(None, type=int)
         v.update('5')
         assert v.value == 5
+
+
+class TestOptionalContainerCoercion:
+    def test_element_annotation_unwraps_optional(self):
+        import typing
+
+        from kwconf.coerce import element_annotation
+
+        assert element_annotation(list[int] | None) is int
+        assert element_annotation(typing.Optional[list[int]]) is int
+        assert element_annotation(typing.Optional[list[str]]) is str
+        # Not a single-container union -> unchanged.
+        assert element_annotation(int | str) == int | str
+
+    def test_csv_parser_honors_optional_container(self):
+        from kwconf.coerce import _parse_csv
+
+        assert _parse_csv('1,2,3', list[int] | None) == [1, 2, 3]
+        assert _parse_csv('1,2,3', list[str] | None) == ['1', '2', '3']
+
+    def test_nargs_field_optional_container_coerces_elements(self):
+        import warnings
+
+        import kwconf
+
+        class C(kwconf.Config):
+            items: 'list[int] | None' = kwconf.Value(None, nargs='*')
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            cfg = C.cli(argv=['--items', '1', '2', '3'])
+        assert cfg['items'] == [1, 2, 3]

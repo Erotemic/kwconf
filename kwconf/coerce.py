@@ -123,8 +123,15 @@ def _candidate_types(annotation: Any) -> list[type]:
         member_types = {type(arg) for arg in typing.get_args(annotation)}
         return [t for t in _PRECEDENCE if t in member_types]
     if origin in {typing.Union, types.UnionType}:
-        members = set(typing.get_args(annotation))
-        ordered = [t for t in _PRECEDENCE if t in members]
+        member_types = set()
+        for arg in typing.get_args(annotation):
+            if typing.get_origin(arg) is typing.Literal:
+                # Literal members contribute their value types, so e.g.
+                # Literal['a'] | Literal['b'] parses like str.
+                member_types.update(type(v) for v in typing.get_args(arg))
+            else:
+                member_types.add(arg)
+        ordered = [t for t in _PRECEDENCE if t in member_types]
         if not ordered:
             # e.g. ``Path | None`` with no scalar members we understand
             raise CannotCoerce(annotation)
@@ -149,6 +156,9 @@ def element_annotation(annotation: Any) -> Any:
     converter to each token individually, so we coerce each token as the
     container's element type.
 
+    ``Optional``/``Union`` wrappers around a container are unwrapped first, so
+    ``list[int] | None`` behaves like ``list[int]``.
+
     Examples:
         >>> from kwconf.coerce import element_annotation
         >>> element_annotation(list[int])
@@ -159,7 +169,10 @@ def element_annotation(annotation: Any) -> Any:
         <class 'int'>
         >>> element_annotation(list) is typing.Any   # bare container -> Any element
         True
+        >>> element_annotation(list[int] | None)     # Optional container unwrapped
+        <class 'int'>
     """
+    annotation = _unwrap_optional_container(annotation)
     origin = typing.get_origin(annotation)
     if origin in {list, set, frozenset}:
         args = typing.get_args(annotation)
@@ -171,6 +184,33 @@ def element_annotation(annotation: Any) -> Any:
         return Any  # heterogeneous tuple -> per-token Any
     if annotation in {list, set, frozenset, tuple}:
         return Any  # bare (unparameterized) container -> unknown element type
+    return annotation
+
+
+def _unwrap_optional_container(annotation: Any) -> Any:
+    """
+    If ``annotation`` is a union whose only non-``None`` member is a container
+    (or a bare container type), return that container; otherwise return the
+    annotation unchanged. Keeps ``element_annotation`` and container detection
+    working through ``Optional[list[T]]`` / ``list[T] | None``.
+    """
+    origin = typing.get_origin(annotation)
+    if origin not in {typing.Union, types.UnionType}:
+        return annotation
+    non_none = [
+        arg for arg in typing.get_args(annotation) if arg is not NoneType
+    ]
+    if len(non_none) != 1:
+        return annotation
+    (inner,) = non_none
+    inner_origin = typing.get_origin(inner)
+    if inner_origin in {list, set, frozenset, tuple} or inner in {
+        list,
+        set,
+        frozenset,
+        tuple,
+    }:
+        return inner
     return annotation
 
 
