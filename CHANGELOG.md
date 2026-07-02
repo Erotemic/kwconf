@@ -19,6 +19,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `Config.__json__` now converts a nested object with a `__json__` method in
+  place. Previously the first such object made the method return early,
+  discarding every other key in the config.
 * `ModalCLI.register` used as a decorator (`@modal.register` or
   `@ModalCLI.register(command=...)`) now returns the decorated class instead of
   rebinding the decorated name to `None`.

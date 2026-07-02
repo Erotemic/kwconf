@@ -911,7 +911,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 walker[path] = dict(sorted(item.items()))
             else:
                 if hasattr(item, '__json__'):
-                    return item.__json__()
+                    walker[path] = item.__json__()
                 else:
                     raise TypeError(
                         'Unknown JSON serialization for type {!r}'.format(
