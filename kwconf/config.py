@@ -1624,7 +1624,18 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             # "default" constructor argument is used. We should refactor so
             # _data and _default only store the raw current values,
             # post-casting.
-            default_value = self.__default__[key].value
+            #
+            # Read the PER-INSTANCE default, never the class template:
+            # class-template .value reads materialize (and cache) any
+            # default_factory on the shared template, and storing that object
+            # into _data would alias every instance -- and the class itself --
+            # to one mutable default.
+            template = self._default.get(key, None)
+            if template is None:
+                template = self.__default__[key].clone_default()
+            default_value = (
+                template.value if isinstance(template, Value) else template
+            )
             # BOUNDARY (design.md §4): for keys not supplied on argv, use the
             # kwconf default verbatim rather than ``ns[key]``. argparse coerces
             # *string* defaults through the action's ``type=`` (e.g. a default

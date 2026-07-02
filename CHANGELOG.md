@@ -23,6 +23,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `Config.cli()` / `load(argv=...)` no longer store the class template's
+  default object into instances. Mutable defaults (including
+  `default_factory` output) were shared between every CLI-constructed
+  instance and the class itself, so mutating one instance's list leaked into
+  all others and permanently corrupted the class default.
 * Annotation processing at class creation no longer mutates shared `Value`
   templates in place. A subclass overriding only a field's annotation
   (`class Sub(Base): x: str`) used to rewrite the base class's template,

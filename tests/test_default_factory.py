@@ -73,3 +73,33 @@ def test_factory_field_round_trips_through_cli():
 
     assert C.cli(argv=[])['tags'] == []
     assert C.cli(argv=['--tags', 'a', 'b'])['tags'] == ['a', 'b']
+
+
+def test_cli_instances_do_not_share_factory_default():
+    """
+    The argv-defaults merge must store per-instance defaults, not the class
+    template's (cached) factory output.
+    """
+    import kwconf
+
+    class C(kwconf.Config):
+        tags: list = kwconf.Value(default_factory=list)
+
+    c1 = C.cli(argv=[])
+    c2 = C.cli(argv=[])
+    assert c1['tags'] is not c2['tags']
+    c1['tags'].append('x')
+    assert c2['tags'] == []
+    assert C.cli(argv=[])['tags'] == []
+
+
+def test_cli_instance_mutation_does_not_corrupt_class_default():
+    import kwconf
+
+    class D(kwconf.Config):
+        items = kwconf.Value(['a'])
+
+    d1 = D.cli(argv=[])
+    d1['items'].append('MUT')
+    assert D.cli(argv=[])['items'] == ['a']
+    assert D.__default__['items'].value == ['a']
