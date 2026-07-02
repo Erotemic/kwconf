@@ -23,6 +23,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `scan_config_path` no longer greedily consumes the following token as the
+  `--config` value when that token is another option (`--config --verbose`
+  now raises "requires a value"), and it stops scanning at the `--`
+  end-of-options separator.
 * A mistyped config path (`--config typo.yaml`, `data='no_such.yaml'`) now
   raises a clear `FileNotFoundError` instead of being silently parsed as
   inline YAML content and failing later with an obscure error. A config file

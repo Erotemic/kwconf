@@ -465,3 +465,21 @@ def test_empty_dict_leaf_update_applies():
     cfg['hyperparams'] = {'lr': 0.1}
     cfg.load({'hyperparams': {}}, argv=False)
     assert cfg['hyperparams'] == {}
+
+
+def test_scan_config_path_does_not_swallow_next_option():
+    from kwconf.subconfig import scan_config_path
+    import pytest
+
+    assert scan_config_path(['--config', 'demo.yaml']) == 'demo.yaml'
+    assert scan_config_path(['--config=demo.yaml']) == 'demo.yaml'
+    assert scan_config_path(['--verbose']) is None
+
+    # A following option means --config had no value.
+    with pytest.raises(ValueError):
+        scan_config_path(['--config', '--verbose'])
+    with pytest.raises(ValueError):
+        scan_config_path(['--config'])
+
+    # Tokens after -- are positional, not a --config value.
+    assert scan_config_path(['--', '--config', 'x.yaml']) is None

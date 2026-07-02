@@ -337,10 +337,16 @@ def scan_config_path(argv: list[str]) -> str | None:
     """
     config_fpath: str | None = None
     for i, tok in enumerate(argv):
+        if tok == '--':
+            # Everything after the end-of-options separator is positional.
+            break
         if tok == '--config':
-            if i + 1 >= len(argv):
+            nxt = argv[i + 1] if i + 1 < len(argv) else None
+            if nxt is None or nxt.startswith('-'):
+                # A following option (or nothing) means --config was given
+                # no value; do not greedily swallow the next flag.
                 raise ValueError('--config requires a value')
-            config_fpath = argv[i + 1]
+            config_fpath = nxt
         elif tok.startswith('--config='):
             config_fpath = tok.split('=', 1)[1]
     return config_fpath
