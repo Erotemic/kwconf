@@ -26,7 +26,9 @@ def looks_like_config_path(text: str) -> bool:
     lowered = stripped.lower()
     if lowered.endswith(_CONFIG_FILE_SUFFIXES):
         return True
-    return os.sep in stripped or (os.altsep is not None and os.altsep in stripped)
+    return os.sep in stripped or (
+        os.altsep is not None and os.altsep in stripped
+    )
 
 
 @contextmanager

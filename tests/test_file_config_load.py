@@ -1,8 +1,10 @@
 # mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
-import kwconf
-import typing
 import os
+import typing
+
 import ubelt as ub
+
+import kwconf
 
 
 def mark_requires_yaml():
@@ -123,6 +125,7 @@ def test_load_from_open_file_object():
 
 def test_open_text_input_rejects_bad_input():
     import pytest
+
     from kwconf.util.util_fileio import open_text_input
 
     with pytest.raises(ValueError):

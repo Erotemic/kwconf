@@ -69,16 +69,21 @@ Note:
 
 from __future__ import annotations
 
+import argparse as argparse_mod
 import copy
 import inspect
-import os
-import sys
-import pprint
-import warnings
 import itertools as it
-import argparse as argparse_mod
+import os
+import pprint
+import sys
+import warnings
+from abc import ABCMeta as _ABCMeta
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from collections.abc import Mapping as _ABCMapping
 from typing import (
     IO,
+    Any,
     Dict,
     Iterable,
     Iterator,
@@ -89,26 +94,30 @@ from typing import (
     Union,
     cast,
 )
-from kwconf import _ubelt_repr_extension
-from collections.abc import Mapping as _ABCMapping
-from collections import Counter
-from kwconf.util.util_fileio import open_text_input
-from kwconf.util.util_yaml import import_yaml
-from kwconf.util.util_text import codeblock, paragraph, indent
-from kwconf.util.util_misc import iterable, import_ubelt
-from kwconf.util.util_repr import NiceRepr
-from kwconf.value import _Value as Value, _Flag as Flag
-from kwconf import diagnostics
-from collections.abc import Mapping, Sequence
-from typing import Any
-from abc import ABCMeta as _ABCMeta
+
+from kwconf import _ubelt_repr_extension, diagnostics
 from kwconf.annotations import (
     choices_from_annotation as _choices_from_annotation,
+)
+from kwconf.annotations import (
     format_annotation as _format_annotation,
+)
+from kwconf.annotations import (
     get_class_namespace_annotations as _get_class_namespace_annotations,
+)
+from kwconf.annotations import (
     runtime_type_from_annotation as _runtime_type_from_annotation,
+)
+from kwconf.annotations import (
     value_matches_annotation as _value_matches_annotation,
 )
+from kwconf.util.util_fileio import open_text_input
+from kwconf.util.util_misc import import_ubelt, iterable
+from kwconf.util.util_repr import NiceRepr
+from kwconf.util.util_text import codeblock, indent, paragraph
+from kwconf.util.util_yaml import import_yaml
+from kwconf.value import _Value as Value
+
 # from kwconf.util.util_class import class_or_instancemethod
 
 
@@ -270,9 +279,7 @@ def _coerce_data_to_dict(
             if looks_like_config_path(data):
                 # A mistyped path (e.g. 'no_such.yaml') should not be silently
                 # parsed as inline content.
-                raise FileNotFoundError(
-                    f'config file does not exist: {data!r}'
-                )
+                raise FileNotFoundError(f'config file does not exist: {data!r}')
             import json
 
             try:
@@ -1310,9 +1317,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         localns = _subcfg_mod.resolve_localns(localns, stacklevel)  # type: ignore
         if _reset:
-            self._data = {
-                key: value.value for key, value in _default.items()
-            }
+            self._data = {key: value.value for key, value in _default.items()}
         pending_updates = None
         if getattr(self, '_has_subconfigs', False):
             _subcfg_mod.ensure_subconfigs_instantiated(

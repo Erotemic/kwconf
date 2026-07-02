@@ -4,11 +4,11 @@ Argparse Extensions
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Iterable, List, Sequence, Tuple
 import argparse
 import os
 import sys
+from dataclasses import dataclass
+from typing import Any, Iterable, List, Sequence, Tuple
 
 _FALSY: set[str] = {'0', 'false', 'f', 'no', ''}
 KWCONF_NORICH: bool = os.environ.get('KWCONF_NORICH', '').lower() not in _FALSY
@@ -453,11 +453,7 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
             and option_string[0] == '-'
             and option_string[1] != '-'
         )
-        if (
-            values is not None
-            and isinstance(values, str)
-            and is_short_option
-        ):
+        if values is not None and isinstance(values, str) and is_short_option:
             short: str = option_string[1]
             rep: int = 0
             rest: str = values
@@ -648,10 +644,14 @@ class CompatArgumentParser(argparse.ArgumentParser):
         flag does not exist.
         """
         # This is the version from Python 3.10
-        import sys
-        from argparse import Namespace, SUPPRESS, ArgumentError
-        from argparse import _UNRECOGNIZED_ARGS_ATTR
         import os
+        import sys
+        from argparse import (
+            _UNRECOGNIZED_ARGS_ATTR,
+            SUPPRESS,
+            ArgumentError,
+            Namespace,
+        )
 
         if args is None:
             # args default to the system args
@@ -731,7 +731,7 @@ class ExtendedArgumentParser_PRE_GH_114180(CompatArgumentParser):
             return None
 
         # if it doesn't start with a prefix, it was meant to be positional
-        if not arg_string[0] in self.prefix_chars:
+        if arg_string[0] not in self.prefix_chars:
             return None
 
         # if it's just a single character, it was meant to be positional

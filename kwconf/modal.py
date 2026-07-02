@@ -78,14 +78,15 @@ Note:
 
 from __future__ import annotations
 
-import sys
 import pprint
+import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-from kwconf.util.util_text import codeblock, paragraph
-from kwconf.util.util_repr import NiceRepr
-from kwconf.util.util_class import class_or_instancemethod
 from kwconf import diagnostics
+from kwconf.util.util_class import class_or_instancemethod
+from kwconf.util.util_repr import NiceRepr
+from kwconf.util.util_text import codeblock, paragraph
+
 # from kwconf.config import MetaConfig
 
 

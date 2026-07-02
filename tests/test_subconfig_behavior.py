@@ -296,9 +296,6 @@ def test_subconfig_local_scope_resolution_in_function():
 
 def test_value_wrapped_config_upgrades_to_subconfig():
     class InnerConfig(kwconf.Config):
-        __default__ = {'x': 1}
-
-    class InnerConfig(kwconf.Config):
         x = 2
 
     class OuterConfig(kwconf.Config):
@@ -468,8 +465,9 @@ def test_empty_dict_leaf_update_applies():
 
 
 def test_scan_config_path_does_not_swallow_next_option():
-    from kwconf.subconfig import scan_config_path
     import pytest
+
+    from kwconf.subconfig import scan_config_path
 
     assert scan_config_path(['--config', 'demo.yaml']) == 'demo.yaml'
     assert scan_config_path(['--config=demo.yaml']) == 'demo.yaml'

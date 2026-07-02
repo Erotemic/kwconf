@@ -9,8 +9,9 @@ element annotation.
 """
 
 import pytest
+
 import kwconf
-from kwconf.coerce import coerce, register_parser, element_annotation, auto
+from kwconf.coerce import auto, coerce, element_annotation, register_parser
 
 
 def test_csv_respects_element_annotation():

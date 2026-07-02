@@ -25,11 +25,11 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping
-from typing import Any, IO
+from typing import IO, Any
 
+from kwconf.config import Config
 from kwconf.util.util_misc import iterable
 from kwconf.util.util_yaml import import_yaml
-from kwconf.config import Config
 from kwconf.value import _Value as Value
 
 __all__ = [
@@ -368,14 +368,13 @@ def coerce_data_updates(data, mode=None, cfg=None):
         return {}
 
     import os
+
     from kwconf.util.util_fileio import looks_like_config_path, open_text_input
 
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
         if isinstance(data, str) and not os.path.exists(data):
             if looks_like_config_path(data):
-                raise FileNotFoundError(
-                    f'config file does not exist: {data!r}'
-                )
+                raise FileNotFoundError(f'config file does not exist: {data!r}')
             import json
 
             try:

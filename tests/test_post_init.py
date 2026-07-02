@@ -5,8 +5,9 @@ def test_post_init_not_called_twice():
     """
     xdoctest ~/code/kwconf/tests/test_post_init.py test_post_init_not_called_twice
     """
-    import kwconf
     import ubelt as ub
+
+    import kwconf
 
     default = {
         'option1': kwconf.Value((1, 2, 3), type=tuple, alias='a'),
@@ -26,10 +27,6 @@ def test_post_init_not_called_twice():
         if not hasattr(self, '_post_init_count'):
             self._post_init_count = 0
         self._post_init_count += 1
-
-    class MyConfig(kwconf.Config):
-        __default__ = default
-        __post_init__ = postinit
 
     class MyConfig(kwconf.Config):
         __default__ = default

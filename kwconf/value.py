@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import re
 import pprint
-from typing import Any, Callable, cast, Optional, TypeVar, Union, overload
-
+import re
 from collections.abc import MutableMapping, Sequence
+from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 
 from kwconf.util.util_misc import NoParam
 from kwconf.util.util_repr import NiceRepr
-
 
 long_prefix_pat: re.Pattern[str] = re.compile('--[^-].*')
 short_prefix_pat: re.Pattern[str] = re.compile('-[^-].*')

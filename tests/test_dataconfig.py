@@ -70,8 +70,9 @@ def test_dataconfig_setattr_combos():
     def getmethod_attr(self, key):
         return getattr(self, key)
 
-    import ubelt as ub
     import itertools as it
+
+    import ubelt as ub
 
     grid = list(
         ub.named_product(
@@ -105,8 +106,9 @@ def test_dataconfig_warning():
     """
     Test that the user gets a warning if they make this common mistake
     """
-    import kwconf
     import pytest
+
+    import kwconf
 
     with pytest.warns(Warning):
 

@@ -4,8 +4,9 @@ def test_newattr():
     Test allowed and disallowed cases.
     """
 
-    import kwconf
     import pytest
+
+    import kwconf
 
     class TestNewattrCLI(kwconf.Config): ...
 

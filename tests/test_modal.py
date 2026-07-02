@@ -1,6 +1,8 @@
-import ubelt as ub
-import kwconf
 from collections import defaultdict
+
+import ubelt as ub
+
+import kwconf
 
 
 def test_modal_fuzzy_hyphens():
@@ -493,9 +495,11 @@ def test_submodal_usage_improvement():
     """
     We print the deepest usage helps unlike default argparse
     """
-    import kwconf
-    import pytest
     import sys
+
+    import pytest
+
+    import kwconf
 
     if sys.version_info[0:2] < (3, 13):
         pytest.skip('Does not work on older pythons')
@@ -519,9 +523,10 @@ def test_submodal_usage_improvement():
         Modal1().main(argv=['Modal2', 'Modal3', 'Command1', '--arg1=32']) == 0
     )
 
-    from contextlib import redirect_stderr
-    from xdoctest.utils import util_str
     import io
+    from contextlib import redirect_stderr
+
+    from xdoctest.utils import util_str
 
     if 0:
         from kwconf import diagnostics
@@ -721,10 +726,10 @@ def test_modal_command_listing_hides_fuzzy_hyphen_aliases():
 
 
 def test_arbitrary_opaque_subparser():
-    import kwconf
-
     # import pytest
     import sys
+
+    import kwconf
 
     def opaque_main():
         import argparse
@@ -774,8 +779,9 @@ def test_modal_main_argv_false():
     ``main(argv=False)`` follows the Config.main convention (do not read the
     CLI); for a modal that means "no command" rather than a TypeError.
     """
-    from kwconf.modal import NoCommandError
     import pytest
+
+    from kwconf.modal import NoCommandError
 
     class Command1(kwconf.Config):
         @classmethod

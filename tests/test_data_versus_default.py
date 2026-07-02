@@ -5,8 +5,9 @@ defaults and persist between multiple load operations whereas data will
 only set the immediate values and not persist over multiple loads.
 """
 
-import kwconf
 import pytest
+
+import kwconf
 
 
 def generate_dataconfig_instance_variants():

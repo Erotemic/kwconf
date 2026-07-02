@@ -4,7 +4,7 @@ from typing import Any, Optional, Union
 
 import pytest
 
-from kwconf.coerce import auto, coerce, register_parser, CannotCoerce
+from kwconf.coerce import CannotCoerce, auto, coerce, register_parser
 
 
 def _is(value: Any, expect_type: type) -> bool:
@@ -199,6 +199,7 @@ class TestConfigCoerceConstructor:
 
 def test_coerce_and_type_are_mutually_exclusive():
     import pytest
+
     from kwconf import Value
 
     with pytest.raises(ValueError, match='either .parser.* or the deprecated'):

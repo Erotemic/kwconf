@@ -46,7 +46,9 @@ def test_paths_with_commas_in_config():
 
 def test_globstr_with_nargs():
     from os.path import join
+
     import ubelt as ub
+
     import kwconf
 
     dpath = ub.Path.appdir('kwconf', 'tests', 'files').ensuredir()

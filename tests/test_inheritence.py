@@ -6,8 +6,9 @@ def test_inheritence():
     Test that a inheriting from a dataconfig unions existing config options
     with new ones.
     """
-    from kwconf import Config
     import ubelt as ub
+
+    from kwconf import Config
 
     class Config1(Config):
         arg1 = 1

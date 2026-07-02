@@ -149,6 +149,7 @@ def test_validation_skipped_without_annotation():
 
 def test_default_is_exempt_from_validation():
     import warnings
+
     import kwconf
 
     # A WYSIWYG string default on an int field is a trusted Python-boundary

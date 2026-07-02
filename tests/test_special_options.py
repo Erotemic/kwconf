@@ -6,8 +6,9 @@ def test_special_options_default_off():
     names. They are off by default; opt in with ``special_options=True``
     on a per-call basis or ``__special_options__ = True`` on the class.
     """
-    import kwconf
     import pytest
+
+    import kwconf
 
     class MyConfig(kwconf.Config):
         config = None
@@ -35,8 +36,9 @@ def test_config_file_merges_over_data(tmp_path):
     perform a full reset-load, restoring defaults for every key the file did
     not mention (wiping data= values).
     """
-    import kwconf
     import pytest
+
+    import kwconf
 
     pytest.importorskip('yaml')
 
@@ -68,8 +70,9 @@ def test_dump_and_dumps_exit_zero(tmp_path):
     A successful ``--dump`` / ``--dumps`` must exit with status 0 so shell
     pipelines like ``tool --dumps > config.yaml`` do not report failure.
     """
-    import kwconf
     import pytest
+
+    import kwconf
 
     pytest.importorskip('yaml')
 
@@ -89,8 +92,9 @@ def test_dump_and_dumps_exit_zero(tmp_path):
 
 def test_special_options_class_attribute_opt_in():
     """The ``__special_options__`` class attribute opts the class in."""
-    import kwconf
     import pytest
+
+    import kwconf
 
     class MyConfig(kwconf.Config):
         __special_options__ = True

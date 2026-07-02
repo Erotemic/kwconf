@@ -7,9 +7,9 @@ optional dependency. These tests assert they stay byte-compatible with ubelt
 
 import pytest
 
-from kwconf.util.util_text import codeblock, paragraph, indent
-from kwconf.util.util_misc import iterable, NoParam
+from kwconf.util.util_misc import NoParam, iterable
 from kwconf.util.util_repr import NiceRepr
+from kwconf.util.util_text import codeblock, indent, paragraph
 
 ub = pytest.importorskip('ubelt')
 

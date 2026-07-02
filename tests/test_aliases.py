@@ -42,6 +42,7 @@ def test_config_fuzzy_hyphens_optout():
     variant in ``--help``).
     """
     import pytest
+
     import kwconf
 
     class Strict(kwconf.Config):

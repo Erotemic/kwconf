@@ -58,8 +58,9 @@ def test_class_inst_post_init_attr():
     """
     The __post_init__ method runs after construction.
     """
-    import kwconf
     import ubelt as ub
+
+    import kwconf
 
     test_state = ub.ddict(lambda: 0)
 
