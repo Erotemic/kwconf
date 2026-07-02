@@ -19,6 +19,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Intercepted parse errors now keep argparse's `argument --name:` prefix in
+  the printed message (previously `ex.message` dropped it, hiding which
+  option failed).
 * `exit_on_error=False` is now honored by `CompatArgumentParser` /
   `ExtendedArgumentParser`. Modern argparse re-set the attribute during
   construction, so parse errors always raised `SystemExit` instead of

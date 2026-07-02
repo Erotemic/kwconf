@@ -37,6 +37,21 @@ def test_exit_on_error_defaults_true(parser_cls):
         parser.parse_args(['--num', 'bad'])
 
 
+def test_intercepted_error_names_the_argument(capsys):
+    """
+    The intercepted usage error must keep argparse's "argument --name:"
+    prefix so the user can tell which of several options failed.
+    """
+    parser = ExtendedArgumentParser()
+    parser.add_argument('--num', type=int)
+    parser.add_argument('--other', type=int)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(['--num', 'bad'])
+    err = capsys.readouterr().err
+    assert 'argument --num:' in err
+
+
 def test_extended_parse_args_restores_exit_on_error(capsys):
     """
     A successful parse_args must not permanently flip exit_on_error off:

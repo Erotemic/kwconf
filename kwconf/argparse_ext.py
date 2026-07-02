@@ -1012,7 +1012,9 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
             if deepest is None:
                 deepest = self
             # deepest.print_usage()
-            deepest.error(ex.message)
+            # str(ex) keeps the "argument --name:" prefix; ex.message drops
+            # it, leaving the user guessing which option failed.
+            deepest.error(str(ex))
         finally:
             # Restore the flag so a reused parser keeps the exit-on-error
             # policy on later parses (error() raising SystemExit included).
