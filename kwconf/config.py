@@ -1327,18 +1327,26 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             self._read_argv(**read_argv_kwargs)
 
         if not _dont_call_post_init:
-            if 1:
-                # Check that all required variables are not the same as defaults
-                # Probably a way to make this check nicer
-                for k, v in self._default.items():
-                    if isinstance(v, Value):
-                        if v.required:
-                            if self[k] == v.value:
-                                raise Exception(
-                                    'Required variable {!r} still has default value'.format(
-                                        k
-                                    )
-                                )
+            # Required fields must be supplied by some user source. Keys with
+            # tracked provenance (data=/kwargs or explicit argv) satisfy the
+            # requirement even when the supplied value equals the default.
+            # For untracked sources (e.g. --config files) fall back to the
+            # value-vs-default comparison.
+            provided_keys = set(user_config) | set(self._explicit_argv_keys)
+            for k, v in self._default.items():
+                if isinstance(v, Value) and v.required:
+                    if k in provided_keys:
+                        continue
+                    try:
+                        still_default = bool(self[k] == v.value)
+                    except Exception:
+                        # Defaults without well-behaved __eq__ (arrays, ...)
+                        # cannot prove the value was never supplied.
+                        still_default = False
+                    if still_default:
+                        raise ValueError(
+                            'Required variable {!r} was not given'.format(k)
+                        )
             if getattr(self, '_has_subconfigs', False):
                 _subcfg_mod.finalize_post_init(self)
             else:

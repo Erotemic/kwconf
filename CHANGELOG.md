@@ -23,6 +23,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `Value(required=True)` no longer rejects a user who explicitly supplies the
+  default value (on argv or in `data=`). Enforcement now consults explicit
+  provenance first; the value-vs-default comparison remains only as a
+  fallback for untracked sources. The failure also raises `ValueError` with a
+  clearer message instead of a bare `Exception`.
 * `Config.cli()` / `load(argv=...)` no longer store the class template's
   default object into instances. Mutable defaults (including
   `default_factory` output) were shared between every CLI-constructed
