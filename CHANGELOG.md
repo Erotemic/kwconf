@@ -19,6 +19,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `ModalCLI.register` used as a decorator (`@modal.register` or
+  `@ModalCLI.register(command=...)`) now returns the decorated class instead of
+  rebinding the decorated name to `None`.
 * `__fuzzy_hyphens__ = False` on a `Config` now actually rejects the hyphen
   spelling of option flags on the command line. Previously the variant was still
   accepted on the input side; the setting only stopped advertising it in

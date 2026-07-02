@@ -521,6 +521,9 @@ class ModalCLI(metaclass=MetaModalCLI):
                 metadata['alias'] = alias
             if main is not None:
                 metadata['main_func'] = main
+            # Return the class so ``register`` works as a decorator without
+            # rebinding the decorated name to None.
+            return cli_cls
 
         if cli_cls is None:
             return _wrapper

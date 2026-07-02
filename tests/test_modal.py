@@ -103,6 +103,41 @@ def test_modal_fuzzy_hyphens():
     print(f'callnums = {ub.urepr(callnums, nl=1)}')
 
 
+def test_register_decorator_returns_class():
+    """
+    Using ``register`` as a decorator must leave the decorated name bound to
+    the class, not None.
+    """
+
+    class MyModalCLI(kwconf.ModalCLI): ...
+
+    @MyModalCLI.register
+    class Command1(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            cls.cli(argv=argv, data=kwargs)
+            return 0
+
+    assert Command1 is not None
+    assert issubclass(Command1, kwconf.Config)
+
+    modal = MyModalCLI()
+
+    @modal.register(command='cmd2')
+    class Command2(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            cls.cli(argv=argv, data=kwargs)
+            return 0
+
+    assert Command2 is not None
+    assert issubclass(Command2, kwconf.Config)
+
+    # The registered commands still dispatch.
+    assert MyModalCLI.main(argv=['Command1']) == 0
+    assert modal.main(argv=['cmd2']) == 0
+
+
 def test_modal_customize_command_classlevel():
     class MyModalCLI(kwconf.ModalCLI): ...
 
