@@ -747,6 +747,28 @@ def test_arbitrary_opaque_subparser():
     modal.main(argv=['extern_cli'], strict=False)
 
 
+def test_modal_main_argv_false():
+    """
+    ``main(argv=False)`` follows the Config.main convention (do not read the
+    CLI); for a modal that means "no command" rather than a TypeError.
+    """
+    from kwconf.modal import NoCommandError
+    import pytest
+
+    class Command1(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            cls.cli(argv=argv, data=kwargs)
+
+    class MyModal(kwconf.ModalCLI):
+        cmd1 = Command1
+
+    with pytest.raises(NoCommandError):
+        MyModal.main(argv=False)
+    assert MyModal.main(argv=False, _noexit=True) == 1
+    assert MyModal.main(argv=0, _noexit=True) == 1
+
+
 def test_opaque_command_first_in_nested_modal():
     """
     An opaque command as the first command of a nested modal used to hit an

@@ -807,8 +807,11 @@ class ModalCLI(metaclass=MetaModalCLI):
 
         # To handle opaque sub commands we always parse known arguments but we
         # will raise an error if strict and the subcommand is not opqaue
-        if isinstance(argv, (int, bool)) and argv:
-            argv = None
+        if isinstance(argv, (int, bool)):
+            # Truthy sentinel (True / 1): read sys.argv. Falsy sentinel
+            # (False / 0): do not read the CLI at all, matching the
+            # Config.main argv convention.
+            argv = None if argv else []
         try:
             from kwconf import argparse_ext
 
