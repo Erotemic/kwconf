@@ -116,3 +116,31 @@ def port_argparse_counter_to_kwconf():
     # flag or key/value specification. Future work may fix this.
     recon = MyConfig().port_to_argparse()
     print(recon)
+
+
+def test_counter_long_option_value_not_corrupted():
+    """
+    The grouped-short-option normalization must not fire for long options:
+    a value starting with the option name's first letter was truncated
+    (--flag=false -> 'alse').
+    """
+    import argparse
+    import shlex
+
+    from kwconf.argparse_ext import CounterOrKeyValAction
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--flag', action=CounterOrKeyValAction)
+    parser.add_argument('-v', '--verbose', action=CounterOrKeyValAction)
+
+    cases = {
+        '--flag=false': ('flag', False),
+        '--verbose=vip': ('verbose', 'vip'),
+        '--flag=ff': ('flag', 'ff'),
+        # Genuine short-option grouping / equals still work.
+        '-fff': ('flag', 3),
+        '-f=5': ('flag', 5),
+    }
+    for argstr, (key, want) in cases.items():
+        ns = parser.parse_known_args(shlex.split(argstr))[0].__dict__
+        assert ns[key] == want, (argstr, ns)

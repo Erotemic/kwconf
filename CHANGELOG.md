@@ -23,6 +23,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `CounterOrKeyValAction` no longer corrupts long-option values that begin
+  with the option name's first letter. The grouped-short-option handling
+  (`-vvv` → count) wrongly fired for long options too, so `--flag=false`
+  became `'alse'` and `--flag=ff` became `3`; it now applies only to genuine
+  short options.
 * `scan_config_path` no longer greedily consumes the following token as the
   `--config` value when that token is another option (`--config --verbose`
   now raises "requires a value"), and it stops scanning at the `--`

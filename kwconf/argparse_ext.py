@@ -421,12 +421,22 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
         # value.  We avoid doing any smartcasting here and instead modify
         # ``values`` so that the original logic later in the method will
         # handle casting/boolean inversion as usual.
+        #
+        # This only applies to a genuine short option (``-v``); for a long
+        # option (``--flag``) the value is never a short-option concatenation,
+        # and stripping the option's first letter would corrupt real values
+        # (``--flag=false`` -> ``'alse'``).
+        is_short_option = (
+            len(option_string) == 2
+            and option_string[0] == '-'
+            and option_string[1] != '-'
+        )
         if (
             values is not None
             and isinstance(values, str)
-            and option_string.startswith('-')
+            and is_short_option
         ):
-            short: str = option_string.lstrip('-')[0]
+            short: str = option_string[1]
             rep: int = 0
             rest: str = values
             while rest and rest[0] == short:
