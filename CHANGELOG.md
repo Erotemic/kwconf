@@ -5,6 +5,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Version 0.10.1] - Unreleased
 
+### Added
+* `register_parser` (the documented parser extension point) is now exported at
+  the top level: `kwconf.register_parser(...)`.
+
 ### Changed
 * Modal ``--help`` command listings now show a single spelling per command by
   default (e.g. ``export_data`` instead of ``export_data (export-data)``). The

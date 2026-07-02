@@ -35,12 +35,12 @@ Ignore:
 __version__ = '0.10.1'
 
 __submodules__ = {
-    'modal': None,
-    'config': None,
-    'value': None,
-    'cli': None,
-    'dataconfig': None,
-    'annotations': None,
+    'modal': ['ModalCLI', 'ModalValue'],
+    'config': ['Config', 'define'],
+    'value': ['Value', 'Flag'],
+    'dataconfig': ['dataconf'],
+    'subconfig': ['SubConfig'],
+    'coerce': ['register_parser'],
 }
 
 from . import diagnostics  # NOQA
@@ -59,6 +59,9 @@ from .dataconfig import (
 from .subconfig import (
     SubConfig,
 )
+from .coerce import (
+    register_parser,
+)
 
 __all__ = [
     'Config',
@@ -69,4 +72,5 @@ __all__ = [
     'ModalCLI',
     'ModalValue',
     'SubConfig',
+    'register_parser',
 ]
