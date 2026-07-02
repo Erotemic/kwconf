@@ -860,24 +860,31 @@ class ExtendedArgumentParser_POST_GH_114180(CompatArgumentParser):
         # split at the '='
         chars = self.prefix_chars
         if option_string[0] in chars and option_string[1] in chars:
-            if self.allow_abbrev:
-                option_prefix, sep, explicit_arg = option_string.partition('=')
-                norm_option_prefix = option_prefix.replace('-', '_')
-                if not sep:
-                    sep = None  # type: ignore[assignment]
-                    explicit_arg = None  # type: ignore[assignment]
-                for option_string in self._option_string_actions:
-                    norm_option_string = option_string.replace('-', '_')
-                    # if option_string.startswith(option_prefix):
-                    if norm_option_string.startswith(norm_option_prefix):
-                        action = self._option_string_actions[option_string]
-                        tup: tuple[Any, str, str | None, str | None] = (
-                            action,
-                            option_string,
-                            sep,
-                            explicit_arg,
-                        )
-                        result.append(tup)
+            option_prefix, sep, explicit_arg = option_string.partition('=')
+            norm_option_prefix = option_prefix.replace('-', '_')
+            if not sep:
+                sep = None  # type: ignore[assignment]
+                explicit_arg = None  # type: ignore[assignment]
+            for option_string in self._option_string_actions:
+                norm_option_string = option_string.replace('-', '_')
+                # Exact hyphen/underscore-interchange match is always allowed
+                # (that is the point of fuzzy hyphens); prefix abbreviation is
+                # only allowed when allow_abbrev is on. Nesting the exact
+                # match under allow_abbrev disabled fuzzy hyphens whenever
+                # allow_abbrev was False.
+                exact = norm_option_string == norm_option_prefix
+                if exact or (
+                    self.allow_abbrev
+                    and norm_option_string.startswith(norm_option_prefix)
+                ):
+                    action = self._option_string_actions[option_string]
+                    tup: tuple[Any, str, str | None, str | None] = (
+                        action,
+                        option_string,
+                        sep,
+                        explicit_arg,
+                    )
+                    result.append(tup)
 
         # single character options can be concatenated with their arguments
         # but multiple character options always have to have their argument

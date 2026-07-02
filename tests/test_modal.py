@@ -4,10 +4,6 @@ from collections import defaultdict
 
 
 def test_modal_fuzzy_hyphens():
-    import pytest
-
-    pytest.skip('does not work yet')
-
     callnums = defaultdict(lambda: 0)
 
     class _TestCommandTemplate(kwconf.Config):
@@ -101,6 +97,12 @@ def test_modal_fuzzy_hyphens():
     TestModalCLI.main(argv=['sub-modal', 'do-command4', '--common-option=4'])
 
     print(f'callnums = {ub.urepr(callnums, nl=1)}')
+
+    # Every underscore/hyphen command spelling routed to its command.
+    assert callnums['do_command1'] == 3  # do_command1 x2 + do-command1
+    assert callnums['do_command2'] == 1
+    assert callnums['do_command3'] == 1
+    assert callnums['do_command4'] == 4
 
 
 def test_register_decorator_returns_class():

@@ -78,3 +78,24 @@ def test_deepest_subparser_skips_leading_options():
         ).selected_parser
         is child
     )
+
+
+def test_fuzzy_hyphens_independent_of_allow_abbrev():
+    """
+    Underscore/hyphen interchange (fuzzy hyphens) is an exact-normalized
+    match and must work regardless of allow_abbrev; only prefix abbreviation
+    is gated by allow_abbrev.
+    """
+    from kwconf.argparse_ext import ExtendedArgumentParser
+
+    for allow_abbrev in (True, False):
+        parser = ExtendedArgumentParser(allow_abbrev=allow_abbrev)
+        parser.add_argument('--my-option', default='d')
+        ns = parser.parse_known_args(['--my_option=hello'])[0]
+        assert ns.my_option == 'hello', (allow_abbrev, ns)
+
+    # Abbreviation, by contrast, follows allow_abbrev.
+    parser = ExtendedArgumentParser(allow_abbrev=False)
+    parser.add_argument('--my-option', default='d')
+    _, unknown = parser.parse_known_args(['--my=x'])
+    assert '--my=x' in unknown

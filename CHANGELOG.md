@@ -28,6 +28,13 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   order, so `second = Value(position=2); first = Value(position=1)` bound the
   first argv token to `second`. The build loop now follows the position
   order.
+* Underscore/hyphen interchange (fuzzy hyphens) now works regardless of
+  `allow_abbrev` on Python 3.12.3+. The exact hyphen-normalized match was
+  nested inside the `allow_abbrev` guard in the newer-argparse code path, so
+  `allow_abbrev=False` silently disabled fuzzy hyphens there (and only there,
+  making behavior differ across interpreter versions). Only prefix
+  abbreviation is gated by `allow_abbrev` now. The previously
+  `pytest.skip`-ed `test_modal_fuzzy_hyphens` is reactivated.
 * Subcommand provenance now survives a leading option before the command.
   `_deepest_subparser_for_argv` matched a subcommand only as the very first
   token, so any preceding option (or `--`) collapsed the walk to the root
