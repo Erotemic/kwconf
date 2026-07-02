@@ -22,11 +22,7 @@ def _boolean_environ(key: str) -> bool:
 DEBUG = _boolean_environ('KWCONF_DEBUG')
 
 DEBUG_CONFIG = DEBUG or _boolean_environ('KWCONF_DEBUG_CONFIG')
-DEBUG_DATA_CONFIG = DEBUG or _boolean_environ('KWCONF_DEBUG_DATA_CONFIG')
 DEBUG_META_CONFIG = DEBUG or _boolean_environ('KWCONF_DEBUG_META_CONFIG')
-DEBUG_META_DATA_CONFIG = DEBUG or _boolean_environ(
-    'KWCONF_DEBUG_META_DATA_CONFIG'
-)
 DEBUG_MODAL = DEBUG or _boolean_environ('KWCONF_DEBUG_MODAL')
 
 

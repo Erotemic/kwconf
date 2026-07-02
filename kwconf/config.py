@@ -437,51 +437,47 @@ class MetaConfig(_ABCMeta):
                 cls_default = namespace.get('__default__', None) or {}
                 namespace['__default__'] = {**attr_default, **cls_default}
 
-        HANDLE_INHERITENCE = 1
-        if HANDLE_INHERITENCE:
-            # Handle inheritance, add in defaults from base classes
-            this_default = namespace.get('__default__', {})
-            if this_default is None:
-                this_default = {}
-            this_default = dict(this_default)
+        # Handle inheritance, add in defaults from base classes
+        this_default = namespace.get('__default__', {})
+        if this_default is None:
+            this_default = {}
+        this_default = dict(this_default)
 
-            inheritence_default: Dict[str, Any] = {}
-            for base in reversed(bases):
-                if hasattr(base, '__default__'):
-                    inheritence_default.update(base.__default__)  # type: ignore
-            inheritence_default.update(this_default)
-            this_default = inheritence_default
+        inheritence_default: Dict[str, Any] = {}
+        for base in reversed(bases):
+            if hasattr(base, '__default__'):
+                inheritence_default.update(base.__default__)  # type: ignore
+        inheritence_default.update(this_default)
+        this_default = inheritence_default
 
-            if not is_root_config:
-                # Reserve "__class__" for nested SubConfig selector metadata.
-                if '__class__' in this_default:
-                    raise ValueError(
-                        'The name "__class__" is reserved for nested Config meta keys'
+        if not is_root_config:
+            # Reserve "__class__" for nested SubConfig selector metadata.
+            if '__class__' in this_default:
+                raise ValueError(
+                    'The name "__class__" is reserved for nested Config meta keys'
+                )
+
+            # Warn on the common ``key = Value(...),`` trailing-comma typo.
+            for k, v in this_default.items():
+                if (
+                    isinstance(v, tuple)
+                    and len(v) == 1
+                    and isinstance(v[0], Value)
+                ):
+                    warnings.warn(
+                        paragraph(
+                            f"""
+                        It looks like you have a trailing comma in your
+                        {name} Config.  The variable {k!r} has a value of
+                        {v!r}, which is a Tuple[Value]. Typically it should be
+                        a Value.
+                        """
+                        ),
+                        UserWarning,
                     )
 
-                # Warn on the common ``key = Value(...),`` trailing-comma typo.
-                for k, v in this_default.items():
-                    if (
-                        isinstance(v, tuple)
-                        and len(v) == 1
-                        and isinstance(v[0], Value)
-                    ):
-                        warnings.warn(
-                            paragraph(
-                                f"""
-                            It looks like you have a trailing comma in your
-                            {name} Config.  The variable {k!r} has a value of
-                            {v!r}, which is a Tuple[Value]. Typically it should be
-                            a Value.
-                            """
-                            ),
-                            UserWarning,
-                        )
-
-                this_default = _normalize_class_defaults(
-                    this_default, annotations
-                )
-            namespace['__default__'] = this_default
+            this_default = _normalize_class_defaults(this_default, annotations)
+        namespace['__default__'] = this_default
 
         if diagnostics.DEBUG_META_CONFIG:
             print(
@@ -1730,11 +1726,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             do_dumps = special_ns['dumps']
             if dump_fpath or do_dumps:
                 if dump_fpath:
-                    # Infer config format from the extension
+                    # Infer config format from the extension (yaml default).
                     if dump_fpath.lower().endswith('.json'):
                         mode = 'json'
-                    elif dump_fpath.lower().endswith('.yaml'):
-                        mode = 'yaml'
                     else:
                         mode = 'yaml'
                     text = self.dumps(mode=mode)
@@ -2048,15 +2042,6 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         else:
             raise KeyError(style)
         text = '\n'.join(recon_str)
-        if 0:
-            try:
-                import black
-
-                text = black.format_str(
-                    text, mode=black.Mode(string_normalization=True)
-                )
-            except Exception:
-                pass
         return text
 
     @classmethod
