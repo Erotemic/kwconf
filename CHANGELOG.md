@@ -23,6 +23,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `--config <file>` now merges the file's values over the current state.
+  Previously it triggered a full reset-load that restored defaults for every
+  key the file did not mention, silently wiping `data=` values. Explicit CLI
+  values still win over the file.
 * `Value(required=True)` no longer rejects a user who explicitly supplies the
   default value (on argv or in `data=`). Enforcement now consults explicit
   provenance first; the value-vs-default comparison remains only as a

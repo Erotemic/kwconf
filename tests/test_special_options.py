@@ -29,6 +29,40 @@ def test_special_options_default_off():
         MyConfig.cli(argv=['--config=foo'], special_options=True)
 
 
+def test_config_file_merges_over_data(tmp_path):
+    """
+    --config must merge the file's values over the current state. It used to
+    perform a full reset-load, restoring defaults for every key the file did
+    not mention (wiping data= values).
+    """
+    import kwconf
+    import pytest
+
+    pytest.importorskip('yaml')
+
+    class MyConfig(kwconf.Config):
+        a = kwconf.Value(0)
+        b = kwconf.Value(0)
+
+    fpath = tmp_path / 'cfg.yaml'
+    fpath.write_text('b: 7\n')
+
+    cfg = MyConfig.cli(
+        data={'a': 1}, argv=['--config', str(fpath)], special_options=True
+    )
+    assert cfg.b == 7  # from the file
+    assert cfg.a == 1  # from data=, must survive the file merge
+
+    # Explicit CLI values still take precedence over the file.
+    cfg = MyConfig.cli(
+        data={'a': 1},
+        argv=['--config', str(fpath), '--b=9'],
+        special_options=True,
+    )
+    assert cfg.b == 9
+    assert cfg.a == 1
+
+
 def test_dump_and_dumps_exit_zero(tmp_path):
     """
     A successful ``--dump`` / ``--dumps`` must exit with status 0 so shell

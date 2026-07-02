@@ -1137,6 +1137,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
+        _reset: bool = True,
     ) -> Config:
         """
         Updates the configuration from a given data source.
@@ -1284,7 +1285,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         from kwconf import subconfig as _subcfg_mod
 
         localns = _subcfg_mod.resolve_localns(localns, stacklevel)  # type: ignore
-        self._data = {key: value.value for key, value in _default.items()}
+        if _reset:
+            self._data = {
+                key: value.value for key, value in _default.items()
+            }
         pending_updates = None
         if getattr(self, '_has_subconfigs', False):
             _subcfg_mod.ensure_subconfigs_instantiated(
@@ -1657,11 +1661,18 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             # WYSIWYG default never warns about itself.
             self._setitem(key, default_value, validate=False)
 
-        # Then load config file defaults
+        # Then load config file defaults. Merge (not reset): a full load()
+        # would first restore every key to its default, wiping data= values
+        # for keys the file never mentions.
         if special_options:
             config_fpath = special_ns['config']
             if config_fpath is not None:
-                self.load(config_fpath, argv=False, _dont_call_post_init=True)
+                self.load(
+                    config_fpath,
+                    argv=False,
+                    _dont_call_post_init=True,
+                    _reset=False,
+                )
 
         # Finally load explicit CLI values. The parser action has already
         # coerced the raw token; we just need to store it.
