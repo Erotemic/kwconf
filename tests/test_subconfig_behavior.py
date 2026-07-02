@@ -419,3 +419,49 @@ def test_subconfig_class_identifier_module_path():
     cfg = Outer()
     data = cfg.to_dict()
     assert data['inner']['__class__'] == f'{Inner.__module__}.{Inner.__name__}'
+
+
+def test_dict_leaf_field_alongside_subconfig():
+    """
+    A plain dict-valued leaf field must not be shredded into dotted keys just
+    because the config also has a SubConfig; load() used to crash with
+    KeyError trying to treat the dict field as a subconfig node.
+    """
+
+    class Inner(kwconf.Config):
+        x = kwconf.Value(1)
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(Inner)
+        hyperparams = kwconf.Value(None)
+
+    cfg = Outer()
+    cfg.load({'hyperparams': {'lr': 0.5}}, argv=False)
+    assert cfg['hyperparams'] == {'lr': 0.5}
+    assert cfg['inner']['x'] == 1
+
+    # The subconfig itself still updates via a nested mapping.
+    cfg2 = Outer()
+    cfg2.load({'inner': {'x': 9}}, argv=False)
+    assert cfg2['inner']['x'] == 9
+
+    # Non-string dict keys in a leaf must not crash '.'.join.
+    cfg3 = Outer()
+    cfg3.load({'hyperparams': {1: 'a', 2: 'b'}}, argv=False)
+    assert cfg3['hyperparams'] == {1: 'a', 2: 'b'}
+
+
+def test_empty_dict_leaf_update_applies():
+    """An explicit empty-dict update to a leaf field must not be dropped."""
+
+    class Inner(kwconf.Config):
+        x = kwconf.Value(1)
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(Inner)
+        hyperparams = kwconf.Value(None)
+
+    cfg = Outer()
+    cfg['hyperparams'] = {'lr': 0.1}
+    cfg.load({'hyperparams': {}}, argv=False)
+    assert cfg['hyperparams'] == {}

@@ -1295,7 +1295,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 self, _dont_call_post_init=_dont_call_post_init
             )
             if argv:
-                pending_updates = _subcfg_mod.coerce_data_updates(user_config)
+                pending_updates = _subcfg_mod.coerce_data_updates(
+                    user_config, cfg=self
+                )
             else:
                 _subcfg_mod.apply_dot_updates(
                     self,

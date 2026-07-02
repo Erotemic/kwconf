@@ -23,6 +23,13 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* A plain dict-valued leaf field alongside a `SubConfig` no longer crashes
+  `load()`. Nested update mappings are now flattened only across SubConfig
+  boundaries, so a dict field (`load({'hyperparams': {'lr': 0.5}})`) is
+  assigned whole instead of being shredded into dotted keys and raising
+  `KeyError` (non-string dict keys likewise no longer crash `'.'.join`).
+  An explicit empty-dict update to a leaf field is also applied instead of
+  being silently dropped.
 * Annotation validation now honors the PEP 484 numeric tower: an `int` is
   accepted where `float` (or `complex`) is annotated, so idiomatic
   `Config(x=1)` for a `float` field no longer emits a spurious warning.

@@ -346,9 +346,12 @@ def scan_config_path(argv: list[str]) -> str | None:
     return config_fpath
 
 
-def coerce_data_updates(data, mode=None):
+def coerce_data_updates(data, mode=None, cfg=None):
     """
     Convert a data source (dict or filepath) into dotted updates.
+
+    When ``cfg`` is given, nested mappings are only flattened across SubConfig
+    boundaries; plain dict-valued leaf fields are kept intact.
 
     Example:
         >>> updates = coerce_data_updates({'a': 1, 'b': {'c': 2}})
@@ -397,18 +400,29 @@ def coerce_data_updates(data, mode=None):
         raise TypeError(f'Expected path or dict, but got {type(data)}')
 
     flat = {}
-    for k, v in _flatten_nested(user_config):
+    for k, v in _flatten_nested(user_config, cfg=cfg):
         flat[k] = v
     return flat
 
 
-def _flatten_nested(mapping):
+def _flatten_nested(mapping, cfg=None):
     """
     Flatten a nested mapping into dotted key/value pairs.
+
+    When ``cfg`` is given, descend into a nested mapping only if its dotted
+    path is a SubConfig node in ``cfg``. A nested mapping that lands on a
+    plain (non-subconfig) leaf field -- including an empty dict -- is yielded
+    whole, so dict-valued fields are neither shredded into dotted keys nor
+    silently dropped. Without ``cfg`` every nested mapping is flattened (the
+    original structure-blind behavior).
 
     Example:
         >>> list(_flatten_nested({'a': {'b': 1}, 'c': 2}))
         [('a.b', 1), ('c', 2)]
+        >>> # Without cfg an empty mapping cannot be told from a node, so it
+        >>> # keeps the original structure-blind behavior (dropped).
+        >>> list(_flatten_nested({'a': {}}))
+        []
     """
     if not isinstance(mapping, Mapping):
         raise TypeError('Expected mapping')
@@ -420,9 +434,20 @@ def _flatten_nested(mapping):
         except StopIteration:
             stack.pop()
             continue
-        next_prefix = prefix + (k,)
+        next_prefix = prefix + (str(k),)
+        is_subconfig = cfg is not None and _path_is_subconfig(
+            cfg, list(next_prefix)
+        )
         if isinstance(v, Mapping):
-            stack.append((iter(v.items()), next_prefix))  # type: ignore
+            if cfg is not None and not is_subconfig:
+                # Leaf dict-valued field: assign the mapping whole (an empty
+                # dict included) rather than shredding it into dotted keys.
+                yield '.'.join(next_prefix), v  # type: ignore
+            elif len(v) > 0:
+                # Structural descent through a subconfig boundary (or the
+                # original structure-blind behavior when cfg is None).
+                stack.append((iter(v.items()), next_prefix))  # type: ignore
+            # An empty mapping on a subconfig path carries no update: skip it.
         else:
             yield '.'.join(next_prefix), v  # type: ignore
 
@@ -715,7 +740,7 @@ def apply_dot_updates(
 
     flat_updates = {}
     if isinstance(updates, Mapping):
-        for k, v in _flatten_nested(updates):
+        for k, v in _flatten_nested(updates, cfg=cfg):
             flat_updates[k] = v
     else:
         raise TypeError('updates must be a mapping')
