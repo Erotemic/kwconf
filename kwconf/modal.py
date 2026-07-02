@@ -899,7 +899,12 @@ class ModalCLI(metaclass=MetaModalCLI):
                     print(
                         f'[kwconf.modal.ModalCLI.main] Our modal CLI got a modal version request for a submodal {sub_modal}'
                     )
-                print(sub_modal.version)
+                version = sub_modal.version
+                if version is None:
+                    # A submodal without its own version inherits the
+                    # invoking root's rather than printing the literal None.
+                    version = self.version
+                print(version)
             return 0
 
         if sub_modal is not None:

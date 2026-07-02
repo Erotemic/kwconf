@@ -381,6 +381,26 @@ def test_modal_version():
     assert '3.3.3' in cap.text
 
 
+def test_modal_version_fallback_to_root():
+    """
+    A submodal without its own __version__ reports the root's version
+    instead of printing the literal ``None``.
+    """
+    import kwconf
+
+    class Root(kwconf.ModalCLI):
+        __version__ = '9.9.9'
+
+        class Child(kwconf.ModalCLI):
+            pass
+
+    with ub.CaptureStdout(suppress=False) as cap:
+        Root.main(argv=['--version', 'Child'])
+    assert cap.text is not None
+    assert '9.9.9' in cap.text
+    assert 'None' not in cap.text
+
+
 def test_modal_command_name_resolution():
     """
     The command name comes from the attribute a command is bound to, unless the

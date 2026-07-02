@@ -19,6 +19,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* A `--version` request that resolves to a submodal without its own
+  `__version__` now reports the invoking root's version instead of printing
+  the literal `None`.
 * `ModalCLI.main(argv=False)` (and `argv=0`) no longer crashes with
   `TypeError`; the falsy sentinel now means "do not read the CLI", matching
   the `Config.main` convention, and takes the no-command path.
