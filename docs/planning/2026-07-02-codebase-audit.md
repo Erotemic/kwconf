@@ -1,5 +1,12 @@
 # kwconf codebase audit — 2026-07-02
 
+> **Remediation status (updated 2026-07-02).** Most findings below have been
+> fixed on branch `dev/audit-fixes`, one focused commit per issue with tests.
+> See [§9 Remediation status](#9-remediation-status) for the per-finding
+> table and the short list of items deliberately **deferred** as design
+> decisions for the maintainer. Suite after fixes: **376 passed, 2 skipped**;
+> `ruff check`, `ruff format --check`, and `ty check ./kwconf` all clean.
+
 Audited at version 0.10.1 (unreleased), branch `dev/0.10.1`, commit `03cff1f`.
 
 **Method.** Full read of every module in `kwconf/` (~8.7k lines including
@@ -540,3 +547,77 @@ conformance test harness for the pinned argparse internals (theme 4.4).
 class fields (silently ignored today — error? required field?); `position=`
 (implement or deprecate per `value.py:95`); alias/Mapping contract; whether
 `copy()` should exist.
+
+---
+
+## 9. Remediation status
+
+Fixed on branch `dev/audit-fixes` (one reviewable commit per issue, each with
+a regression test). Line numbers in the sections above refer to the original
+audit commit `03cff1f` and will have shifted.
+
+### Fixed (high-severity §1)
+
+| Finding | Commit summary |
+| --- | --- |
+| §1.1 shared class mutable defaults via `.cli()` | Use per-instance defaults in the argv-defaults merge |
+| §1.2 SubConfig + dict-leaf crashes `load()` | Flatten subconfig updates only across SubConfig boundaries |
+| §1.3 provenance collapses on leading option | Skip leading options when locating the subcommand for provenance |
+| §1.4 `@register` decorator returns `None` | Fix ModalCLI.register decorator rebinding the class to None |
+| §1.5 `--config` wipes `data=` values | Merge `--config` file values instead of reset-loading |
+| §1.6 `required=` rejects explicit default | Enforce required= via provenance, not value equality |
+| §1.7 `position=` computed but unused | Apply position= ordering when building the parser |
+| §1.8 annotation processing mutates shared templates | Copy Value templates before applying annotation metadata |
+| §1.9 `Literal[...] \| str` restricts CLI | Derive CLI choices correctly from union annotations |
+| §1.10 `Optional` container skips element coercion | Coerce elements through Optional/Union container annotations |
+| §1.11 `exit_on_error=False` ignored + leaked | Honor exit_on_error=False in the extended parsers |
+| §1.12 counter-action value corruption | Restrict counter-flag grouping normalization to short options |
+| §1.13 opaque-command stale `parserkw` | Build opaque modal commands with their own parser kwargs |
+| §1.14 `__json__` truncation | Fix Config.__json__ truncating output at the first nested __json__ object |
+| §1.15 Sphinx 3.14 crash | Fix sphinx-build crash on Python 3.14 |
+
+### Fixed (medium §2, API §3, dead code §5, tooling §6/§7)
+
+- `load()` mutates caller dict; `dump()` mutates global yaml; missing-file /
+  non-mapping payload errors; empty-dict update dropped; `scan_config_path`
+  greedy token; `--dump` exit code; intercepted error names the argument;
+  `main(argv=False)` crash; `--version` versionless-submodal `None`;
+  int-for-float numeric tower + `format_annotation` display; fuzzy-hyphen vs
+  `allow_abbrev` consistency (+ reactivated `test_modal_fuzzy_hyphens`);
+  `@dataconf` drops hooks / inherited fields; `port_to_config` invalid codegen.
+- API: mkinit `__submodules__` spec fixed; `register_parser` exported.
+- Dead code: `HANDLE_INHERITENCE`, `if 0:` block, redundant yaml if/else,
+  `DEBUG_DATA_CONFIG`/`DEBUG_META_DATA_CONFIG`, commented `hybridmethod`,
+  `__example__`.
+- Tooling: ruff enforced (linter script, CI extra) + tree made ruff-clean;
+  `[dependency-groups] dev` so `uv run pytest` works; `uv.lock` timestamp pin;
+  `MANIFEST.in` ships `conftest.py`/`CHANGELOG.md`; conftest sys.path shim
+  guarded; pytest-10 parametrize deprecation; pyproject nits (duplicate
+  setuptools, stale xcookie version, codespell path).
+
+### Deferred — maintainer design decisions (not fixed)
+
+These are judgment calls, not defects; left for the maintainer:
+
+- **`load()` reset-vs-update semantics** (§2 "reset-then-merge"). The internal
+  `--config` merge is fixed (§1.5) via a private `_reset` flag, but the public
+  `load()` still resets keys absent from the new source. Decide whether that is
+  the intended contract and document it, or change it.
+- **`from_env(prefix='')` default** (§2). Still reads arbitrary env vars into
+  matching fields by default. Decide: require a prefix, or warn.
+- **Annotation-only class fields silently ignored** (§2). `x: int` with no
+  value still produces no field. Decide: error, or treat as required.
+- **Alias / Mapping contract** (§2.20): `cfg[alias]` works while `alias in cfg`
+  is False. Keep (with an ADR note) or reconcile.
+- **`Config.copy()` returning a plain dict** (§3). Rename / fix / document.
+- **`_check_values`** (`value.py`) left in place: it is intentional opt-in
+  developer infrastructure, not accidental dead code.
+
+### Larger refactors not attempted (out of scope for point-fixes)
+
+The systemic themes in §4 remain open: the `__default__`/`_default`/`_data`
+state-model refactor (theme 4.2), full de-duplication of the two load/normalize
+paths (theme 4.3, only partially reduced here via the shared
+`looks_like_config_path` helper), the two ~120-line `add_argument` builders in
+`value.py`, and a stdlib-argparse conformance harness for the pinned internals
+(theme 4.4). Each is a standalone project.
