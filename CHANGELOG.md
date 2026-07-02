@@ -19,6 +19,8 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `Config.load` / `cli(data=...)` no longer mutate the caller's `data` dict
+  (alias keys were renamed and unknown keys popped in place).
 * A `--version` request that resolves to a submodal without its own
   `__version__` now reports the invoking root's version instead of printing
   the literal `None`.

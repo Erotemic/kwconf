@@ -266,7 +266,8 @@ def _coerce_data_to_dict(
 
       * ``None`` -> ``{}``
       * a :class:`Config` instance -> ``data.asdict()``
-      * a :class:`dict` -> returned as-is
+      * a :class:`dict` -> shallow-copied (load renames alias keys and pops
+        unknown keys; the caller's dict must not see those edits)
       * a file path (str / os.PathLike) or readable file -> parsed by
         ``mode`` (auto-detected from file extension; defaults to yaml).
       * a raw json or yaml string -> parsed in-memory.
@@ -276,7 +277,7 @@ def _coerce_data_to_dict(
     if isinstance(data, Config):
         return data.asdict()
     if isinstance(data, dict):
-        return data
+        return dict(data)
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
         if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
             import json

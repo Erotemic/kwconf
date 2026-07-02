@@ -91,3 +91,18 @@ def test_from_cli_nargs_bare_list_keeps_strings():
         words: list = kwconf.Value(None, nargs='+')
 
     assert C.from_cli(argv=['--words', 'a', 'b'])['words'] == ['a', 'b']
+
+
+def test_load_does_not_mutate_caller_data_dict():
+    """
+    load()/cli(data=...) rename alias keys and drop unknown keys internally;
+    the caller's dict must not see those edits.
+    """
+
+    class Cfg2(kwconf.Config):
+        __default__ = {'opt': kwconf.Value(1, alias=['o'])}
+
+    mydata = {'o': 5, 'junk': 9}
+    cfg = Cfg2.cli(data=mydata, argv=False, strict=False)
+    assert cfg['opt'] == 5
+    assert mydata == {'o': 5, 'junk': 9}
