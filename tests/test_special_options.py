@@ -29,6 +29,30 @@ def test_special_options_default_off():
         MyConfig.cli(argv=['--config=foo'], special_options=True)
 
 
+def test_dump_and_dumps_exit_zero(tmp_path):
+    """
+    A successful ``--dump`` / ``--dumps`` must exit with status 0 so shell
+    pipelines like ``tool --dumps > config.yaml`` do not report failure.
+    """
+    import kwconf
+    import pytest
+
+    pytest.importorskip('yaml')
+
+    class MyConfig(kwconf.Config):
+        x = 1
+
+    with pytest.raises(SystemExit) as excinfo:
+        MyConfig.cli(argv=['--dumps'], special_options=True)
+    assert excinfo.value.code == 0
+
+    dump_fpath = tmp_path / 'out.yaml'
+    with pytest.raises(SystemExit) as excinfo:
+        MyConfig.cli(argv=['--dump', str(dump_fpath)], special_options=True)
+    assert excinfo.value.code == 0
+    assert 'x: 1' in dump_fpath.read_text()
+
+
 def test_special_options_class_attribute_opt_in():
     """The ``__special_options__`` class attribute opts the class in."""
     import kwconf

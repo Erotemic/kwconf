@@ -1700,7 +1700,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     text = self.dumps(mode='yaml')
                     print(text)
 
-                sys.exit(1)
+                # A successful dump is a success: exit 0 so shell pipelines
+                # like ``tool --dumps > config.yaml`` do not report failure.
+                sys.exit(0)
         return self
 
     def __post_init__(self) -> None:

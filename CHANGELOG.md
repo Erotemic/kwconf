@@ -19,6 +19,8 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* A successful `--dump` / `--dumps` now exits with status 0 instead of 1, so
+  shell pipelines like `tool --dumps > config.yaml` no longer report failure.
 * `Config.__json__` now converts a nested object with a `__json__` method in
   place. Previously the first such object made the method return early,
   discarding every other key in the config.
