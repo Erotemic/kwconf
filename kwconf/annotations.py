@@ -281,6 +281,12 @@ def value_matches_annotation(value: Any, annotation: Any) -> bool:
         True
         >>> value_matches_annotation('3', int)
         False
+        >>> value_matches_annotation(1, float)  # PEP 484 numeric tower
+        True
+        >>> value_matches_annotation(1, complex)
+        True
+        >>> value_matches_annotation(1.0, int)
+        False
         >>> value_matches_annotation(None, NoneType)
         True
         >>> value_matches_annotation('red', typing.Literal['red', 'blue'])
@@ -353,6 +359,15 @@ def value_matches_annotation(value: Any, annotation: Any) -> bool:
         except TypeError:
             return True
     if isinstance(annotation, type):
+        # PEP 484 numeric tower: an int is acceptable where float/complex is
+        # annotated, and a float where complex is annotated (but bool is a
+        # deliberate int subclass we still let match int). Note that a plain
+        # isinstance already accepts bool for int; the tower only adds the
+        # wider-target directions.
+        if annotation is float and isinstance(value, int):
+            return True
+        if annotation is complex and isinstance(value, (int, float)):
+            return True
         return isinstance(value, annotation)
     return True
 
@@ -369,7 +384,40 @@ def format_annotation(annotation: Any) -> str:
         'Custom'
         >>> format_annotation('ForwardRef')
         'ForwardRef'
+        >>> format_annotation(int | None)
+        'int | None'
+        >>> format_annotation(list[int])
+        'list[int]'
+        >>> format_annotation(typing.Optional[str])
+        'str | None'
     """
+    if annotation is NoneType or annotation is None:
+        return 'None'
+    if annotation is Ellipsis:
+        return '...'
+    # Parameterized generics (list[int]) and unions (int | None) have a
+    # __name__ that names only the origin ('list', 'Union'), which is
+    # useless in a mismatch message. Only trust __name__ for plain classes.
+    if isinstance(annotation, type):
+        return cast(str, annotation.__name__)
+    origin = typing.get_origin(annotation)
+    if origin in {Union, types.UnionType}:
+        return ' | '.join(
+            format_annotation(arg) for arg in typing.get_args(annotation)
+        )
+    if origin is not None:
+        args = typing.get_args(annotation)
+        origin_name = getattr(origin, '__name__', str(origin))
+        if origin is typing.Literal:
+            origin_name = 'Literal'
+        if args:
+            inner = ', '.join(format_annotation(a) for a in args)
+            return f'{origin_name}[{inner}]'
+        return origin_name
+    if annotation is NoneType:
+        return 'None'
+    if annotation is Ellipsis:
+        return '...'
     if hasattr(annotation, '__name__'):
         return cast(str, annotation.__name__)
     return str(annotation)

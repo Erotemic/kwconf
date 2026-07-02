@@ -185,3 +185,44 @@ def test_validation_runs_on_setitem():
     cfg['mode'] = 'b'
     with pytest.raises(TypeError):
         cfg['mode'] = 'c'
+
+
+def test_int_accepted_where_float_annotated():
+    """PEP 484 numeric tower: an int must not warn against a float field."""
+    import warnings
+
+    import kwconf
+
+    class FloatCfg(kwconf.Config):
+        x: float = 0.0
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        cfg = FloatCfg(x=1)  # ty: ignore[invalid-argument-type]
+    assert cfg['x'] == 1
+
+    class ComplexCfg(kwconf.Config):
+        y: complex = 0j
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        ComplexCfg(y=1)  # ty: ignore[invalid-argument-type]
+        ComplexCfg(y=1.5)  # ty: ignore[invalid-argument-type]
+
+
+def test_validation_message_names_union_and_generic():
+    """A mismatch message must name the real annotation, not 'Union'/'list'."""
+    import warnings
+
+    import kwconf
+
+    class C(kwconf.Config):
+        __validate__ = 'warn'
+        y: int | None = None
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        C(y='nope')  # ty: ignore[invalid-argument-type]
+    msg = str(caught[-1].message)
+    assert 'int | None' in msg
+    assert 'Union' not in msg

@@ -23,6 +23,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Annotation validation now honors the PEP 484 numeric tower: an `int` is
+  accepted where `float` (or `complex`) is annotated, so idiomatic
+  `Config(x=1)` for a `float` field no longer emits a spurious warning.
+* Validation mismatch messages now name the real annotation
+  (`int | None`, `list[int]`) instead of collapsing unions and generics to
+  `Union` / `list`.
 * `Optional` container annotations now coerce their elements. A field typed
   `list[int] | None` (or `Optional[list[int]]`) with `nargs`, or parsed via
   `parser='csv'`, kept its tokens as strings; `element_annotation` now
