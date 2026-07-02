@@ -412,16 +412,21 @@ class _Value(NiceRepr):
         orig_help = cast(Optional[str], self.parsekw['help'])
         orig_type = cast(Optional[Union[str, type]], self.parsekw['type'])
         value_kw: MutableMapping[str, Any] = {
-            k: v for k, v in self.__dict__.items() if v
+            k: v
+            for k, v in self.__dict__.items()
+            # Private attributes (_annotation, _parser_spec, _value, ...) and
+            # default_factory are runtime metadata, not Value(...) kwargs that
+            # the emitted code could evaluate. The default itself is exposed
+            # as ``default`` below.
+            if v and not k.startswith('_') and k != 'default_factory'
         }
-        # The value is stored under the private ``_value`` attribute (it is a
-        # lazily-materialized property); expose it under ``value`` so the
-        # ordering/pop logic below treats it as before.
-        if '_value' in value_kw:
-            value_kw['value'] = value_kw.pop('_value')
-        value_kw.pop('parsekw')
+        value_kw.pop('parsekw', None)
         value_kw.update(value.parsekw)
-        value_kw['help'] = CodeRepr(repr(orig_help))
+        if orig_help is None:
+            # Do not emit a redundant help=None kwarg.
+            value_kw.pop('help', None)
+        else:
+            value_kw['help'] = CodeRepr(repr(orig_help))
         value_kw['nargs'] = CodeRepr(repr(value.parsekw['nargs']))
         if orig_type is not None:
             if isinstance(orig_type, str):

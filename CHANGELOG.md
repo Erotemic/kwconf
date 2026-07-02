@@ -23,6 +23,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `port_to_config` now emits valid, executable code for typed fields.
+  Previously private runtime attributes (`_annotation=<class 'int'>`,
+  `_user_gave_type=True`, ...) leaked into the generated `Value(...)` calls
+  (a `SyntaxError` on exec), and every field carried a redundant `help=None`.
 * `Config.load` / `cli(data=...)` no longer mutate the caller's `data` dict
   (alias keys were renamed and unknown keys popped in place).
 * A `--version` request that resolves to a submodal without its own
