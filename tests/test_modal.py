@@ -747,6 +747,64 @@ def test_arbitrary_opaque_subparser():
     modal.main(argv=['extern_cli'], strict=False)
 
 
+def test_opaque_command_first_in_nested_modal():
+    """
+    An opaque command as the first command of a nested modal used to hit an
+    unbound ``parserkw`` at build time.
+    """
+    calls = []
+
+    def opaque_main():
+        calls.append('opaque')
+
+    class Sub(kwconf.ModalCLI):
+        __command__ = 'sub'
+
+    sub = Sub()
+    sub.register(command='extern', main=opaque_main)(None)
+
+    class Root(kwconf.ModalCLI):
+        pass
+
+    root = Root()
+    root.register(sub, command='sub')
+
+    root.main(argv=['sub', 'extern'], strict=False)
+    assert calls == ['opaque']
+
+
+def test_opaque_command_does_not_inherit_previous_aliases():
+    """
+    An opaque command registered after an aliased command used to reuse the
+    previous command's parserkw, hijacking its aliases (a build-time
+    'conflicting subparser alias' error on newer Pythons).
+    """
+    calls = []
+
+    def opaque_main():
+        calls.append('opaque')
+
+    class Command1(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append('command1')
+            cls.cli(argv=argv, data=kwargs)
+
+    class MyModal(kwconf.ModalCLI):
+        pass
+
+    modal = MyModal()
+    modal.register(Command1, command='cmd1', alias=['c1'])
+    modal.register(command='extern', main=opaque_main)(None)
+
+    # Building the parser must not raise, and the alias must still route to
+    # the aliased command, not the opaque one.
+    modal.argparse()
+    assert modal.main(argv=['c1'], strict=False) == 0
+    modal.main(argv=['extern'], strict=False)
+    assert calls == ['command1', 'opaque']
+
+
 def test_modal_with_positional_arguments_variant1():
     """
     Test that modals can have subcommands with positional arguments,

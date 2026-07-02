@@ -19,6 +19,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Opaque modal commands (registered with `main=` and no config class) no
+  longer reuse the previous command's parser kwargs, which could hijack that
+  command's aliases or crash at build time (`UnboundLocalError` /
+  `conflicting subparser alias`). Aliases passed to `register(alias=...)` for
+  opaque commands are now honored.
 * Intercepted parse errors now keep argparse's `argument --name:` prefix in
   the printed message (previously `ex.message` dropped it, hiding which
   option failed).

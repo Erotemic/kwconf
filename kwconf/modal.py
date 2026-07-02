@@ -664,8 +664,23 @@ class ModalCLI(metaclass=MetaModalCLI):
             main_cmd, aliases = command_names[0], command_names[1:]
 
             if cmdinfo.get('is_opaque'):
+                # Opaque commands carry no introspected parserkw; build a
+                # minimal one locally. Reusing the loop's `parserkw` here
+                # picked up the previous command's kwargs (or was unbound),
+                # hijacking its aliases/description.
+                opaque_parserkw: Dict[str, Any] = {}
+                seen_names = {main_cmd}
+                opaque_aliases = []
+                for name in value_like_fuzzy_long_names(
+                    list(aliases) + list(cmdinfo.get('alias') or [])
+                ):
+                    if name not in seen_names:
+                        seen_names.add(name)
+                        opaque_aliases.append(name)
+                if opaque_aliases:
+                    opaque_parserkw['aliases'] = opaque_aliases
                 external_parser = command_subparsers.add_parser(
-                    main_cmd, add_help=False, **parserkw
+                    main_cmd, add_help=False, **opaque_parserkw
                 )
                 external_parser.set_defaults(
                     __opaque_main__=cmdinfo['main_func']
