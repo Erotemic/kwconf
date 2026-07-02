@@ -264,16 +264,25 @@ def _coerce_data_to_dict(
     if isinstance(data, dict):
         return dict(data)
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
-        if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
+        from kwconf.util.util_fileio import looks_like_config_path
+
+        if isinstance(data, str) and not os.path.exists(data):
+            if looks_like_config_path(data):
+                # A mistyped path (e.g. 'no_such.yaml') should not be silently
+                # parsed as inline content.
+                raise FileNotFoundError(
+                    f'config file does not exist: {data!r}'
+                )
             import json
 
             try:
-                return json.loads(data)
+                parsed = json.loads(data)
             except Exception:
                 import io
 
                 yaml = import_yaml('YAML parsing')
-                return yaml.load(io.StringIO(data), Loader=yaml.SafeLoader)
+                parsed = yaml.load(io.StringIO(data), Loader=yaml.SafeLoader)
+            return _validate_mapping_payload(parsed, data)
         if mode is None:
             if isinstance(data, str) and data.lower().endswith('.json'):
                 mode = 'json'
@@ -288,13 +297,32 @@ def _coerce_data_to_dict(
         ) as file:
             if mode == 'yaml':
                 yaml = import_yaml('YAML file loading')
-                return yaml.load(file, Loader=yaml.SafeLoader)
-            if mode == 'json':
+                parsed = yaml.load(file, Loader=yaml.SafeLoader)
+            elif mode == 'json':
                 import json
 
-                return json.load(file)
-            raise KeyError(mode)
+                parsed = json.load(file)
+            else:
+                raise KeyError(mode)
+            return _validate_mapping_payload(parsed, data)
     raise TypeError(f'Expected path, dict, or Config; got {type(data)!r}')
+
+
+def _validate_mapping_payload(parsed: Any, source: Any) -> Dict[str, Any]:
+    """
+    Ensure a parsed config payload is a mapping (an empty file parses to None
+    and means "no overrides"). Anything else -- e.g. a bare scalar from a
+    mistyped path or a malformed file -- gets a clear error instead of an
+    obscure downstream ``AttributeError``/``KeyError``.
+    """
+    if parsed is None:
+        return {}
+    if isinstance(parsed, Mapping):
+        return dict(parsed)
+    raise TypeError(
+        f'config source {source!r} did not parse to a mapping '
+        f'(got {type(parsed).__name__})'
+    )
 
 
 def _normalize_class_defaults(defaults, annotations=None):

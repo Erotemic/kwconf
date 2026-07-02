@@ -23,6 +23,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* A mistyped config path (`--config typo.yaml`, `data='no_such.yaml'`) now
+  raises a clear `FileNotFoundError` instead of being silently parsed as
+  inline YAML content and failing later with an obscure error. A config file
+  that does not parse to a mapping raises a clear `TypeError`, and an empty
+  file is treated as "no overrides".
 * A plain dict-valued leaf field alongside a `SubConfig` no longer crashes
   `load()`. Nested update mappings are now flattened only across SubConfig
   boundaries, so a dict field (`load({'hyperparams': {'lr': 0.5}})`) is

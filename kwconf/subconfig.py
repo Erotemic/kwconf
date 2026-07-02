@@ -362,10 +362,14 @@ def coerce_data_updates(data, mode=None, cfg=None):
         return {}
 
     import os
-    from kwconf.util.util_fileio import open_text_input
+    from kwconf.util.util_fileio import looks_like_config_path, open_text_input
 
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
-        if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
+        if isinstance(data, str) and not os.path.exists(data):
+            if looks_like_config_path(data):
+                raise FileNotFoundError(
+                    f'config file does not exist: {data!r}'
+                )
             import json
 
             try:
@@ -398,6 +402,14 @@ def coerce_data_updates(data, mode=None, cfg=None):
         user_config = data.to_dict()
     else:
         raise TypeError(f'Expected path or dict, but got {type(data)}')
+
+    if user_config is None:
+        return {}
+    if not isinstance(user_config, Mapping):
+        raise TypeError(
+            f'config source {data!r} did not parse to a mapping '
+            f'(got {type(user_config).__name__})'
+        )
 
     flat = {}
     for k, v in _flatten_nested(user_config, cfg=cfg):

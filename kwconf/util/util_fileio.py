@@ -5,6 +5,29 @@ from contextlib import contextmanager
 from os.path import exists
 from typing import IO, Any, Iterator, Union
 
+_CONFIG_FILE_SUFFIXES = ('.yaml', '.yml', '.json')
+
+
+def looks_like_config_path(text: str) -> bool:
+    """
+    Heuristic: does ``text`` look like a filesystem path to a config file
+    rather than raw inline YAML/JSON content?
+
+    True when it is single-line and either ends with a known config suffix
+    (``.yaml`` / ``.yml`` / ``.json``) or contains a path separator. Used to
+    turn a mistyped ``--config typo.yaml`` into a clear ``FileNotFoundError``
+    instead of silently parsing the path string as YAML content.
+    """
+    if '\n' in text:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if lowered.endswith(_CONFIG_FILE_SUFFIXES):
+        return True
+    return os.sep in stripped or (os.altsep is not None and os.altsep in stripped)
+
 
 @contextmanager
 def open_text_input(

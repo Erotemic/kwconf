@@ -193,3 +193,41 @@ def test_config_load_from_yaml_text():
         argv=['--config', config.dumps(mode='yaml')], special_options=True
     )
     assert dict(config2) == dict(config)
+
+
+def test_missing_config_path_raises_file_not_found():
+    """A mistyped config path must raise FileNotFoundError, not be parsed as
+    inline YAML content."""
+    import pytest
+
+    class C(kwconf.Config):
+        a = kwconf.Value(0)
+
+    for bad in ['no_such_file.yaml', os.path.join('missing', 'cfg.json')]:
+        with pytest.raises(FileNotFoundError):
+            C.cli(data=bad, argv=False)
+
+
+def test_empty_config_file_is_no_overrides(tmp_path):
+    mark_requires_yaml()
+
+    class C(kwconf.Config):
+        a = kwconf.Value(7)
+
+    fpath = tmp_path / 'empty.yaml'
+    fpath.write_text('')
+    cfg = C.cli(data=str(fpath), argv=False)
+    assert cfg['a'] == 7
+
+
+def test_non_mapping_config_payload_raises(tmp_path):
+    mark_requires_yaml()
+    import pytest
+
+    class C(kwconf.Config):
+        a = kwconf.Value(0)
+
+    fpath = tmp_path / 'scalar.yaml'
+    fpath.write_text('just a bare string\n')
+    with pytest.raises(TypeError, match='did not parse to a mapping'):
+        C.cli(data=str(fpath), argv=False)
