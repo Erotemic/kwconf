@@ -5,6 +5,15 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Version 0.10.1] - Unreleased
 
+### Development
+* Ruff (lint + format) is now enforced by `run_linter.sh` and CI, and shipped
+  in the linting extra. A `[dependency-groups] dev` group makes `uv run
+  pytest` work without `--extra tests`. The Sphinx docs build again on Python
+  3.14. The sdist now ships `tests/conftest.py` and `CHANGELOG.md` (new
+  `MANIFEST.in`). `[tool.uv].exclude-newer` is pinned to a full timestamp so
+  `uv run` no longer dirties `uv.lock`. Misc pyproject cleanups (duplicate
+  build requirement, stale xcookie version, codespell path).
+
 ### Added
 * `register_parser` (the documented parser extension point) is now exported at
   the top level: `kwconf.register_parser(...)`.

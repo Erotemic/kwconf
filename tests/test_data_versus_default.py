@@ -32,7 +32,7 @@ def generate_dataconfig_instance_variants():
 
 
 @pytest.mark.parametrize(
-    'config, test_name', generate_dataconfig_instance_variants()
+    'config, test_name', list(generate_dataconfig_instance_variants())
 )
 def test_data_vs_default(config, test_name):
     assert config['num'] == 1
