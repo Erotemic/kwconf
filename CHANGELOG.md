@@ -19,6 +19,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `Config.dump` / `dumps` no longer register a `dict` representer on the
+  shared `yaml.SafeDumper`, which changed the output of unrelated
+  `yaml.safe_dump` calls in the same process.
 * A successful `--dump` / `--dumps` now exits with status 0 instead of 1, so
   shell pipelines like `tool --dumps > config.yaml` no longer report failure.
 * `Config.__json__` now converts a nested object with a `__json__` method in

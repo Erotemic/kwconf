@@ -1730,13 +1730,18 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if mode == 'yaml':
             yaml = import_yaml("dump(mode='yaml')")
 
+            # Use a local Dumper subclass; registering the representer on the
+            # shared yaml.SafeDumper would change the behavior of every other
+            # safe_dump call in the process.
+            class _OrderedDumper(yaml.SafeDumper): ...
+
             def order_rep(dumper, data):
                 return dumper.represent_mapping(
                     'tag:yaml.org,2002:map', data.items(), flow_style=False
                 )
 
-            yaml.add_representer(dict, order_rep, Dumper=yaml.SafeDumper)
-            yaml.safe_dump(payload, stream)  # type: ignore
+            _OrderedDumper.add_representer(dict, order_rep)
+            yaml.dump(payload, stream, Dumper=_OrderedDumper)  # type: ignore
         elif mode == 'json':
             import json
 
