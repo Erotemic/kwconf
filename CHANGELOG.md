@@ -19,6 +19,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `exit_on_error=False` is now honored by `CompatArgumentParser` /
+  `ExtendedArgumentParser`. Modern argparse re-set the attribute during
+  construction, so parse errors always raised `SystemExit` instead of
+  `argparse.ArgumentError`. `ExtendedArgumentParser.parse_args` also no longer
+  leaves `exit_on_error` permanently flipped off on a reused parser.
 * `Config.dump` / `dumps` no longer register a `dict` representer on the
   shared `yaml.SafeDumper`, which changed the output of unrelated
   `yaml.safe_dump` calls in the same process.

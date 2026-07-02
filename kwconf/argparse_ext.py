@@ -598,8 +598,12 @@ class CompatArgumentParser(argparse.ArgumentParser):
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.exit_on_error = kwargs.pop('exit_on_error', True)
+        exit_on_error = kwargs.pop('exit_on_error', True)
         super().__init__(*args, **kwargs)
+        # Assign after super().__init__: modern argparse has its own
+        # exit_on_error parameter (defaulting to True) that would otherwise
+        # clobber the caller's value.
+        self.exit_on_error = exit_on_error
 
     def parse_known_args(  # type: ignore[override]
         self,
@@ -912,11 +916,13 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
         >>> print(f'res2 = {ub.urepr(res2, nl=1)}')
         >>> assert (res1 == {'my_option1': 'foo-bar_baz', 'my_option2': 'default'})
         >>> assert (res2 == {'my_option1': 'default', 'my_option2': 'foo-bar_baz'})
-        >>> # You cannot swap "_" and "-" in argument names
+        >>> # You cannot swap "_" and "-" in argument names.
+        >>> # (exit_on_error=False surfaces the usage error as an exception
+        >>> # instead of a SystemExit)
         >>> import pytest
-        >>> with pytest.raises(SystemExit):
+        >>> with pytest.raises(argparse.ArgumentError):
         >>>     parser.parse_args(args=['--my_option2=foo-bar_baz'])
-        >>> with pytest.raises(SystemExit):
+        >>> with pytest.raises(argparse.ArgumentError):
         >>>     parser.parse_args(args=['--my-option1=foo-bar_baz'])
         >>> #
         >>> # With the ExtendedArgumentParser you can freely interchange underscores
@@ -1007,6 +1013,10 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
                 deepest = self
             # deepest.print_usage()
             deepest.error(ex.message)
+        finally:
+            # Restore the flag so a reused parser keeps the exit-on-error
+            # policy on later parses (error() raising SystemExit included).
+            self.exit_on_error = True
         # This code is unreachable because error() raises SystemExit
         return super().parse_args(args, namespace=namespace)  # type: ignore
 
