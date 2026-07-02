@@ -168,63 +168,48 @@ def _maybe_apply_annotation_to_value(key, value, annotations):
     runtime_type = _runtime_type_from_annotation(annotation)
     choices = _choices_from_annotation(annotation)
 
-    # Stash the annotation on existing Value templates so post-coerce
-    # validation can consult it later. Done unconditionally (any usable
-    # annotation, not just ones we could derive a runtime type from)
-    # because validation handles unions/Literal natively.
-    if annotation is not None and not isinstance(annotation, str):
-        if isinstance(value, Value):
-            value._annotation = annotation
-        else:
-            # Will get attached after Value-wrapping below if applicable.
-            pass
-
-    if runtime_type is None and choices is None:
-        if (
-            annotation is not None
-            and not isinstance(annotation, str)
-            and not isinstance(value, Value)
-        ):
-            # Annotation is something we don't infer type/choices from
-            # (e.g. ``int | None``) but we still want to remember it for
-            # validation. Wrap into a Value so we have somewhere to stash.
-            value = Value(value, isflag=isinstance(value, bool))
-            value._annotation = annotation
-        return value
-
-    # Apply choices from Literal[...] when the user hasn't already set them.
-    if choices is not None:
-        if isinstance(value, Value):
-            if not value.parsekw.get('choices'):
-                value = value.copy()
-                value.parsekw = dict(value.parsekw)
-                value.parsekw['choices'] = list(choices)
-        else:
-            value = Value(
-                value, choices=list(choices), isflag=isinstance(value, bool)
-            )
-        if isinstance(value, Value):
-            value._annotation = annotation
-
-    if runtime_type is None:
-        return value
+    # A string annotation could not be resolved; there is nothing usable to
+    # stash (validation handles unions/Literal natively from real objects).
+    has_annotation = annotation is not None and not isinstance(annotation, str)
 
     if isinstance(value, Value):
-        if value.type is None:
-            value = value.copy()
-            value.type = runtime_type
-            value.parsekw = dict(value.parsekw)
-            value.parsekw['type'] = runtime_type
+        if not has_annotation:
+            return value
+        # Value templates are shared with base classes and sibling configs
+        # (subclass __default__ merging reuses the same objects), so never
+        # mutate the original: copy once, then enrich the copy.
+        value = value.copy()
+        value.parsekw = dict(value.parsekw)
         value._annotation = annotation
+        # Explicit metadata on a user-supplied Value wins over
+        # annotation-derived values.
+        if choices is not None and not value.parsekw.get('choices'):
+            value.parsekw['choices'] = list(choices)
+        if runtime_type is not None and value.type is None:
+            value.type = runtime_type
+            value.parsekw['type'] = runtime_type
         return value
-    # Set the annotation-derived runtime type as an attribute rather than
-    # passing ``type=`` to the constructor, so the Value is NOT marked as
-    # "user gave type=" (which would route coercion through the legacy smartcast
-    # path instead of the annotation-gated 'auto' default).
-    new_value = Value(value, isflag=isinstance(value, bool))
-    new_value.type = runtime_type
-    new_value.parsekw = dict(new_value.parsekw)
-    new_value.parsekw['type'] = runtime_type
+
+    if not has_annotation:
+        return value
+
+    # Wrap a plain default into a Value so we have somewhere to stash the
+    # annotation (and any derived choices) for later validation, even when
+    # no runtime type could be inferred (e.g. ``int | None``).
+    if choices is not None:
+        new_value = Value(
+            value, choices=list(choices), isflag=isinstance(value, bool)
+        )
+    else:
+        new_value = Value(value, isflag=isinstance(value, bool))
+    if runtime_type is not None:
+        # Set the annotation-derived runtime type as an attribute rather than
+        # passing ``type=`` to the constructor, so the Value is NOT marked as
+        # "user gave type=" (which would route coercion through the legacy
+        # smartcast path instead of the annotation-gated 'auto' default).
+        new_value.type = runtime_type
+        new_value.parsekw = dict(new_value.parsekw)
+        new_value.parsekw['type'] = runtime_type
     new_value._annotation = annotation
     return new_value
 

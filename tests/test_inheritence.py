@@ -160,3 +160,45 @@ def test_multiple_inheritence_diamond():
         })
         """
     )
+
+
+def test_annotation_override_does_not_mutate_base_template():
+    """
+    A subclass overriding only the annotation of an inherited field must not
+    rewrite the base class's shared Value template (annotation processing
+    used to set _annotation in place before copying).
+    """
+    import warnings
+
+    import kwconf
+
+    class Base(kwconf.Config):
+        x: int = kwconf.Value(0)
+
+    class Sub(Base):
+        x: str
+
+    assert Base.__default__['x'] is not Sub.__default__['x']
+    assert Base.__default__['x']._annotation is int
+    assert Sub.__default__['x']._annotation is str
+
+    # The base must still validate against int, not the subclass's str.
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        Base(x=5)
+
+
+def test_annotation_does_not_mutate_user_typed_template():
+    """
+    Same guarantee for the branch where the user supplied an explicit type=
+    (previously mutated without copying).
+    """
+    import kwconf
+
+    template = kwconf.Value(0, type=int)
+
+    class A(kwconf.Config):
+        x: int = template
+
+    assert getattr(template, '_annotation', None) is None
+    assert A.__default__['x']._annotation is int
