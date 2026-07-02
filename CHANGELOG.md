@@ -23,6 +23,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Subcommand provenance now survives a leading option before the command.
+  `_deepest_subparser_for_argv` matched a subcommand only as the very first
+  token, so any preceding option (or `--`) collapsed the walk to the root
+  parser -- silently dropping every user-supplied subcommand value in modal
+  dispatch. It now skips the parser's own options (and their separate-token
+  values) to reach the command token.
 * `CounterOrKeyValAction` no longer corrupts long-option values that begin
   with the option name's first letter. The grouped-short-option handling
   (`-vvv` → count) wrongly fired for long options too, so `--flag=false`

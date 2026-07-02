@@ -180,6 +180,28 @@ def parse_result(
     return result
 
 
+def _option_consumes_separate_value(
+    parser: argparse.ArgumentParser, token: str
+) -> bool:
+    """
+    Whether ``token`` names an option on ``parser`` that consumes a following
+    separate-token value (e.g. ``--opt val``). Returns False for flags,
+    ``--opt=val`` forms (the value is in the same token), unknown options, and
+    the end-of-options separator. Used to skip past options when locating the
+    positional subcommand token.
+    """
+    if '=' in token:
+        return False
+    for action in parser._actions:
+        if token in action.option_strings:
+            # nargs 0 (store_true / count / our flag actions) takes no value;
+            # nargs='?' can appear alone; everything else expects a value.
+            if action.nargs == 0 or action.nargs == '?':
+                return False
+            return True
+    return False
+
+
 class BooleanFlagOrKeyValAction(_Base):
     """
     An action that allows you to specify a boolean via a flag as per usual
@@ -1048,6 +1070,30 @@ class ExtendedArgumentParser(_ExtendedArgumentParserBase):  # type: ignore[misc,
                     sub_action = act
                     break
             if sub_action is None:
+                break
+            # Skip this parser's own options (and any separate-token values)
+            # to reach the positional command token. Without this a leading
+            # ``--opt`` before the command would break the walk and collapse
+            # provenance to the root parser -- dropping every user-supplied
+            # subcommand value.
+            saw_separator = False
+            while i < len(tokens):
+                tok = tokens[i]
+                if tok == '--':
+                    saw_separator = True
+                    i += 1
+                    break
+                if tok.startswith('-') and tok != '-':
+                    i += 1
+                    if _option_consumes_separate_value(parser, tok):
+                        i += 1
+                    continue
+                break
+            if (
+                not saw_separator
+                and i < len(tokens)
+                and tokens[i].startswith('-')
+            ):
                 break
             if i < len(tokens) and tokens[i] in sub_action.choices:
                 parser = sub_action.choices[tokens[i]]
