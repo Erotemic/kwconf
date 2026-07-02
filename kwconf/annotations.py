@@ -227,11 +227,19 @@ def choices_from_annotation(annotation: Any) -> tuple | None:
     """
     Return choices implied by ``Literal`` annotations, including Optional wrappers.
 
+    A union of literals combines every member's choices. A union containing
+    any non-literal member (``Literal['a'] | str``) admits arbitrary values,
+    so it implies no choices at all.
+
     Examples:
         >>> choices_from_annotation(typing.Literal['small', 'large'])
         ('small', 'large')
         >>> choices_from_annotation(typing.Optional[typing.Literal[1, 2]])
         (1, 2)
+        >>> choices_from_annotation(typing.Literal['a'] | typing.Literal['b'])
+        ('a', 'b')
+        >>> choices_from_annotation(typing.Literal['a', 'b'] | str) is None
+        True
         >>> choices_from_annotation(str) is None
         True
         >>> choices_from_annotation('ForwardRef') is None
@@ -243,12 +251,18 @@ def choices_from_annotation(annotation: Any) -> tuple | None:
     if origin is typing.Literal:
         return typing.get_args(annotation)
     if origin in {Union, types.UnionType}:
+        combined: list = []
         for arg in typing.get_args(annotation):
             if arg is NoneType:
                 continue
             ch = choices_from_annotation(arg)
-            if ch is not None:
-                return ch
+            if ch is None:
+                # A non-literal member admits arbitrary values; restricting
+                # the CLI to the literal siblings would reject valid input.
+                return None
+            combined.extend(c for c in ch if c not in combined)
+        if combined:
+            return tuple(combined)
     return None
 
 

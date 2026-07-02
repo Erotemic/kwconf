@@ -23,6 +23,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* A `Literal[...] | str` annotation no longer restricts the CLI to the
+  literal values (the `str` member admits any string, so no `choices` are
+  applied). A union of several `Literal`s now combines all members' values
+  instead of exposing only the first literal's.
 * `--config <file>` now merges the file's values over the current state.
   Previously it triggered a full reset-load that restored defaults for every
   key the file did not mention, silently wiping `data=` values. Explicit CLI
