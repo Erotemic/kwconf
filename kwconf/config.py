@@ -2881,13 +2881,15 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 raise ValueError(
                     f'Multiple fields declare the same CLI position: {conflicts}'
                 )
-            # NOTE: _keyorder is currently computed but unused downstream (the
-            # build loop iterates self._data); kept ubelt-free, pending review.
+            # Positional fields are added to the parser in ``position`` order;
+            # remaining fields keep declaration order after them. argparse
+            # binds positionals by the order they are added, so this is what
+            # makes ``position=`` actually control positional binding.
             _keyorder = sorted(_positions, key=_positions.__getitem__)
             _seen = set(_keyorder)
-            _keyorder = _keyorder + [k for k in self._default if k not in _seen]
+            _keyorder = _keyorder + [k for k in self._data if k not in _seen]
         else:
-            _keyorder = list(self._default.keys())
+            _keyorder = list(self._data.keys())
 
         own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
         # ``fuzzy_hyphens`` (when not None) is the effective setting propagated
@@ -2906,7 +2908,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         setattr(parser, '_kwconf_fuzzy_hyphens', bool(FUZZY_HYPHENS))
 
         # Need to clean this up, metadata probably isn't necessary.
-        for key, value in self._data.items():
+        for key in _keyorder:
+            value = self._data[key]
             # Use the metadata in the Value class to enhance argparse
             _value = self._default[key]
             from kwconf import value as value_mod

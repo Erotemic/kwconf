@@ -23,6 +23,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `position=` now controls positional binding order. The position-sorted key
+  order was computed but the parser build loop still iterated declaration
+  order, so `second = Value(position=2); first = Value(position=1)` bound the
+  first argv token to `second`. The build loop now follows the position
+  order.
 * Subcommand provenance now survives a leading option before the command.
   `_deepest_subparser_for_argv` matched a subcommand only as the very first
   token, so any preceding option (or `--`) collapsed the walk to the root

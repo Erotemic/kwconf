@@ -86,3 +86,20 @@ if __name__ == '__main__':
         python ~/code/kwconf/tests/test_argparse_integration.py
     """
     build_modal().main()
+
+
+def test_positional_order_follows_position_not_declaration():
+    """
+    ``position=`` must control positional binding order even when fields are
+    declared out of order (the sorted key order used to be computed but never
+    applied to the build loop).
+    """
+    import kwconf
+
+    class C(kwconf.Config):
+        second = kwconf.Value(None, position=2)
+        first = kwconf.Value(None, position=1)
+
+    cfg = C.cli(argv=['AAA', 'BBB'])
+    assert cfg['first'] == 'AAA'
+    assert cfg['second'] == 'BBB'
