@@ -97,7 +97,9 @@ packages.find.include = [
 ]
 
 [tool.uv]
-exclude-newer = "2026-06-18"
+# Full timestamp on purpose: a bare date normalizes timezone-dependently and
+# makes every `uv run` rewrite uv.lock with a different exclude-newer value.
+exclude-newer = "2026-06-19T04:00:00Z"
 
 [tool.ruff]
 target-version = "py310"
