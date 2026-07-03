@@ -950,16 +950,10 @@ class ModalCLI(metaclass=MetaModalCLI):
             # Use current standard argument control
             control_kw['argv'] = False
 
-        try:
-            ret = sub_main(**control_kw, **explicit_kw)
-        except Exception as ex:
-            print('ERROR ex = {!r}'.format(ex))
-            raise
-            return 1
-        else:
-            if ret is None:
-                ret = 0
-            return ret
+        ret = sub_main(**control_kw, **explicit_kw)
+        if ret is None:
+            ret = 0
+        return ret
 
     # Backwards-compatible alias used in examples and by callers who prefer
     # verb-oriented invocation on ModalCLI instances.

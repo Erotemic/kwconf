@@ -1117,6 +1117,56 @@ def test_modal_forwards_only_explicit_kwargs():
     }
 
 
+def test_modal_subcommand_exception_propagates_cleanly(capsys):
+    """A subcommand that raises should propagate the exception unchanged,
+    without ModalCLI.main printing a debug line to stdout first.
+
+    Downstream CLIs (e.g. aivm) install their own top-level handler to turn
+    domain errors into a clean message; a stray ``ERROR ex = ...`` print here
+    double-reported every failure.
+    """
+
+    class Boom(RuntimeError):
+        pass
+
+    class DoBoom(kwconf.Config):
+        __command__ = 'boom'
+
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            cls.cli(argv=argv, data=kwargs)
+            raise Boom('kaboom')
+
+    class RootCLI(kwconf.ModalCLI):
+        __subconfigs__ = [DoBoom]
+
+    import pytest
+
+    with pytest.raises(Boom, match='kaboom'):
+        RootCLI.main(argv=['boom'])
+
+    captured = capsys.readouterr()
+    assert 'ERROR ex' not in captured.out
+    assert 'ERROR ex' not in captured.err
+
+
+def test_modal_subcommand_none_return_is_zero():
+    """A subcommand returning ``None`` is treated as a success exit code."""
+
+    class DoNothing(kwconf.Config):
+        __command__ = 'noop'
+
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            cls.cli(argv=argv, data=kwargs)
+            return None
+
+    class RootCLI(kwconf.ModalCLI):
+        __subconfigs__ = [DoNothing]
+
+    assert RootCLI.main(argv=['noop']) == 0
+
+
 if __name__ == '__main__':
     """
     CommandLine:

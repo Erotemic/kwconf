@@ -32,6 +32,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `ModalCLI.main` no longer prints a stray ``ERROR ex = <repr>`` line to
+  stdout before re-raising a subcommand exception. The leftover debug
+  print (and an unreachable ``return 1`` after the ``raise``) double-reported
+  every failure for downstream CLIs that install their own top-level error
+  handler; exceptions now propagate untouched.
 * `@dataconf` on a plain class now preserves underscore-prefixed hooks and
   helpers (`__post_init__`, `__validate__`, `_helper`, ...) and picks up
   fields inherited from plain base classes by walking the MRO. Previously it
