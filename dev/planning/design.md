@@ -138,15 +138,28 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
   runtime *also* coerced it, the checker and runtime would disagree on the same
   line. Complementary guarantees: Python boundary = statically checked + no
   runtime coercion; argv boundary = no static info + runtime parse. **[LOCKED]**
-- **Validation is the single mismatch voice, default `'warn'`.** Controlled by
-  `__validate__` (class) / `Value(validate=)` (field): checks a value against
-  the annotation and warns (default), raises `TypeError` (`'error'`/`True`), or
-  is off (`False`). It runs on *user-supplied* values (constructor / `data=` /
+- **Validation is the single *value-level* mismatch voice, default `'warn'`.**
+  Controlled by `__validate__` (class) / `Value(validate=)` (field): checks a
+  value against the annotation and warns (default), raises
+  `ConfigValidationError` (a `TypeError` subclass; `'error'`/`True`), or is off
+  (`False`). It runs on *user-supplied* values (constructor / `data=` /
   assignment, and parsed argv/env), but **not** on a field's own trusted default
   — a WYSIWYG `Value('512')` never warns about itself. Combined with parsers no
-  longer warning on value-level no-match, mismatches are reported exactly once,
-  uniformly across `auto`/`csv`/`yaml`/custom. **[REVISED 2026-06; default
-  flipped off → 'warn']**
+  longer warning on value-level no-match, value-level mismatches are reported
+  exactly once, uniformly across `auto`/`csv`/`yaml`/custom. **[REVISED 2026-06;
+  default flipped off → 'warn']**
+    - **Scope — `validate` governs this boundary, not the parser.** It is not
+      the *only* enforcer: an annotation the argument parser can enforce
+      directly (notably `Literal` → argparse `choices=`) is hard-rejected on the
+      `argv`/`env` boundary with a `SystemExit` + usage message *regardless of
+      `validate`*, including in `'warn'` mode. So a bad `Literal` fails hard on
+      the CLI always; `'warn'` only softens the programmatic path, and
+      `'error'` makes the programmatic path hard too. The two boundaries
+      deliberately raise different types — `SystemExit` (CLI: usage message +
+      exit code) vs `ConfigValidationError` (programmatic: catchable) — because
+      each suits its caller; a CLI's top-level handler lets `SystemExit` exit
+      and catches `ConfigValidationError` to print a clean line, and both land
+      on the same exit code.
 
 ## 5. Static typing strategy
 

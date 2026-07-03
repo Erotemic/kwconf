@@ -175,7 +175,11 @@ class _Value(NiceRepr):
         validate (bool | str | None):
             Opt into post-coerce annotation validation for this field. ``None``
             inherits the owning class's ``__validate__``; ``'warn'`` warns on a
-            mismatch; ``'error'`` / ``True`` raises; ``False`` disables it.
+            mismatch; ``'error'`` / ``True`` raises :class:`ConfigValidationError`;
+            ``False`` disables it. This governs the programmatic boundary only;
+            a ``Literal`` is still hard-rejected on ``argv``/``env`` by the
+            parser (argparse ``choices=``) regardless of ``validate``. See
+            :meth:`Config._validate_assignment`.
 
     CommandLine:
         xdoctest -m kwconf.value _Value
@@ -678,7 +682,9 @@ def Value(
         validate (bool | str | None):
             Opt into post-coerce annotation validation. ``None`` inherits the
             class ``__validate__``; ``'warn'`` warns; ``'error'`` / ``True``
-            raises; ``False`` disables.
+            raises :class:`ConfigValidationError`; ``False`` disables. Governs
+            the programmatic boundary only; a ``Literal`` is still hard-rejected
+            on ``argv``/``env`` by the parser regardless of ``validate``.
 
     Returns:
         T: typed as the field value type (a ``_Value`` wrapper at runtime).

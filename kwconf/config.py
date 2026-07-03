@@ -1110,12 +1110,23 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
           * ``'error'`` / ``True`` -- raise :class:`ConfigValidationError`
             (a ``TypeError`` subclass) on mismatch.
 
-        This is the single place kwconf reports annotation mismatches; the
-        ``coerce``/``auto`` parsers no longer warn on a value-level no-match
-        (they best-effort and keep the string), so there is one voice. It
-        runs on user-supplied values (constructor/data/assignment and parsed
-        argv/env), but NOT on the field's own trusted default (design.md §4),
-        so a WYSIWYG default like ``Value('512')`` never warns about itself.
+        This is the single place kwconf's *value-level* validation reports
+        annotation mismatches; the ``coerce``/``auto`` parsers no longer warn
+        on a value-level no-match (they best-effort and keep the string), so
+        there is one voice for this layer. It runs on user-supplied values
+        (constructor/data/assignment and parsed argv/env), but NOT on the
+        field's own trusted default (design.md §4), so a WYSIWYG default like
+        ``Value('512')`` never warns about itself.
+
+        Scope: ``validate`` governs this Python/programmatic-boundary layer.
+        It does NOT soften the argument parser: an annotation the parser can
+        enforce directly (notably ``Literal`` -> argparse ``choices=``) is
+        still hard-rejected on the ``argv``/``env`` boundary with a
+        ``SystemExit`` and usage message, even in ``'warn'`` mode. So for a
+        ``Literal`` field, a bad value fails hard on the CLI regardless of
+        ``validate``, while ``'warn'`` only warns on the programmatic path;
+        ``'error'`` makes the programmatic path hard too (both boundaries
+        reject, each with the exception type appropriate to its caller).
 
         Validation is skipped when the template has no associated
         annotation (e.g. fields declared without a class-level type hint).
