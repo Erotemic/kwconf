@@ -56,6 +56,36 @@ def test_class_level_error_validation_literal():
         C(mode='wrong')  # ty: ignore[invalid-argument-type]
 
 
+def test_error_validation_raises_config_validation_error():
+    """Error-mode validation raises the specific, exported
+    ``ConfigValidationError`` (still a ``TypeError`` subclass for
+    back-compat) on every user-supplied entry point, so a downstream CLI can
+    catch exactly this and render a clean message."""
+    import kwconf
+
+    assert issubclass(kwconf.ConfigValidationError, TypeError)
+
+    class C(kwconf.Config):
+        __validate__ = 'error'
+        mode: typing.Literal['fast', 'slow'] = 'fast'
+
+    # constructor / data= / attribute assignment all raise the specific type
+    with pytest.raises(kwconf.ConfigValidationError, match='does not match'):
+        C(mode='wrong')  # ty: ignore[invalid-argument-type]
+    with pytest.raises(kwconf.ConfigValidationError):
+        C.cli(argv=False, data={'mode': 'wrong'})
+    cfg = C(mode='fast')
+    with pytest.raises(kwconf.ConfigValidationError):
+        cfg['mode'] = 'wrong'
+
+    # A plain `except TypeError` still catches it (no breakage for existing
+    # handlers that predate the specific type).
+    try:
+        C(mode='wrong')  # ty: ignore[invalid-argument-type]
+    except TypeError as ex:
+        assert isinstance(ex, kwconf.ConfigValidationError)
+
+
 def test_class_level_warn_validation_literal():
     import kwconf
 

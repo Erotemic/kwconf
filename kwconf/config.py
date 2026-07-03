@@ -121,7 +121,21 @@ from kwconf.value import _Value as Value
 # from kwconf.util.util_class import class_or_instancemethod
 
 
-__all__ = ['Config', 'define']
+class ConfigValidationError(TypeError):
+    """Raised when a supplied value fails annotation validation.
+
+    Emitted by :meth:`Config._validate_assignment` when validation is in
+    ``'error'`` mode (via a field's ``validate='error'`` or a class-level
+    ``__validate__ = 'error'``). It subclasses :class:`TypeError` so existing
+    ``except TypeError`` handlers keep working, while a CLI can catch this
+    specific type to turn a bad ``Literal``/annotation value into a clean
+    message instead of a traceback -- on every entry point (constructor,
+    ``data=``, assignment), matching the hard rejection argparse already gives
+    the ``argv`` path.
+    """
+
+
+__all__ = ['Config', 'ConfigValidationError', 'define']
 
 
 def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
@@ -1093,7 +1107,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Modes:
           * ``'warn'`` (default) -- emit a ``UserWarning`` on mismatch.
           * ``False`` -- no validation.
-          * ``'error'`` / ``True`` -- raise ``TypeError`` on mismatch.
+          * ``'error'`` / ``True`` -- raise :class:`ConfigValidationError`
+            (a ``TypeError`` subclass) on mismatch.
 
         This is the single place kwconf reports annotation mismatches; the
         ``coerce``/``auto`` parsers no longer warn on a value-level no-match
@@ -1122,7 +1137,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if mode == 'warn':
             warnings.warn(msg, UserWarning, stacklevel=3)
         else:
-            raise TypeError(msg)
+            raise ConfigValidationError(msg)
 
     def keys(self):
         return self._data.keys()

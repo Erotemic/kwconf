@@ -17,6 +17,13 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 * `register_parser` (the documented parser extension point) is now exported at
   the top level: `kwconf.register_parser(...)`.
+* `kwconf.ConfigValidationError` (a `TypeError` subclass) is now raised when a
+  value fails annotation validation in ``'error'`` mode (``validate='error'``
+  or class-level ``__validate__ = 'error'``), instead of a bare `TypeError`.
+  Existing ``except TypeError`` handlers keep working; a CLI can now catch this
+  specific type to render bad ``Literal``/annotation values as a clean message
+  on every entry point (constructor, ``data=``, assignment), complementing the
+  hard rejection argparse already gives the ``argv`` path.
 
 ### Changed
 * Modal ``--help`` command listings now show a single spelling per command by

@@ -36,7 +36,7 @@ __version__ = '0.10.1'
 
 __submodules__ = {
     'modal': ['ModalCLI', 'ModalValue'],
-    'config': ['Config', 'define'],
+    'config': ['Config', 'ConfigValidationError', 'define'],
     'value': ['Value', 'Flag'],
     'dataconfig': ['dataconf'],
     'subconfig': ['SubConfig'],
@@ -47,6 +47,7 @@ from . import diagnostics  # NOQA
 from .modal import ModalCLI, ModalValue
 from .config import (
     Config,
+    ConfigValidationError,
     define,
 )
 
@@ -65,6 +66,7 @@ from .coerce import (
 
 __all__ = [
     'Config',
+    'ConfigValidationError',
     'Value',
     'Flag',
     'dataconf',
