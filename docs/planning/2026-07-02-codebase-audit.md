@@ -1,11 +1,21 @@
 # kwconf codebase audit — 2026-07-02
 
-> **Remediation status (updated 2026-07-02).** Most findings below have been
-> fixed on branch `dev/audit-fixes`, one focused commit per issue with tests.
-> See [§9 Remediation status](#9-remediation-status) for the per-finding
-> table and the short list of items deliberately **deferred** as design
-> decisions for the maintainer. Suite after fixes: **376 passed, 2 skipped**;
-> `ruff check`, `ruff format --check`, and `ty check ./kwconf` all clean.
+> **Current status (revalidated 2026-07-10).** The remediation pass fixed and
+> regression-tested every high-severity finding in §1, but the audit is **not
+> fully closed**. Several concrete correctness defects from §§2–3 remain
+> reproducible, including silent alias hijacking, dropped constructor
+> arguments, conflicting SubConfig updates replacing a node with a raw value,
+> modal inheritance/discovery failures, and invisible unknown-attribute writes.
+> See [§8 Current sequencing](#8-current-sequencing-updated-2026-07-10) and
+> [§9 Remediation status](#9-remediation-status-revalidated-2026-07-10).
+>
+> Current verification snapshot: **378 passed, 3 skipped**;
+> `uv run --extra linting ./run_linter.sh` and
+> `uv run --with ty ty check ./kwconf` pass. The narrower configured Ruff gate
+> for `kwconf/` and `tests/` is clean, but `ruff check .` still reports nine
+> fixable issues outside that gate. GitLab's lint job is currently
+> `allow_failure: true`, and GitHub does not run Ruff, so “Ruff enforced across
+> the repository” is not yet accurate.
 
 Audited at version 0.10.1 (unreleased), branch `dev/0.10.1`, commit `03cff1f`.
 
@@ -21,11 +31,11 @@ decisions in `dev/planning/design.md` (trust-the-Python-boundary, positional
 findings are cases where the implementation fails to deliver on those locked
 decisions (e.g. union-aware coercion, WYSIWYG defaults).
 
-**Snapshot.** Test suite: 332 collected, 328 passed, 4 skipped, ~1s. `ty check
-./kwconf` green in CI. The architecture is sound and the design voice is
-consistent; the problems below are concentrated in a handful of systemic
-patterns (shared mutable templates, duplicated load paths, argparse-internal
-pinning) rather than spread uniformly.
+**Original audit snapshot.** Test suite: 332 collected, 328 passed, 4 skipped,
+~1s. `ty check ./kwconf` green in CI. The architecture is sound and the design
+voice is consistent; the problems below are concentrated in a handful of
+systemic patterns (shared mutable templates, duplicated load paths,
+argparse-internal pinning) rather than spread uniformly.
 
 ---
 
@@ -510,114 +520,222 @@ These recur across findings and are worth fixing as themes, not point-fixes.
 
 ---
 
-## 8. Suggested sequencing
+## 8. Current sequencing (updated 2026-07-10)
 
-**Quick wins (small diffs, high value):**
-`@register` return (§1.4), `__json__` walker assignment (§1.14), `--dump`
-exit code, `exit_on_error` assignment order (§1.11), conf.py `node.value.value`
-(§1.15), `str(ex)` in error interception, opaque-command `parserkw` ordering
-(§1.13), export `register_parser`, fix the mkinit spec, ruff `--fix` +
-enforce in CI, uv.lock timestamp pin, dev dependency group, delete the dead
-code in §5.
+The original sequencing was appropriate for the first remediation pass, but it
+is now historical. The remaining work should be ordered by whether it can
+silently reinterpret or discard configuration, not by whether it is an
+architectural cleanup.
 
-**Correctness cluster around defaults/state (do together):**
-§1.1, §1.8, and the template-ownership rule from theme 4.1 — these are one
-refactor: never store class-template objects into instances, never mutate
-templates after class creation. Then §1.6 (consult `_explicit_argv_keys` for
-`required`) and §1.5 (make `--config` merge instead of reset) fall out of the
-same precedence-merge code.
+### Phase A — correctness blockers
 
-**Union/annotation cluster (do together):**
-§1.9, §1.10, int-for-float, `format_annotation` — all in
-`annotations.py`/`coerce.py`, all "unwrap unions properly, then decide".
+These remain reproducible in the current tree and can silently corrupt or lose
+user intent. Fix these before treating the audit as closed or using kwconf as a
+fully trusted scriptconfig replacement.
 
-**Subconfig load path:**
-§1.2 plus the dict-leaf/config-node distinction, missing-file errors, empty
-dict/None payload validation, and deduplicating the two load implementations
-(theme 4.3). This is one coherent piece of work on `apply_dot_updates` /
-`coerce_data_updates`.
+1. **Reject alias collisions during class construction** (§2, class
+   construction). An alias currently may collide with a canonical field or
+   another alias; `C(opt2=99)` can update `opt1` while leaving the real `opt2`
+   unchanged. Validate canonical names, declared aliases, and generated fuzzy
+   spellings as one namespace.
+2. **Reject extra and duplicate constructor arguments** (§2, class
+   construction). Extra positional values are silently truncated, and a
+   keyword silently replaces the same field supplied positionally. Match normal
+   Python call semantics with `TypeError`.
+3. **Reject conflicting SubConfig selector/value updates** (§2, file/data
+   loading). A source containing both `inner.__class__` and a scalar `inner`
+   can replace a SubConfig node with a raw value. Define the accepted compound
+   mapping form and reject ambiguous sources before mutation.
+4. **Fix modal inheritance and command discovery** (§2, class construction).
+   Modal subclasses currently lose inherited commands, while unrelated public
+   helper classes are auto-registered as commands. Merge inherited
+   registrations and restrict implicit discovery to supported command types.
+5. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
+   currently succeeds but is absent from mapping access and serialization.
+   Apply the same new-key policy to attribute and mapping assignment, with an
+   explicit escape hatch only when requested.
 
-**Modal/argparse hardening:**
-§1.3 (skip option tokens in the subparser walk), §1.12 (counter guard),
-parser-reuse state (§2), fuzzy-hyphen/allow_abbrev consistency, and a stdlib
-conformance test harness for the pinned argparse internals (theme 4.4).
+### Phase B — safety-sensitive decisions that need an explicit contract
 
-**Deliberate decisions needed (not bugs until decided):**
-`load()` reset-vs-update semantics; `from_env('')` default; annotation-only
-class fields (silently ignored today — error? required field?); `position=`
-(implement or deprecate per `value.py:95`); alias/Mapping contract; whether
-`copy()` should exist.
+These are partly API-design choices, but leaving the current behavior implicit
+is risky enough that each should be resolved before a stable contract is
+claimed.
+
+1. **Environment ingestion default** (§2). `from_env(prefix='')` can absorb
+   ambient variables such as `PATH`, `HOME`, or `USER` into same-named fields.
+   Preferred contract: require a nonempty prefix, or require callers to pass
+   `prefix=''` explicitly to opt into unnamespaced ingestion.
+2. **Public `load()` semantics** (§2). It still means reset-to-defaults and
+   then merge, despite the “updates” wording. Either document this as reload
+   semantics and add a distinct incremental API, or make `load()` incremental.
+3. **Annotation-only fields** (§2). `x: int` is silently ignored. Either treat
+   it as a required field or raise at class construction; silent omission is
+   not an acceptable final contract.
+4. **Alias / Mapping semantics** (§3). Decide whether aliases are lookup-only
+   conveniences or actual mapping keys, then document and test the chosen
+   invariant.
+5. **`Config.copy()`** (§3). Decide whether it returns another Config or should
+   be deprecated in favor of the already explicit `asdict()` / `to_dict()`
+   APIs.
+
+### Phase C — correctness hardening
+
+These are real defects or misleading APIs, but their blast radius is narrower
+than Phase A.
+
+- Clear parser provenance on every parse; `_explicitly_given` currently
+  accumulates when a parser object is reused.
+- Copy modal metadata before instance-specific mutation; live parser and
+  callable objects are still written into class-shared metadata dictionaries.
+- Make `expand_multipass_parser(parser=...)` extend the supplied parser, or
+  remove the misleading parameter.
+- Correct root no-command usage and messaging, and normalize
+  `NoCommandError` for programmatic callers.
+- Detect special-option collisions (`config`, `dump`, `dumps`) before handing
+  them to argparse and issue a kwconf-specific diagnostic.
+- Distinguish generated negation flags from genuine user-declared `--no-*`
+  options in help formatting.
+- Reconcile `subconfig.py.__all__` with its supported public surface and replace
+  remaining bare `Exception` raises with typed exceptions.
+
+### Phase D — tooling and release confidence
+
+- Make the repository-wide lint claim true: fix the nine remaining
+  `ruff check .` findings, run Ruff in GitHub CI, and decide whether the GitLab
+  lint job should remain non-blocking.
+- Make local lint/type commands self-contained. The default dev dependency
+  group has Ruff but not flake8 or ty, so the documented successful invocations
+  require `--extra linting` and `--with ty` respectively.
+- Add prerelease/python-dev coverage and behavioral conformance tests around
+  the copied argparse internals before the next supported-Python expansion.
+
+### Phase E — architectural refactors, only after the concrete defects
+
+The systemic themes in §4 remain valid engineering risks, but they are not all
+current release blockers. Do not let them displace the focused fixes above.
+
+- Clarify ownership among `__default__`, `_default`, and `_data` and freeze
+  class templates by invariant.
+- Consolidate duplicated load/normalize and `add_argument` construction paths.
+- Reduce the private argparse surface where practical and back the remaining
+  overrides with conformance tests.
+- Simplify the SubConfig selector machinery when next making a substantive
+  change there.
 
 ---
 
-## 9. Remediation status
+## 9. Remediation status (revalidated 2026-07-10)
 
-Fixed on branch `dev/audit-fixes` (one reviewable commit per issue, each with
-a regression test). Line numbers in the sections above refer to the original
-audit commit `03cff1f` and will have shifted.
+The source snapshot contains the focused remediation commits through
+`0140ccf`. The historical findings and original line numbers above still
+explain the bugs as first observed; this section is the current risk register.
 
-### Fixed (high-severity §1)
+### Verification snapshot
 
-| Finding | Commit summary |
+- `uv run pytest -q`: **378 passed, 3 skipped**. The three skips are xdoctest
+  examples marked skipped, not the formerly disabled fuzzy-hyphen regression.
+- `uv run --extra linting ./run_linter.sh`: passes for `kwconf/` and `tests/`.
+- `uv run --with ty ty check ./kwconf`: passes.
+- `uv run ruff check .`: **nine fixable findings remain** in `dev/`, `docs/`,
+  `examples/`, and `run_tests.py`.
+- GitLab runs flake8, Ruff, formatter checks, and ty, but the lint job is
+  `allow_failure: true`. GitHub runs flake8 and ty but not Ruff.
+
+### Fixed and regression-tested — high-severity §1
+
+| Finding | Current status |
 | --- | --- |
-| §1.1 shared class mutable defaults via `.cli()` | Use per-instance defaults in the argv-defaults merge |
-| §1.2 SubConfig + dict-leaf crashes `load()` | Flatten subconfig updates only across SubConfig boundaries |
-| §1.3 provenance collapses on leading option | Skip leading options when locating the subcommand for provenance |
-| §1.4 `@register` decorator returns `None` | Fix ModalCLI.register decorator rebinding the class to None |
-| §1.5 `--config` wipes `data=` values | Merge `--config` file values instead of reset-loading |
-| §1.6 `required=` rejects explicit default | Enforce required= via provenance, not value equality |
-| §1.7 `position=` computed but unused | Apply position= ordering when building the parser |
-| §1.8 annotation processing mutates shared templates | Copy Value templates before applying annotation metadata |
-| §1.9 `Literal[...] \| str` restricts CLI | Derive CLI choices correctly from union annotations |
-| §1.10 `Optional` container skips element coercion | Coerce elements through Optional/Union container annotations |
-| §1.11 `exit_on_error=False` ignored + leaked | Honor exit_on_error=False in the extended parsers |
-| §1.12 counter-action value corruption | Restrict counter-flag grouping normalization to short options |
-| §1.13 opaque-command stale `parserkw` | Build opaque modal commands with their own parser kwargs |
-| §1.14 `__json__` truncation | Fix Config.__json__ truncating output at the first nested __json__ object |
-| §1.15 Sphinx 3.14 crash | Fix sphinx-build crash on Python 3.14 |
+| §1.1 shared class mutable defaults via `.cli()` | Fixed: argv defaults are materialized per instance |
+| §1.2 SubConfig + dict-leaf crashes `load()` | Fixed: flattening stops at ordinary mapping leaves |
+| §1.3 provenance collapses on a leading option | Fixed: subcommand discovery skips option tokens |
+| §1.4 `@register` decorator returns `None` | Fixed: decorator returns the registered class |
+| §1.5 `--config` wipes prior `data=` values | Fixed: config-file values merge at the intended precedence layer |
+| §1.6 `required=` rejects an explicitly supplied default | Fixed: enforcement uses provenance rather than value equality |
+| §1.7 `position=` computed but unused | Fixed: parser construction honors position ordering |
+| §1.8 annotation processing mutates shared templates | Fixed: templates are copied before annotation metadata is applied |
+| §1.9 `Literal[...] \| str` restricts the CLI | Fixed: union choices account for unrestricted members |
+| §1.10 Optional containers skip element coercion | Fixed: container element annotations are recovered through unions |
+| §1.11 `exit_on_error=False` ignored | Fixed for the documented extended-parser behavior |
+| §1.12 counter-action value corruption | Fixed: grouped-count normalization is restricted to short joined options |
+| §1.13 opaque commands reuse stale `parserkw` | Fixed: each command builds its own parser kwargs |
+| §1.14 `__json__` truncation | Fixed: nested JSON conversion updates the walker rather than returning early |
+| §1.15 Sphinx Python 3.14 crash | Fixed: version extraction uses the supported AST value attribute |
 
-### Fixed (medium §2, API §3, dead code §5, tooling §6/§7)
+### Fixed — additional concrete findings
 
-- `load()` mutates caller dict; `dump()` mutates global yaml; missing-file /
-  non-mapping payload errors; empty-dict update dropped; `scan_config_path`
-  greedy token; `--dump` exit code; intercepted error names the argument;
-  `main(argv=False)` crash; `--version` versionless-submodal `None`;
-  int-for-float numeric tower + `format_annotation` display; fuzzy-hyphen vs
-  `allow_abbrev` consistency (+ reactivated `test_modal_fuzzy_hyphens`);
-  `@dataconf` drops hooks / inherited fields; `port_to_config` invalid codegen.
-- API: mkinit `__submodules__` spec fixed; `register_parser` exported.
-- Dead code: `HANDLE_INHERITENCE`, `if 0:` block, redundant yaml if/else,
-  `DEBUG_DATA_CONFIG`/`DEBUG_META_DATA_CONFIG`, commented `hybridmethod`,
-  `__example__`.
-- Tooling: ruff enforced (linter script, CI extra) + tree made ruff-clean;
-  `[dependency-groups] dev` so `uv run pytest` works; `uv.lock` timestamp pin;
-  `MANIFEST.in` ships `conftest.py`/`CHANGELOG.md`; conftest sys.path shim
-  guarded; pytest-10 parametrize deprecation; pyproject nits (duplicate
-  setuptools, stale xcookie version, codespell path).
+The following original findings are closed with focused fixes and, where
+behavioral, regression tests:
 
-### Deferred — maintainer design decisions (not fixed)
+- Caller-dict mutation during `load()`, global PyYAML mutation during `dump()`,
+  missing-file / non-mapping payload handling, empty-dict updates,
+  `scan_config_path` token handling, and the internal `--config` precedence
+  path.
+- Successful `--dump` exit status, intercepted error context,
+  `main(argv=False)`, modal version handling, fuzzy-hyphen behavior, and
+  `@dataconf` preservation of hooks and inherited fields.
+- Numeric-tower validation, annotation formatting, and typed
+  `port_to_config()` output.
+- Public export of `register_parser` and correction of the mkinit submodule
+  specification.
+- The dead-code removals listed in the prior remediation pass.
+- `uv run pytest`, lock timestamp stability, installed-artifact test isolation,
+  sdist inclusion of `conftest.py` / `CHANGELOG.md`, and the pytest-10
+  parametrization warning.
 
-These are judgment calls, not defects; left for the maintainer:
+### Open — correctness blockers
 
-- **`load()` reset-vs-update semantics** (§2 "reset-then-merge"). The internal
-  `--config` merge is fixed (§1.5) via a private `_reset` flag, but the public
-  `load()` still resets keys absent from the new source. Decide whether that is
-  the intended contract and document it, or change it.
-- **`from_env(prefix='')` default** (§2). Still reads arbitrary env vars into
-  matching fields by default. Decide: require a prefix, or warn.
-- **Annotation-only class fields silently ignored** (§2). `x: int` with no
-  value still produces no field. Decide: error, or treat as required.
-- **Alias / Mapping contract** (§2.20): `cfg[alias]` works while `alias in cfg`
-  is False. Keep (with an ADR note) or reconcile.
-- **`Config.copy()` returning a plain dict** (§3). Rename / fix / document.
-- **`_check_values`** (`value.py`) left in place: it is intentional opt-in
-  developer infrastructure, not accidental dead code.
+| Finding | Status | Why it matters |
+| --- | --- | --- |
+| Alias collisions hijack canonical fields (§2) | **Open, reproduced** | Silently routes a supplied value to the wrong field |
+| Extra / duplicate constructor arguments (§2) | **Open, reproduced** | Silently discards positional data or overrides it with a keyword |
+| Conflicting SubConfig selector + value (§2) | **Open, reproduced** | Can replace a declared nested Config with a raw scalar |
+| Modal inheritance and broad class discovery (§2) | **Open, reproduced** | Subclasses lose commands; helper classes become invalid commands |
+| Unknown attribute assignment (§3) | **Open, reproduced** | Creates state that appears valid but is absent from config serialization |
 
-### Larger refactors not attempted (out of scope for point-fixes)
+These are not architectural preferences. They are concrete correctness defects
+and should be the next implementation work.
 
-The systemic themes in §4 remain open: the `__default__`/`_default`/`_data`
-state-model refactor (theme 4.2), full de-duplication of the two load/normalize
-paths (theme 4.3, only partially reduced here via the shared
-`looks_like_config_path` helper), the two ~120-line `add_argument` builders in
-`value.py`, and a stdlib-argparse conformance harness for the pinned internals
-(theme 4.4). Each is a standalone project.
+### Open — narrower correctness and API defects
+
+- Parser `_explicitly_given` provenance remains sticky across parser reuse.
+- Modal metadata remains class-shared while instance/parser state is written
+  into it.
+- `expand_multipass_parser` still ignores the supplied parser.
+- Root no-command usage/message and `NoCommandError` programmatic semantics
+  remain misleading.
+- Special-option collisions still surface as low-level argparse conflicts.
+- Genuine `--no-*` options can still receive generated-negation help treatment.
+- `subconfig.py.__all__` remains incomplete, and some error paths still raise
+  bare `Exception`.
+
+### Decision required — not safely dismissible as “just design”
+
+- **`from_env(prefix='')`** is a safety-sensitive default and remains
+  unchanged. The mechanism is useful; the implicit unnamespaced default is the
+  concern.
+- **Public `load()` reset-vs-update semantics** remain unchanged and are still
+  inconsistent with the current docstring wording.
+- **Annotation-only fields** remain silently ignored.
+- **Alias membership semantics** and **`Config.copy()` returning a dict** need
+  explicit contracts, but are lower risk than the three decisions above.
+- `_check_values` remains intentional opt-in developer infrastructure and is
+  not considered accidental dead code.
+
+### Open — tooling accuracy
+
+The earlier remediation text said the tree was Ruff-clean and Ruff was
+“enforced.” The accurate status is narrower:
+
+- The configured `kwconf/` + `tests/` Ruff and formatting gate is clean.
+- The repository as a whole is not Ruff-clean yet.
+- Ruff runs in the non-blocking GitLab lint job, but not in GitHub CI.
+- The default dev group does not actually mirror all lint/type dependencies:
+  flake8 and ty require separate installation paths.
+
+### Deferred architectural risks
+
+The systemic themes in §4 still hold: the three-layer config state model,
+duplicated load/parser construction paths, private argparse implementation
+pinning, and SubConfig selector complexity are maintenance risks. They should
+be tracked as standalone projects, but none should be used as a reason to defer
+the smaller open correctness blockers above.
