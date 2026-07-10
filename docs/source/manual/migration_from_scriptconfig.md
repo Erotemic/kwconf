@@ -199,6 +199,27 @@ class MyConfig(kwconf.Config):
     option = 1
 ```
 
+### Declared fields and temporary attributes
+
+The class declaration is the persistence contract. Attaching an undeclared
+attribute remains valid Python and is useful for temporary state, but it does
+not create a config field:
+
+```python
+cfg.runtime_cache = cache
+assert 'runtime_cache' not in cfg
+assert 'runtime_cache' not in cfg.asdict()
+```
+
+This omission is intentional and does not warn. Declare the value on the class
+when it must participate in mapping behavior, CLI generation, validation, or
+round-trip serialization.
+
+`__allow_newattr__ = True` is a distinct experimental escape hatch that places
+unknown assignments into config data. Those dynamic keys currently have no
+schema metadata or guaranteed deserialization symmetry, so do not use the flag
+for persisted configuration until that contract is formalized.
+
 ### Constructor overloads
 
 Scriptconfig accepted constructor forms such as `Config(data=..., cmdline=...)`.

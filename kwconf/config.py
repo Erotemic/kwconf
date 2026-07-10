@@ -623,8 +623,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     methods after construction.
 
     An instance behaves like both a dictionary (``config['key']``) and a
-    namespace (``config.key``). New keys cannot be added by default; opt in
-    with ``__allow_newattr__ = True`` on the class.
+    namespace (``config.key``). Declared fields form the configuration,
+    mapping, CLI, and serialization contract. Assigning an undeclared Python
+    attribute stores ordinary transient instance state; it is intentionally
+    absent from mapping access and serialization. ``__allow_newattr__ = True``
+    is an experimental escape hatch that instead promotes unknown assignments
+    into dynamic configuration keys; those keys do not have declared parser,
+    annotation, default, or CLI metadata.
 
     Key methods:
 

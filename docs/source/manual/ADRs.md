@@ -15,6 +15,7 @@ short and operational.
 8. [ADR-0008 — Nested configs are explicit](#adr-0008--nested-configs-are-explicit)
 9. [ADR-0009 — Coercion runs for string-only sources](#adr-0009--coercion-runs-for-string-only-sources)
 10. [ADR-0010 — Runtime validation is tiered and performance-conscious](#adr-0010--runtime-validation-is-tiered-and-performance-conscious)
+11. [ADR-0011 — Declared fields define the persistence contract](#adr-0011--declared-fields-define-the-persistence-contract)
 
 ---
 
@@ -169,3 +170,33 @@ does not add a structural traversal to every CLI startup.
 * Parser-enforced constraints remain hard errors regardless of `validate`.
 * `Config.validate()` is the distinct opt-in static-schema gate for tests/CI;
   it is never an implicit startup scan.
+
+## ADR-0011 — Declared fields define the persistence contract
+
+**Decision**
+The class declaration defines the configuration, mapping, CLI, validation, and
+serialization contract. Undeclared attributes attached to an instance are
+ordinary transient Python state, not configuration fields.
+
+**Locks down**
+
+* ``cfg.temp = value`` is allowed when ``temp`` is undeclared.
+* The attached value is accessible as a Python attribute but is absent from
+  mapping access, serialization, deserialization, CLI generation, and schema
+  validation.
+* Omitting transient attributes from serialization is intentional and does not
+  produce a warning. Declare a field when persistence or round-trip behavior is
+  required.
+* ``__allow_newattr__ = True`` is not the default attribute policy. It is an
+  experimental opt-in that promotes unknown assignments into dynamic config
+  keys stored in ``_data``.
+* Dynamic keys currently lack declared defaults, annotations, parser metadata,
+  help text, CLI options, and guaranteed symmetric deserialization.
+
+**Open direction**
+If dynamic persisted configuration is kept, formalize ``__allow_newattr__`` (or
+replace it with a more explicit name such as ``__allow_dynamic_fields__``) as a
+round-trip-capable mapping extension mode. Unknown loaded keys should then be
+accepted symmetrically, while schema-derived CLI and static validation remain
+limited to declared fields unless metadata is supplied explicitly.
+

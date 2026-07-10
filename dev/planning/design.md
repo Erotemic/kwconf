@@ -51,6 +51,11 @@ master `kwconf_primatives` switch exists; granular ones are future work).
   ergonomics. Positional `Value(10)` stays. **[LOCKED]**
 - Static typing (primary checker: **ty**; also mypy/pyright) is a *bonus we lean
   into where it's free*, never a constraint that warps the API. **[LOCKED]**
+- **Declared fields are the persistence contract.** Undeclared attributes may
+  be attached as transient Python state and intentionally do not participate in
+  mapping access, CLI generation, validation, serialization, or
+  deserialization. No warning is needed when serializers omit them. **[LOCKED
+  2026-07-10]**
 
 ## 2. The `Value` API
 
@@ -260,6 +265,14 @@ the typing spec so it works now or eventually. Separate transient checker gaps
    path; add argv/env adapters + `Config.coerce`).
 5. **[OPEN]** Revisit whether `: bool` should auto-imply flag behavior before
    public release.
+6. **[OPEN]** Decide the future of `__allow_newattr__`. Today it promotes
+   unknown assignments into `_data`, so they serialize, but dynamic keys have
+   no declared parser/type/default/CLI metadata and are not guaranteed to load
+   back symmetrically. Preferred direction if retained: formalize an explicitly
+   named dynamic-field mode with symmetric mapping/file round trips, while
+   keeping schema-derived CLI and static validation limited to declared fields.
+   Otherwise deprecate the flag rather than conflating it with ordinary
+   transient attributes.
 
 ## 7. Migration from scriptconfig
 

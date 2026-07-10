@@ -37,6 +37,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   handlers keep working while a CLI can catch the specific validation failure.
 
 ### Changed
+* Documentation now makes the object-state boundary explicit: declared fields
+  are the mapping, CLI, validation, and persistence contract, while undeclared
+  attributes are intentional transient Python state and are omitted from
+  serialization without warning. ``__allow_newattr__`` is documented as a
+  separate experimental dynamic-key escape hatch whose round-trip contract is
+  not yet stable.
 * Modal ``--help`` command listings now show a single spelling per command by
   default (e.g. ``export_data`` instead of ``export_data (export-data)``). The
   hyphen/underscore-duplicate spellings (such as fuzzy-hyphen aliases) still

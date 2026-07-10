@@ -368,11 +368,15 @@ own dev/CI Python is 3.14. Fix: `node.value.value`.
   `alias in cfg` is `False` (`config.py:948-1016`, intentional per docstring),
   breaking the `m[k] ⇒ k in m` invariant generic Mapping code relies on. Worth
   an explicit ADR note if kept.
-- **Unknown-attribute assignment silently lands in `__dict__`** —
-  `config.py:1794-1797`: `cfg.typo = 5` appears to work but never serializes
-  and `'typo' in cfg` is `False`; new-key rejection raises bare `Exception`
-  (`config.py:1043-1046`) so the `except KeyError → AttributeError` translation
-  never engages. Classic dual-namespace footgun.
+- **Unknown-attribute assignment silently lands in `__dict__`** — initially
+  flagged as a dual-namespace footgun, but this is now an explicit design
+  decision rather than a correctness defect. The class declaration is the
+  persistence contract; undeclared attributes are ordinary transient Python
+  state and intentionally do not participate in mapping access, CLI generation,
+  validation, serialization, or deserialization. The remaining open question is
+  the separate experimental `__allow_newattr__` mode, which promotes unknown
+  names into `_data` without yet guaranteeing a complete dynamic-field
+  round-trip contract.
 - **`expand_multipass_parser` ignores its `parser` argument** —
   `subconfig.py:870-960`: both branches rebuild the parser; the caller-supplied
   one is discarded (the docstring example passes one in).
@@ -605,10 +609,9 @@ Completed 2026-07-10: constructor calls now reject extra positional
 arguments and duplicate semantic bindings with `TypeError`, without a recurring
 schema scan or an extra traversal of the declared fields.
 
-1. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
-   currently succeeds but is absent from mapping access and serialization.
-   Apply the same new-key policy to attribute and mapping assignment, with an
-   explicit escape hatch only when requested.
+No outstanding Phase B item remains from the unknown-attribute finding.
+Undeclared attributes are intentionally transient object state; the declaration
+alone defines the mapping and persistence contract.
 
 ### Phase C — safety-sensitive decisions that need an explicit contract
 
@@ -633,6 +636,14 @@ claimed.
 5. **`Config.copy()`** (§3). Decide whether it returns another Config or should
    be deprecated in favor of the already explicit `asdict()` / `to_dict()`
    APIs.
+6. **Dynamic config fields / `__allow_newattr__`** (§3). Ordinary attached
+   attributes are intentionally transient and need no warning. The separate
+   experimental flag currently inserts unknown assignments into `_data`, so
+   they serialize, but it does not provide declared parser/type/default/CLI
+   metadata or guaranteed symmetric loading. Preferred direction if retained:
+   formalize a clearly named dynamic-field mode with round-trip mapping/file
+   semantics while keeping schema-derived CLI and static validation limited to
+   declared fields; otherwise deprecate the flag.
 
 ### Phase D — correctness hardening
 

@@ -65,6 +65,43 @@ field declaration order; extra positional values and any field supplied more
 than once (including through an alias) raise ``TypeError`` instead of silently
 discarding or replacing input.
 
+Declared fields and transient attributes
+----------------------------------------
+
+The class declaration is the configuration contract. Only declared fields
+participate in mapping access, validation, CLI generation, serialization, and
+deserialization.
+
+An undeclared attribute attached to an instance is ordinary transient Python
+state:
+
+.. code-block:: python
+
+    cfg = TrainConfig()
+    cfg.runtime_cache = object()
+
+    assert cfg.runtime_cache is not None
+    assert 'runtime_cache' not in cfg
+    assert 'runtime_cache' not in cfg.asdict()
+
+This is intentional. ``kwconf`` does not reject the assignment or warn during
+serialization. Use a declared field when a value must persist or round-trip.
+Private names are not required for temporary state, although they can still be
+useful by convention.
+
+``__allow_newattr__ = True`` is a separate, experimental escape hatch. It
+promotes unknown item or attribute assignments into ``_data``, so they become
+mapping keys and may be emitted by serializers. Dynamic keys have no declared
+default, annotation, parser, help text, CLI option, or SubConfig metadata, and
+the current API does not promise symmetric deserialization of them. Do not use
+this flag for persisted configuration yet.
+
+A possible future direction is to formalize this opt-in as a dynamic-field
+mode: unknown loaded keys would round-trip symmetrically, while remaining
+outside schema-generated CLI and static validation unless explicit metadata is
+provided. That direction is intentionally separate from ordinary attached
+attributes, which remain transient object state.
+
 CLI contract
 ------------
 
