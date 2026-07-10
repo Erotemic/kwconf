@@ -306,10 +306,13 @@ own dev/CI Python is 3.14. Fix: `node.value.value`.
   generated fuzzy-hyphen spellings. Ambiguous schemas raise a targeted
   `ValueError`. The check is deliberately not run during class construction or
   CLI invocation, so already-validated schemas add no recurring startup scan.
-- **Extra positional constructor args silently dropped** **[verified]** —
-  `config.py:560-561`: `zip` truncation means `C(10, 20, 30, 40)` on a 2-field
-  config succeeds; `C(10, x=20)` silently prefers the keyword instead of raising
-  "multiple values".
+- **Extra positional constructor args silently dropped** **[fixed
+  2026-07-10]** — construction now raises `TypeError` for extra positional
+  values and for duplicate semantic bindings, including positional-plus-keyword
+  and canonical-plus-alias forms. The implementation checks argument count
+  before default materialization, binds only supplied positional keys, and
+  combines alias normalization, duplicate detection, and unknown-key collection
+  in one keyword pass rather than adding a schema-wide validation scan.
 - **`@dataconf` on a plain class drops underscore attributes and inherited
   fields** **[verified]** — `dataconfig.py:113-136`: the copy loop skips
   everything starting with `_` (killing `__post_init__`, `__validate__`,
@@ -598,11 +601,11 @@ These remain reproducible in the current tree and can silently corrupt or lose
 user intent. They depend on actual calls or input values and must not be moved
 behind an optional CI validator.
 
-1. **Reject extra and duplicate constructor arguments** (§2, class
-   construction). Extra positional values are silently truncated, and a
-   keyword silently replaces the same field supplied positionally. Match normal
-   Python call semantics with `TypeError`.
-2. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
+Completed 2026-07-10: constructor calls now reject extra positional
+arguments and duplicate semantic bindings with `TypeError`, without a recurring
+schema scan or an extra traversal of the declared fields.
+
+1. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
    currently succeeds but is absent from mapping access and serialization.
    Apply the same new-key policy to attribute and mapping assignment, with an
    explicit escape hatch only when requested.
@@ -742,6 +745,9 @@ behavioral, regression tests:
   materialization. Class-level `__subconfigs__` entries remain declarative;
   live `subconfig`, `parserkw`, and dispatch state are confined to each modal
   instance, and caller-owned `sub_clis` dictionaries are not mutated.
+- Constructor calls reject extra positional values and duplicate semantic
+  bindings with `TypeError`. The fast path avoids a full field-name list and
+  combines keyword alias normalization and conflict detection in one pass.
 - Public export of `register_parser` and correction of the mkinit submodule
   specification.
 - The dead-code removals listed in the prior remediation pass.
@@ -773,12 +779,13 @@ behavioral, regression tests:
 
 | Finding | Status | Why it matters |
 | --- | --- | --- |
-| Extra / duplicate constructor arguments (§2) | **Open, reproduced** | Silently discards positional data or overrides it with a keyword |
 | Unknown attribute assignment (§3) | **Open, reproduced** | Creates state that appears valid but is absent from config serialization |
 
-These are not architectural preferences. They are concrete runtime correctness
-defects and should be the next implementation work. Modal inheritance and
-implicit command discovery are omitted because they are now fixed. Alias
+This is not an architectural preference. It is a concrete runtime correctness
+defect. Extra and duplicate constructor arguments are omitted because they are
+now rejected automatically with Python-like `TypeError` semantics. Modal
+inheritance and implicit command discovery are also omitted because they are
+fixed. Alias
 collisions are omitted from this table because the chosen contract is an
 explicit `Config.validate()` test or CI gate rather than a recurring
 production-time check; its current status is recorded separately as an opt-in safeguard.

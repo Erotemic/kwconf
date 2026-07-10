@@ -668,18 +668,46 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # Internal flag used by the cli/load lifecycle to defer __post_init__.
         _dont_call_post_init = kwargs.pop('_dont_call_post_init', False)
 
+        num_args = len(args)
+        num_fields = len(self.__default__)
+        if num_args > num_fields:
+            field_word = 'argument' if num_fields == 1 else 'arguments'
+            raise TypeError(
+                f'{type(self).__qualname__}() accepts at most {num_fields} '
+                f'positional {field_word}; got {num_args}'
+            )
+
         # Shared per-instance state setup (builds _default, seeds _data,
         # and instantiates SubConfig nodes).
         self._init_state(_dont_call_post_init=_dont_call_post_init)
 
-        argkeys = list(self._default.keys())[0 : len(args)]
-        new_values = dict(zip(argkeys, args))
-        kwargs = self._normalize_alias_dict(kwargs)
-        new_values.update(kwargs)
-        unknown_args: Dict[str, Any] = {
-            k: v for k, v in new_values.items() if k not in self._default
-        }
-        if unknown_args:
+        # Bind only the supplied positional fields, then normalize keyword
+        # aliases in the same pass that checks for duplicate / unknown inputs.
+        # This avoids materializing the complete field-name list or making a
+        # second pass over keyword arguments on the normal constructor path.
+        new_values = dict(zip(it.islice(self._default, num_args), args))
+        unknown_args: Optional[Dict[str, Any]] = None
+        alias_map = None
+        for raw_key, value in kwargs.items():
+            if raw_key in self._default:
+                key = raw_key
+            else:
+                if alias_map is None:
+                    alias_map = self._build_alias_map()
+                    self._alias_map = alias_map
+                key = alias_map.get(raw_key, raw_key)
+            if key in new_values:
+                raise TypeError(
+                    f'{type(self).__qualname__}() got multiple values '
+                    f'for argument {key!r}'
+                )
+            if key not in self._default:
+                if unknown_args is None:
+                    unknown_args = {}
+                unknown_args[raw_key] = value
+            else:
+                new_values[key] = value
+        if unknown_args is not None:
             raise ValueError(
                 ('Unknown Arguments: {}. Expected arguments are: {}').format(
                     unknown_args, list(self._default)

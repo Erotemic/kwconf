@@ -50,6 +50,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* ``Config`` construction now rejects extra positional arguments and duplicate
+  bindings (including positional-plus-keyword and canonical-plus-alias forms)
+  with ``TypeError`` instead of silently truncating or overwriting values. The
+  fast path checks the positional count before materializing defaults, binds
+  only the supplied positional keys, and folds alias normalization, duplicate
+  detection, and unknown-key collection into one keyword pass.
 * Modal parser metadata is now instance-owned. Constructing or building a
   parser for one ``ModalCLI`` no longer writes live ``subconfig``,
   ``parserkw``, or dispatch callable objects into the class-level

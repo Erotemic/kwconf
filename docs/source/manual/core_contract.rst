@@ -60,6 +60,11 @@ validation:
 ``__default__`` remains available for migration and dynamic construction.
 Prefer class attributes for new code.
 
+Constructor calls use Python-like binding rules. Positional values bind in
+field declaration order; extra positional values and any field supplied more
+than once (including through an alias) raise ``TypeError`` instead of silently
+discarding or replacing input.
+
 CLI contract
 ------------
 
