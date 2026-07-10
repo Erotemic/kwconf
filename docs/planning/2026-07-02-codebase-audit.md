@@ -3,13 +3,14 @@
 > **Current status (revalidated 2026-07-10).** The remediation pass fixed and
 > regression-tested every high-severity finding in §1, but the audit is **not
 > fully closed**. Several concrete correctness defects from §§2–3 remain
-> reproducible, including silent alias hijacking, dropped constructor
-> arguments, conflicting SubConfig updates replacing a node with a raw value,
-> modal inheritance/discovery failures, and invisible unknown-attribute writes.
+> reproducible, including dropped constructor arguments, conflicting SubConfig
+> updates replacing a node with a raw value, modal inheritance/discovery
+> failures, and invisible unknown-attribute writes. Alias hijacking was closed
+> on 2026-07-10 by class-definition-time namespace validation.
 > See [§8 Current sequencing](#8-current-sequencing-updated-2026-07-10) and
 > [§9 Remediation status](#9-remediation-status-revalidated-2026-07-10).
 >
-> Current verification snapshot: **378 passed, 3 skipped**;
+> Current verification snapshot: **383 passed, 3 skipped**;
 > `uv run --extra linting ./run_linter.sh` and
 > `uv run --with ty ty check ./kwconf` pass. The narrower configured Ruff gate
 > for `kwconf/` and `tests/` is clean, but `ruff check .` still reports nine
@@ -293,12 +294,13 @@ own dev/CI Python is 3.14. Fix: `node.value.value`.
   no field (dataclass users expect a required field); a field literally named
   `default` is skipped by a legacy-compat guard; callable defaults are treated
   as methods. All silent — at minimum warn.
-- **Alias collisions silently hijack real fields** **[verified]** —
-  `config.py:1370-1392`: with `opt1 = Value(1, alias=['opt2']); opt2 =
-  Value(2)`, `C(opt2=99)` sets `opt1=99` and leaves `opt2=2`
-  (`_normalize_alias_dict` maps unconditionally while `__getitem__` prefers the
-  real key — inconsistent). Two fields declaring the same alias last-writer-win.
-  No duplicate-alias validation anywhere.
+- **Alias collisions silently hijack real fields** **[fixed 2026-07-10]** —
+  originally, with `opt1 = Value(1, alias=['opt2']); opt2 = Value(2)`,
+  `C(opt2=99)` set `opt1=99` and left `opt2=2`. `MetaConfig` now validates the
+  complete accepted long-name namespace at class-definition time: canonical
+  field names, declared aliases, inherited fields, and generated fuzzy-hyphen
+  spellings. Ambiguous schemas raise a targeted `ValueError` before an instance
+  or parser can be created.
 - **Extra positional constructor args silently dropped** **[verified]** —
   `config.py:560-561`: `zip` truncation means `C(10, 20, 30, 40)` on a 2-field
   config succeeds; `C(10, x=20)` silently prefers the keyword instead of raising
@@ -533,11 +535,12 @@ These remain reproducible in the current tree and can silently corrupt or lose
 user intent. Fix these before treating the audit as closed or using kwconf as a
 fully trusted scriptconfig replacement.
 
-1. **Reject alias collisions during class construction** (§2, class
-   construction). An alias currently may collide with a canonical field or
-   another alias; `C(opt2=99)` can update `opt1` while leaving the real `opt2`
-   unchanged. Validate canonical names, declared aliases, and generated fuzzy
-   spellings as one namespace.
+1. **Completed 2026-07-10 — reject alias collisions during class
+   construction** (§2, class construction). `MetaConfig` now validates
+   canonical names, declared aliases, inherited fields, and generated fuzzy
+   spellings as one namespace. Focused tests cover canonical hijacking,
+   duplicate aliases, fuzzy-name conflicts, fuzzy opt-out, and inherited
+   collisions.
 2. **Reject extra and duplicate constructor arguments** (§2, class
    construction). Extra positional values are silently truncated, and a
    keyword silently replaces the same field supplied positionally. Match normal
@@ -632,7 +635,7 @@ explain the bugs as first observed; this section is the current risk register.
 
 ### Verification snapshot
 
-- `uv run pytest -q`: **378 passed, 3 skipped**. The three skips are xdoctest
+- `uv run pytest -q`: **383 passed, 3 skipped**. The three skips are xdoctest
   examples marked skipped, not the formerly disabled fuzzy-hyphen regression.
 - `uv run --extra linting ./run_linter.sh`: passes for `kwconf/` and `tests/`.
 - `uv run --with ty ty check ./kwconf`: passes.
@@ -678,6 +681,8 @@ behavioral, regression tests:
 - Public export of `register_parser` and correction of the mkinit submodule
   specification.
 - The dead-code removals listed in the prior remediation pass.
+- Alias namespace validation at class definition, including canonical names,
+  declared aliases, inherited fields, and generated fuzzy-hyphen spellings.
 - `uv run pytest`, lock timestamp stability, installed-artifact test isolation,
   sdist inclusion of `conftest.py` / `CHANGELOG.md`, and the pytest-10
   parametrization warning.
@@ -686,14 +691,14 @@ behavioral, regression tests:
 
 | Finding | Status | Why it matters |
 | --- | --- | --- |
-| Alias collisions hijack canonical fields (§2) | **Open, reproduced** | Silently routes a supplied value to the wrong field |
 | Extra / duplicate constructor arguments (§2) | **Open, reproduced** | Silently discards positional data or overrides it with a keyword |
 | Conflicting SubConfig selector + value (§2) | **Open, reproduced** | Can replace a declared nested Config with a raw scalar |
 | Modal inheritance and broad class discovery (§2) | **Open, reproduced** | Subclasses lose commands; helper classes become invalid commands |
 | Unknown attribute assignment (§3) | **Open, reproduced** | Creates state that appears valid but is absent from config serialization |
 
 These are not architectural preferences. They are concrete correctness defects
-and should be the next implementation work.
+and should be the next implementation work. The alias-collision blocker was
+removed from this table after its 2026-07-10 fix.
 
 ### Open — narrower correctness and API defects
 

@@ -39,6 +39,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Config classes now reject ambiguous aliases at class-definition time. A
+  declared alias can no longer collide with another field's canonical name,
+  another field's alias, or a generated fuzzy-hyphen spelling and silently
+  route constructor/data values to the wrong field. Inherited fields are
+  validated as part of the same namespace; configs that disable fuzzy hyphens
+  are validated without generated spellings.
 * `ModalCLI.main` no longer prints a stray ``ERROR ex = <repr>`` line to
   stdout before re-raising a subcommand exception. The leftover debug
   print (and an unreachable ``return 1`` after the ``raise``) double-reported

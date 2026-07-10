@@ -346,6 +346,52 @@ def _validate_mapping_payload(parsed: Any, source: Any) -> Dict[str, Any]:
     )
 
 
+def _validate_class_aliases(
+    class_name: str, defaults: Mapping[str, Any], fuzzy_hyphens: bool
+) -> None:
+    """Reject ambiguous long option / mapping names at class creation.
+
+    Canonical field names and ``Value.alias`` spellings share one lookup
+    namespace. When fuzzy hyphens are enabled, each underscore spelling also
+    claims its generated hyphen spelling. Any spelling claimed by two fields
+    would otherwise be resolved inconsistently by constructor/data lookup and
+    argparse, so fail while the schema is being defined.
+    """
+    spelling_owner: Dict[str, str] = {}
+    spelling_source: Dict[str, str] = {}
+
+    for key, value in defaults.items():
+        aliases = getattr(value, 'alias', None)
+        if aliases is None:
+            aliases = []
+        elif isinstance(aliases, str):
+            aliases = [aliases]
+
+        declared_names = [(key, 'canonical field')] + [
+            (alias, 'alias') for alias in aliases
+        ]
+        for declared_name, source_kind in declared_names:
+            accepted_names = [declared_name]
+            if fuzzy_hyphens:
+                fuzzy_name = declared_name.replace('_', '-')
+                if fuzzy_name != declared_name:
+                    accepted_names.append(fuzzy_name)
+
+            for accepted_name in accepted_names:
+                owner = spelling_owner.get(accepted_name)
+                if owner is not None and owner != key:
+                    prior_source = spelling_source[accepted_name]
+                    raise ValueError(
+                        f'Alias collision in {class_name}: spelling '
+                        f'{accepted_name!r} is claimed by fields {owner!r} '
+                        f'({prior_source}) and {key!r} ({source_kind}). '
+                        'Canonical names, aliases, and generated fuzzy-hyphen '
+                        'spellings must be unique.'
+                    )
+                spelling_owner[accepted_name] = key
+                spelling_source[accepted_name] = source_kind
+
+
 def _normalize_class_defaults(defaults, annotations=None):
     """
     Normalize class-level defaults to ensure Value/SubConfig metadata is present.
@@ -505,6 +551,13 @@ class MetaConfig(_ABCMeta):
                 'FINAL namespace = {}'.format(pprint.pformat(vars(namespace)))
             )
         cls = super().__new__(mcls, name, bases, namespace, *args, **kwargs)  # type: ignore
+
+        if not is_root_config:
+            _validate_class_aliases(
+                class_name=name,
+                defaults=cls.__default__,
+                fuzzy_hyphens=bool(getattr(cls, '__fuzzy_hyphens__', 1)),
+            )
 
         # Modify the __init__ docstring to surface the valid keys to help().
         if (

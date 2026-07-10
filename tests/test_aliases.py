@@ -54,3 +54,70 @@ def test_config_fuzzy_hyphens_optout():
     # The hyphen spelling is now rejected rather than silently accepted.
     with pytest.raises(SystemExit):
         Strict.cli(argv=['--out-dir=A'], strict=True)
+
+
+def test_alias_collision_with_canonical_field_rejected():
+    import pytest
+
+    import kwconf
+
+    with pytest.raises(ValueError, match="spelling 'opt2'.*'opt1'.*'opt2'"):
+
+        class BadConfig(kwconf.Config):
+            opt1 = kwconf.Value(1, alias=['opt2'])
+            opt2 = kwconf.Value(2)
+
+
+def test_duplicate_alias_across_fields_rejected():
+    import pytest
+
+    import kwconf
+
+    with pytest.raises(ValueError, match="spelling 'shared'.*'opt1'.*'opt2'"):
+
+        class BadConfig(kwconf.Config):
+            opt1 = kwconf.Value(1, alias=['shared'])
+            opt2 = kwconf.Value(2, alias=['shared'])
+
+
+def test_fuzzy_alias_collision_rejected():
+    import pytest
+
+    import kwconf
+
+    with pytest.raises(ValueError, match="spelling 'output-dir'"):
+
+        class BadConfig(kwconf.Config):
+            __default__ = {
+                'output_dir': kwconf.Value('a'),
+                'other': kwconf.Value('b', alias=['output-dir']),
+            }
+
+
+def test_fuzzy_alias_collision_allowed_when_disabled():
+    import kwconf
+
+    class StrictConfig(kwconf.Config):
+        __fuzzy_hyphens__ = False
+        __default__ = {
+            'output_dir': kwconf.Value('a'),
+            'other': kwconf.Value('b', alias=['output-dir']),
+        }
+
+    config = StrictConfig(output_dir='canonical', **{'output-dir': 'alias'})
+    assert config.output_dir == 'canonical'
+    assert config.other == 'alias'
+
+
+def test_inherited_alias_collision_rejected():
+    import pytest
+
+    import kwconf
+
+    class BaseConfig(kwconf.Config):
+        original = kwconf.Value(1, alias=['future_name'])
+
+    with pytest.raises(ValueError, match="spelling 'future_name'"):
+
+        class BadSubclass(BaseConfig):
+            future_name = kwconf.Value(2)
