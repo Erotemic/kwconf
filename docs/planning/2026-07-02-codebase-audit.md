@@ -5,12 +5,15 @@
 > fully closed**. Several concrete correctness defects from §§2–3 remain
 > reproducible, including dropped constructor arguments, conflicting SubConfig
 > updates replacing a node with a raw value, modal inheritance/discovery
-> failures, and invisible unknown-attribute writes. Alias hijacking was closed
-> on 2026-07-10 by class-definition-time namespace validation.
+> failures, and invisible unknown-attribute writes. Alias hijacking now has an
+> **opt-in safeguard**, not an automatically enforced fix: projects can call
+> `MyConfig.validate()` in tests or CI, while normal class construction and CLI
+> startup do not rescan static schemas. The next planning step is to turn that
+> seed API into a coherent, recursive, side-effect-free validation subsystem.
 > See [§8 Current sequencing](#8-current-sequencing-updated-2026-07-10) and
 > [§9 Remediation status](#9-remediation-status-revalidated-2026-07-10).
 >
-> Current verification snapshot: **383 passed, 3 skipped**;
+> Current verification snapshot: **386 passed, 3 skipped**;
 > `uv run --extra linting ./run_linter.sh` and
 > `uv run --with ty ty check ./kwconf` pass. The narrower configured Ruff gate
 > for `kwconf/` and `tests/` is clean, but `ruff check .` still reports nine
@@ -294,13 +297,14 @@ own dev/CI Python is 3.14. Fix: `node.value.value`.
   no field (dataclass users expect a required field); a field literally named
   `default` is skipped by a legacy-compat guard; callable defaults are treated
   as methods. All silent — at minimum warn.
-- **Alias collisions silently hijack real fields** **[fixed 2026-07-10]** —
-  originally, with `opt1 = Value(1, alias=['opt2']); opt2 = Value(2)`,
-  `C(opt2=99)` set `opt1=99` and left `opt2=2`. `MetaConfig` now validates the
-  complete accepted long-name namespace at class-definition time: canonical
-  field names, declared aliases, inherited fields, and generated fuzzy-hyphen
-  spellings. Ambiguous schemas raise a targeted `ValueError` before an instance
-  or parser can be created.
+- **Alias collisions silently hijack real fields** **[opt-in validator added
+  2026-07-10]** — originally, with `opt1 = Value(1, alias=['opt2']); opt2 =
+  Value(2)`, `C(opt2=99)` set `opt1=99` and left `opt2=2`. Projects can now add
+  `C.validate()` to their tests or CI to check the complete accepted long-name
+  namespace: canonical field names, declared aliases, inherited fields, and
+  generated fuzzy-hyphen spellings. Ambiguous schemas raise a targeted
+  `ValueError`. The check is deliberately not run during class construction or
+  CLI invocation, so already-validated schemas add no recurring startup scan.
 - **Extra positional constructor args silently dropped** **[verified]** —
   `config.py:560-561`: `zip` truncation means `C(10, 20, 30, 40)` on a 2-field
   config succeeds; `C(10, x=20)` silently prefers the keyword instead of raising
@@ -525,40 +529,93 @@ These recur across findings and are worth fixing as themes, not point-fixes.
 ## 8. Current sequencing (updated 2026-07-10)
 
 The original sequencing was appropriate for the first remediation pass, but it
-is now historical. The remaining work should be ordered by whether it can
-silently reinterpret or discard configuration, not by whether it is an
-architectural cleanup.
+is now historical. The remaining work should be ordered first by whether it can
+silently reinterpret or discard configuration, and second by whether the
+relevant fact is static or invocation-dependent.
 
-### Phase A — correctness blockers
+### Status vocabulary
+
+Use these labels consistently so a CI-only check is not mistaken for universal
+runtime protection:
+
+- **Fixed automatically** — every user receives the corrected behavior without
+  opting into an additional check.
+- **Opt-in safeguard available** — a project is protected when it runs the
+  documented validation gate; normal execution intentionally does not pay for
+  the check.
+- **Open runtime defect** — invalid behavior depends on constructor arguments,
+  input data, environment, parser reuse, or assignment and therefore must be
+  rejected in the normal execution path.
+- **Decision required** — multiple contracts are defensible, but the current
+  behavior is unsafe, misleading, or undocumented.
+- **Deferred architectural risk** — important maintenance work that should not
+  displace smaller concrete correctness fixes.
+
+### Phase A — establish the opt-in validation architecture
+
+`Config.validate()` currently provides one useful static check: alias namespace
+ambiguity. Treat that implementation as the seed of a validation subsystem,
+not as a collection point for arbitrary runtime checks.
+
+1. **Lock the validation contract.** Validation must inspect static schema
+   declarations only. It must not construct Config instances, build argparse
+   parsers, call `default_factory`, read argv/environment/filesystem state,
+   mutate templates, or run implicitly during class construction, instance
+   construction, or CLI startup. Repeated calls must be idempotent.
+2. **Introduce structured, aggregate diagnostics.** Prefer a dedicated
+   `SchemaValidationError` carrying structured issues and report all discovered
+   schema problems in one CI run instead of failing at the first collision.
+3. **Make Config validation recursive.** A root `Config.validate()` should
+   validate all reachable SubConfig classes and variants with a local visited
+   set. Static checks should include alias/fuzzy-name collisions, annotation-
+   only declarations once their contract is chosen, duplicate selector or
+   variant names/aliases, unsupported variant objects, and other immutable
+   schema-graph invariants.
+4. **Add `ModalCLI.validate()`.** One root call should validate inherited and
+   nested command trees, duplicate command names/aliases, unsupported
+   registrations, static registration conflicts, and each command Config.
+   This complements rather than replaces the runtime modal fixes in Phase B.
+5. **Document the CI recipe.** Show a focused project test such as
+   `RootConfig.validate()` or `RootCLI.validate()`, preferably requiring only
+   one root call for a complete public CLI graph.
+6. **Test the performance and purity contract.** Keep explicit regressions that
+   class definition, Config construction, and `cli(argv=False)` do not invoke
+   validation. Also prove validation does not materialize factories or
+   SubConfigs, build parsers, mutate `__default__`, or change results across
+   repeated calls.
+
+Current status: alias namespace checking is **opt-in safeguard available**.
+The broader recursive/aggregate Config and Modal validation architecture is
+**open**.
+
+### Phase B — runtime correctness blockers
 
 These remain reproducible in the current tree and can silently corrupt or lose
-user intent. Fix these before treating the audit as closed or using kwconf as a
-fully trusted scriptconfig replacement.
+user intent. They depend on actual calls or input values and must not be moved
+behind an optional CI validator.
 
-1. **Completed 2026-07-10 — reject alias collisions during class
-   construction** (§2, class construction). `MetaConfig` now validates
-   canonical names, declared aliases, inherited fields, and generated fuzzy
-   spellings as one namespace. Focused tests cover canonical hijacking,
-   duplicate aliases, fuzzy-name conflicts, fuzzy opt-out, and inherited
-   collisions.
-2. **Reject extra and duplicate constructor arguments** (§2, class
+1. **Reject extra and duplicate constructor arguments** (§2, class
    construction). Extra positional values are silently truncated, and a
    keyword silently replaces the same field supplied positionally. Match normal
    Python call semantics with `TypeError`.
-3. **Reject conflicting SubConfig selector/value updates** (§2, file/data
+2. **Reject conflicting SubConfig selector/value updates** (§2, file/data
    loading). A source containing both `inner.__class__` and a scalar `inner`
    can replace a SubConfig node with a raw value. Define the accepted compound
-   mapping form and reject ambiguous sources before mutation.
-4. **Fix modal inheritance and command discovery** (§2, class construction).
-   Modal subclasses currently lose inherited commands, while unrelated public
-   helper classes are auto-registered as commands. Merge inherited
-   registrations and restrict implicit discovery to supported command types.
-5. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
+   mapping form and reject ambiguous sources before mutation. Static SubConfig
+   graph checks belong in validation, but this particular conflict is
+   input-dependent and requires a runtime guard.
+3. **Fix modal runtime semantics** (§2, class construction). Modal subclasses
+   currently lose inherited commands, while unrelated public helper classes
+   are auto-registered as commands. Preserve inherited registrations and
+   restrict actual command discovery to supported or explicitly wrapped
+   command types. `ModalCLI.validate()` should additionally diagnose static
+   conflicts, but cannot substitute for correct runtime registration.
+4. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
    currently succeeds but is absent from mapping access and serialization.
    Apply the same new-key policy to attribute and mapping assignment, with an
    explicit escape hatch only when requested.
 
-### Phase B — safety-sensitive decisions that need an explicit contract
+### Phase C — safety-sensitive decisions that need an explicit contract
 
 These are partly API-design choices, but leaving the current behavior implicit
 is risky enough that each should be resolved before a stable contract is
@@ -571,9 +628,10 @@ claimed.
 2. **Public `load()` semantics** (§2). It still means reset-to-defaults and
    then merge, despite the “updates” wording. Either document this as reload
    semantics and add a distinct incremental API, or make `load()` incremental.
-3. **Annotation-only fields** (§2). `x: int` is silently ignored. Either treat
-   it as a required field or raise at class construction; silent omission is
-   not an acceptable final contract.
+3. **Annotation-only fields** (§2). `x: int` is silently ignored. Choose whether
+   this declares a required field or is invalid schema. Once chosen, enforce or
+   diagnose the static declaration through the opt-in validation path rather
+   than adding a repeated CLI-startup scan.
 4. **Alias / Mapping semantics** (§3). Decide whether aliases are lookup-only
    conveniences or actual mapping keys, then document and test the chosen
    invariant.
@@ -581,10 +639,10 @@ claimed.
    be deprecated in favor of the already explicit `asdict()` / `to_dict()`
    APIs.
 
-### Phase C — correctness hardening
+### Phase D — correctness hardening
 
 These are real defects or misleading APIs, but their blast radius is narrower
-than Phase A.
+than Phase B.
 
 - Clear parser provenance on every parse; `_explicitly_given` currently
   accumulates when a parser object is reused.
@@ -594,14 +652,16 @@ than Phase A.
   remove the misleading parameter.
 - Correct root no-command usage and messaging, and normalize
   `NoCommandError` for programmatic callers.
-- Detect special-option collisions (`config`, `dump`, `dumps`) before handing
-  them to argparse and issue a kwconf-specific diagnostic.
+- Split special-option collision handling into two layers: statically diagnose
+  known `config` / `dump` / `dumps` namespace conflicts in CLI validation, and
+  still fail safely with a kwconf-specific error if an unvalidated schema
+  reaches parser construction.
 - Distinguish generated negation flags from genuine user-declared `--no-*`
   options in help formatting.
 - Reconcile `subconfig.py.__all__` with its supported public surface and replace
   remaining bare `Exception` raises with typed exceptions.
 
-### Phase D — tooling and release confidence
+### Phase E — tooling and release confidence
 
 - Make the repository-wide lint claim true: fix the nine remaining
   `ruff check .` findings, run Ruff in GitHub CI, and decide whether the GitLab
@@ -612,7 +672,7 @@ than Phase A.
 - Add prerelease/python-dev coverage and behavioral conformance tests around
   the copied argparse internals before the next supported-Python expansion.
 
-### Phase E — architectural refactors, only after the concrete defects
+### Phase F — architectural refactors, only after the concrete defects
 
 The systemic themes in §4 remain valid engineering risks, but they are not all
 current release blockers. Do not let them displace the focused fixes above.
@@ -635,7 +695,7 @@ explain the bugs as first observed; this section is the current risk register.
 
 ### Verification snapshot
 
-- `uv run pytest -q`: **383 passed, 3 skipped**. The three skips are xdoctest
+- `uv run pytest -q`: **386 passed, 3 skipped**. The three skips are xdoctest
   examples marked skipped, not the formerly disabled fuzzy-hyphen regression.
 - `uv run --extra linting ./run_linter.sh`: passes for `kwconf/` and `tests/`.
 - `uv run --with ty ty check ./kwconf`: passes.
@@ -681,11 +741,22 @@ behavioral, regression tests:
 - Public export of `register_parser` and correction of the mkinit submodule
   specification.
 - The dead-code removals listed in the prior remediation pass.
-- Alias namespace validation at class definition, including canonical names,
-  declared aliases, inherited fields, and generated fuzzy-hyphen spellings.
 - `uv run pytest`, lock timestamp stability, installed-artifact test isolation,
   sdist inclusion of `conftest.py` / `CHANGELOG.md`, and the pytest-10
   parametrization warning.
+
+### Opt-in safeguards and validation architecture
+
+- **Available now:** `Config.validate()` checks canonical names, declared
+  aliases, inherited fields, and generated fuzzy-hyphen spellings. Normal class
+  construction and CLI invocation do not run the scan.
+- **Status:** alias collision protection is an **opt-in safeguard available**,
+  not a fixed-automatically invariant. Projects that do not run validation can
+  still define an ambiguous schema.
+- **Open:** formalize the side-effect-free validation contract, aggregate
+  diagnostics, recurse through SubConfig graphs, add `ModalCLI.validate()`,
+  document a one-root-call CI recipe, and test non-materialization,
+  non-mutation, idempotence, and zero implicit invocation.
 
 ### Open — correctness blockers
 
@@ -696,9 +767,11 @@ behavioral, regression tests:
 | Modal inheritance and broad class discovery (§2) | **Open, reproduced** | Subclasses lose commands; helper classes become invalid commands |
 | Unknown attribute assignment (§3) | **Open, reproduced** | Creates state that appears valid but is absent from config serialization |
 
-These are not architectural preferences. They are concrete correctness defects
-and should be the next implementation work. The alias-collision blocker was
-removed from this table after its 2026-07-10 fix.
+These are not architectural preferences. They are concrete runtime correctness
+defects and should be the next implementation work. Alias collisions are
+omitted from this table because the chosen contract is an explicit
+`Config.validate()` test or CI gate rather than a recurring production-time
+check; its current status is recorded separately as an opt-in safeguard.
 
 ### Open — narrower correctness and API defects
 
@@ -708,7 +781,8 @@ removed from this table after its 2026-07-10 fix.
 - `expand_multipass_parser` still ignores the supplied parser.
 - Root no-command usage/message and `NoCommandError` programmatic semantics
   remain misleading.
-- Special-option collisions still surface as low-level argparse conflicts.
+- Special-option collisions still surface as low-level argparse conflicts;
+  static CLI validation and a safe runtime diagnostic are both still open.
 - Genuine `--no-*` options can still receive generated-negation help treatment.
 - `subconfig.py.__all__` remains incomplete, and some error paths still raise
   bare `Exception`.
@@ -720,7 +794,8 @@ removed from this table after its 2026-07-10 fix.
   concern.
 - **Public `load()` reset-vs-update semantics** remain unchanged and are still
   inconsistent with the current docstring wording.
-- **Annotation-only fields** remain silently ignored.
+- **Annotation-only fields** remain silently ignored. Their semantic contract
+  must be chosen before adding an opt-in static validation rule.
 - **Alias membership semantics** and **`Config.copy()` returning a dict** need
   explicit contracts, but are lower risk than the three decisions above.
 - `_check_values` remains intentional opt-in developer infrastructure and is
