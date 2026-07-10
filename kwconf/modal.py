@@ -107,6 +107,8 @@ def _copy_registration_spec(spec: Any) -> Dict[str, Any]:
         metadata = dict(spec)
         for key in _RUNTIME_METADATA_KEYS:
             metadata.pop(key, None)
+        if isinstance(metadata.get('alias'), list):
+            metadata['alias'] = list(metadata['alias'])
     else:
         metadata = {'cls': spec}
     return metadata
@@ -477,22 +479,17 @@ class ModalCLI(metaclass=MetaModalCLI):
     @staticmethod
     def _init_subconfig_metadata(cli_cls) -> Dict:
         """
-        Rectifies a subconfig subclass into a table of metadata, which can be
-        modified on a per-instance level. This is slightly redundant, but it
-        allows reuse of CLIs in different contexts.
+        Rectifies a declarative registration into instance-owned metadata.
+
+        The class-level ``__subconfigs__`` table is a reusable declaration.
+        Parser construction adds live objects such as ``subconfig`` and
+        ``parserkw`` to the instance copy only. Keeping those runtime details
+        off the class prevents one modal instance from contaminating another.
 
         Args:
             cli_cls (type): the subconfig class
         """
-        if isinstance(cli_cls, dict):
-            # Input given as a dictionary, must correspond to specific structure:
-            metadata = cli_cls
-            # assert 'cls' in metadata
-        else:
-            metadata = {
-                'cls': cli_cls,
-            }
-        return metadata
+        return _copy_registration_spec(cli_cls)
 
     @staticmethod
     def _update_metadata(metadata: Dict):

@@ -572,6 +572,69 @@ def test_modal_inherits_explicit_registrations_without_sharing_list():
     assert calls == ['listed', 'registered', 'child']
 
 
+def test_modal_runtime_metadata_is_instance_owned():
+    """Building one parser must not mutate class or sibling metadata."""
+
+    class Command(kwconf.Config):
+        value = 1
+
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            return 0
+
+    class App(kwconf.ModalCLI):
+        command = kwconf.ModalValue(Command, alias=['cmd'])
+
+    class_spec = App.__subconfigs__[0]
+    left = App()
+    right = App()
+    left_spec = left._subconfig_metadata[0]
+    right_spec = right._subconfig_metadata[0]
+
+    assert left_spec is not class_spec
+    assert right_spec is not class_spec
+    assert left_spec is not right_spec
+    assert left_spec['alias'] is not class_spec['alias']
+    assert right_spec['alias'] is not class_spec['alias']
+
+    declarative_keys = set(class_spec)
+    left.argparse()
+
+    assert set(class_spec) == declarative_keys
+    assert 'parserkw' not in class_spec
+    assert 'subconfig' not in class_spec
+    assert 'main_func' not in class_spec
+    assert 'parserkw' not in right_spec
+    assert 'subconfig' not in right_spec
+    assert 'main_func' not in right_spec
+    assert left_spec['subconfig'] is not right_spec.get('subconfig')
+
+    right.argparse()
+    assert left_spec['subconfig'] is not right_spec['subconfig']
+    assert left_spec['parserkw'] is not right_spec['parserkw']
+    assert set(class_spec) == declarative_keys
+
+
+def test_modal_instance_registration_copies_metadata_dicts():
+    """Instance registration should not retain a caller-owned metadata dict."""
+
+    class Command(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            return 0
+
+    source = {'cls': Command, 'command': 'run', 'alias': ['go']}
+    modal = kwconf.ModalCLI(sub_clis=[source])
+    instance_spec = modal._subconfig_metadata[0]
+
+    assert instance_spec is not source
+    assert instance_spec['alias'] is not source['alias']
+    modal.argparse()
+    assert set(source) == {'cls', 'command', 'alias'}
+    assert 'parserkw' not in source
+    assert 'subconfig' not in source
+
+
 def test_modal_command_attribute_override_and_shadow():
     """Normal attribute overriding also applies to inherited commands."""
     calls = []

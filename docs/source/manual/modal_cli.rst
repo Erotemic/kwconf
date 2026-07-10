@@ -62,6 +62,13 @@ remain ordinary attributes. A compatible custom command type can still be
 added deliberately with :class:`kwconf.ModalValue`, ``__subconfigs__``, or
 ``register()``.
 
+The class-level ``__subconfigs__`` table is declarative and reusable. Each
+``ModalCLI`` instance copies that metadata before parser construction adds live
+Config instances, parser keyword arguments, or dispatch callables. Building a
+parser for one modal therefore does not mutate the class declaration or alter
+a sibling modal instance. Dictionaries passed through ``sub_clis=`` are copied
+under the same rule; callers retain ownership of their input mappings.
+
 The command name follows this precedence (high to low):
 
 #. ``ModalValue(command=...)`` -- explicit at the binding site.

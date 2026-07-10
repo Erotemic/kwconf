@@ -638,8 +638,6 @@ than Phase B.
 
 - Clear parser provenance on every parse; `_explicitly_given` currently
   accumulates when a parser object is reused.
-- Copy modal metadata before instance-specific mutation; live parser and
-  callable objects are still written into class-shared metadata dictionaries.
 - Make `expand_multipass_parser(parser=...)` extend the supplied parser, or
   remove the misleading parameter.
 - Correct root no-command usage and messaging, and normalize
@@ -687,7 +685,7 @@ explain the bugs as first observed; this section is the current risk register.
 
 ### Verification snapshot
 
-- `uv run pytest -q`: **400 passed, 3 skipped**. The three skips are
+- `uv run pytest -q`: **402 passed, 3 skipped**. The three skips are
   xdoctest examples marked skipped, not disabled behavior regressions.
 - `uv run --extra linting ./run_linter.sh`: passes for `kwconf/` and `tests/`.
 - `uv run --with ty ty check ./kwconf`: passes.
@@ -740,6 +738,10 @@ behavioral, regression tests:
   overriding replaces or hides inherited attribute commands, subclass
   registration is isolated from the parent, and unrelated public helper
   classes are no longer treated as implicit commands.
+- Modal command metadata is copied at the instance boundary before parser
+  materialization. Class-level `__subconfigs__` entries remain declarative;
+  live `subconfig`, `parserkw`, and dispatch state are confined to each modal
+  instance, and caller-owned `sub_clis` dictionaries are not mutated.
 - Public export of `register_parser` and correction of the mkinit submodule
   specification.
 - The dead-code removals listed in the prior remediation pass.
@@ -784,8 +786,6 @@ production-time check; its current status is recorded separately as an opt-in sa
 ### Open — narrower correctness and API defects
 
 - Parser `_explicitly_given` provenance remains sticky across parser reuse.
-- Modal metadata remains class-shared while instance/parser state is written
-  into it.
 - `expand_multipass_parser` still ignores the supplied parser.
 - Root no-command usage/message and `NoCommandError` programmatic semantics
   remain misleading.

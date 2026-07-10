@@ -50,6 +50,13 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Modal parser metadata is now instance-owned. Constructing or building a
+  parser for one ``ModalCLI`` no longer writes live ``subconfig``,
+  ``parserkw``, or dispatch callable objects into the class-level
+  ``__subconfigs__`` declarations, so sibling modal instances and reused
+  command classes cannot contaminate each other. Caller-provided ``sub_clis``
+  dictionaries and mutable alias lists are copied as part of the same
+  ownership boundary.
 * `ModalCLI` subclasses now inherit commands declared by their parents through
   class attributes, `__subconfigs__`, or class-level `register()`. A subclass
   can replace or hide an attribute-declared command using normal Python
