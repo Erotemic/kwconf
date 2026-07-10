@@ -50,6 +50,14 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* `ModalCLI` subclasses now inherit commands declared by their parents through
+  class attributes, `__subconfigs__`, or class-level `register()`. A subclass
+  can replace or hide an attribute-declared command using normal Python
+  attribute overriding, and registering a new command on the subclass no
+  longer mutates the parent's command list. Implicit discovery is now limited
+  to `Config` and `ModalCLI` subclasses, so unrelated public helper classes are
+  left as ordinary attributes instead of becoming broken commands; compatible
+  custom command classes can still be registered explicitly.
 * A data source containing both scalar SubConfig sugar (`inner: a`) and an
   explicit selector (`inner.__class__: b`) can no longer replace the realized
   nested Config with the raw string `a`. The explicit `.__class__` spelling

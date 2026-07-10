@@ -49,6 +49,19 @@ Commands can be class attributes, registered imperatively with
 ``@modal.register``, or wrapped in :class:`kwconf.ModalValue` when you want
 aliases, command-name overrides, or group metadata.
 
+Modal command declarations follow normal class inheritance. A subclass keeps
+commands declared by its parent through class attributes, ``__subconfigs__``,
+or class-level ``register()``. Rebinding an attribute in the subclass replaces
+the inherited command bound to that attribute; rebinding it to a non-command
+value intentionally hides that command. Registering a new command on the
+subclass does not modify the parent's command list.
+
+Only :class:`kwconf.Config` and :class:`kwconf.ModalCLI` subclasses are
+discovered implicitly from public class attributes. Other class-valued helpers
+remain ordinary attributes. A compatible custom command type can still be
+added deliberately with :class:`kwconf.ModalValue`, ``__subconfigs__``, or
+``register()``.
+
 The command name follows this precedence (high to low):
 
 #. ``ModalValue(command=...)`` -- explicit at the binding site.

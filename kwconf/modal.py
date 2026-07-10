@@ -93,6 +93,57 @@ from kwconf.util.util_text import codeblock, paragraph
 DEFAULT_GROUP = 'commands'
 
 
+_RUNTIME_METADATA_KEYS = {
+    'is_opaque',
+    'is_modal',
+    'parserkw',
+    'subconfig',
+}
+
+
+def _copy_registration_spec(spec: Any) -> Dict[str, Any]:
+    """Copy a declarative command registration without cached runtime state."""
+    if isinstance(spec, dict):
+        metadata = dict(spec)
+        for key in _RUNTIME_METADATA_KEYS:
+            metadata.pop(key, None)
+    else:
+        metadata = {'cls': spec}
+    return metadata
+
+
+def _registration_command(metadata: Dict[str, Any]) -> Optional[str]:
+    """Resolve the declarative command name without materializing a parser."""
+    command = metadata.get('command')
+    if command is not None:
+        return command
+    cli_cls = metadata.get('cls')
+    if cli_cls is None:
+        return None
+    return getattr(cli_cls, '__command__', None) or getattr(
+        cli_cls, '__name__', None
+    )
+
+
+def _is_implicit_command_class(value: Any) -> bool:
+    """Return whether a public class attribute is a supported CLI command."""
+    if not isinstance(value, type):
+        return False
+
+    modal_cls = globals().get('ModalCLI')
+    if modal_cls is not None and issubclass(value, modal_cls):
+        return True
+
+    # ``kwconf.__init__`` imports this module before ``kwconf.config``. The
+    # import is therefore intentionally delayed until user-defined modal
+    # classes are created, by which point the package is fully initialized.
+    try:
+        from kwconf.config import Config
+    except ImportError:
+        return False
+    return issubclass(value, Config)
+
+
 class ModalValue(NiceRepr):
     """
     Declarative wrapper for registering a modal subcommand with extra metadata.
@@ -141,15 +192,53 @@ class MetaModalCLI(type):
         # Note: this code has an impact on startuptime efficiency.
         # optimizations here can help.
 
-        # Iterate over class attributes and register any Config or ModalCLI
-        # objects in the __subconfigs__ dictionary the attribute names
-        # will be used as the command name.
-        final_subconfigs = []
+        # Inherit the already-resolved declarative command table. Use a fresh
+        # list and fresh metadata dictionaries so class-level registration on
+        # a subclass cannot mutate its parent. For multiple inheritance, the
+        # leftmost base wins command-name conflicts, matching normal MRO
+        # precedence.
+        inherited_subconfigs = []
+        inherited_commands = set()
+        inherited_attrs = set()
+        for base in bases:
+            for spec in getattr(base, '__subconfigs__', []):
+                metadata = _copy_registration_spec(spec)
+                command = _registration_command(metadata)
+                attribute_name = metadata.get('_attribute_name')
+                if (
+                    attribute_name is not None
+                    and attribute_name in inherited_attrs
+                ):
+                    continue
+                if command is not None and command in inherited_commands:
+                    continue
+                inherited_subconfigs.append(metadata)
+                if attribute_name is not None:
+                    inherited_attrs.add(attribute_name)
+                if command is not None:
+                    inherited_commands.add(command)
+
+        # A subclass attribute shadows an inherited command declared through
+        # that same attribute, even when the replacement is not itself a
+        # command. This follows ordinary Python attribute semantics and gives
+        # subclasses a simple way to replace or intentionally hide commands.
+        shadowed_attrs = {k for k in namespace if not k.startswith('_')}
+        inherited_subconfigs = [
+            metadata
+            for metadata in inherited_subconfigs
+            if metadata.get('_attribute_name') not in shadowed_attrs
+        ]
+
+        # Discover only supported Config / ModalCLI subclasses implicitly.
+        # Other public helper classes remain ordinary class attributes. They
+        # can still be registered explicitly through ModalValue, __subconfigs__,
+        # or register() when they intentionally implement the command protocol.
+        local_subconfigs = []
         for k, v in namespace.items():
             if k.startswith('_'):
                 continue
-            if isinstance(v, type):
-                final_subconfigs.append(
+            if _is_implicit_command_class(v):
+                local_subconfigs.append(
                     {
                         # Precedence: __command__ wins over the attribute name,
                         # so nested classes (whose attribute name is the class
@@ -157,6 +246,7 @@ class MetaModalCLI(type):
                         # name is the fallback when __command__ is not set.
                         'command': getattr(v, '__command__', None) or k,
                         'cls': v,
+                        '_attribute_name': k,
                     }
                 )
             elif isinstance(v, ModalValue):
@@ -165,7 +255,7 @@ class MetaModalCLI(type):
                         f'ModalValue for attribute {k!r} must wrap a class, '
                         f'got {type(v.value)!r}'
                     )
-                final_subconfigs.append(
+                local_subconfigs.append(
                     {
                         # Precedence: ModalValue(command=) > __command__ >
                         # attribute name.
@@ -175,11 +265,30 @@ class MetaModalCLI(type):
                         'cls': v.value,
                         'alias': v.alias,
                         'group': v.group,
+                        '_attribute_name': k,
                     }
                 )
         cls_subconfigs = namespace.get('__subconfigs__', [])
         if cls_subconfigs:
-            final_subconfigs.extend(cls_subconfigs)
+            local_subconfigs.extend(
+                _copy_registration_spec(spec) for spec in cls_subconfigs
+            )
+
+        # A locally declared command replaces an inherited command with the
+        # same effective name. Duplicate declarations within the same class
+        # are intentionally left visible for future validation to diagnose
+        # rather than silently choosing between them.
+        local_commands = {
+            command
+            for command in map(_registration_command, local_subconfigs)
+            if command is not None
+        }
+        inherited_subconfigs = [
+            metadata
+            for metadata in inherited_subconfigs
+            if _registration_command(metadata) not in local_commands
+        ]
+        final_subconfigs = inherited_subconfigs + local_subconfigs
 
         # Helps make the class pickleable. Pretty hacky though.
         # for k in attr_subconfigs.keys():

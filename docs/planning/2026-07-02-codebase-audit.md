@@ -316,10 +316,13 @@ own dev/CI Python is 3.14. Fix: `node.value.value`.
   `_helper`) except a small whitelist, and iterates `vars(cls)` only (no MRO
   walk), so fields from plain base classes vanish.
 - **`MetaModalCLI` auto-registers every public class-valued attribute; subclassing
-  drops inherited commands** **[verified]** — `modal.py:143-181`: a stashed
-  helper class becomes a "command" (build fails with a confusing `ValueError`),
-  and `class Sub(Base): pass` has zero commands because `__subconfigs__` is
-  rebuilt from the class's own namespace only.
+  drops inherited commands** **[fixed 2026-07-10]** — command tables now inherit
+  declarations from class attributes, `__subconfigs__`, and class-level
+  `register()`. Normal subclass attribute overriding replaces or hides an
+  inherited attribute-declared command, while unrelated helper classes are no
+  longer discovered implicitly. Implicit discovery is restricted to `Config`
+  and `ModalCLI`; compatible custom command classes remain available through
+  explicit registration.
 - **Int-for-float validation warnings** **[verified]** —
   `annotations.py:341-342`: bare `isinstance` check rejects `int` where `float`
   is annotated, violating the PEP 484 numeric tower; with `__validate__='warn'`
@@ -599,13 +602,7 @@ behind an optional CI validator.
    construction). Extra positional values are silently truncated, and a
    keyword silently replaces the same field supplied positionally. Match normal
    Python call semantics with `TypeError`.
-2. **Fix modal runtime semantics** (§2, class construction). Modal subclasses
-   currently lose inherited commands, while unrelated public helper classes
-   are auto-registered as commands. Preserve inherited registrations and
-   restrict actual command discovery to supported or explicitly wrapped
-   command types. `ModalCLI.validate()` should additionally diagnose static
-   conflicts, but cannot substitute for correct runtime registration.
-3. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
+2. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
    currently succeeds but is absent from mapping access and serialization.
    Apply the same new-key policy to attribute and mapping assignment, with an
    explicit escape hatch only when requested.
@@ -690,8 +687,8 @@ explain the bugs as first observed; this section is the current risk register.
 
 ### Verification snapshot
 
-- `uv run pytest -q`: **397 passed, 2 skipped**. The two skips are xdoctest
-  examples marked skipped, not the formerly disabled fuzzy-hyphen regression.
+- `uv run pytest -q`: **400 passed, 3 skipped**. The three skips are
+  xdoctest examples marked skipped, not disabled behavior regressions.
 - `uv run --extra linting ./run_linter.sh`: passes for `kwconf/` and `tests/`.
 - `uv run --with ty ty check ./kwconf`: passes.
 - `uv run ruff check .`: **nine fixable findings remain** in `dev/`, `docs/`,
@@ -738,6 +735,11 @@ behavioral, regression tests:
   the lean path; `cli/load(validate='warn'|'error')` optionally diagnoses
   ambiguous same-source declarations, and `__validate__ = 'error'` enables the
   strict check class-wide. Cross-source precedence remains valid by design.
+- Modal command declarations now inherit across subclasses for attribute,
+  `__subconfigs__`, and class-level `register()` forms. Subclass attribute
+  overriding replaces or hides inherited attribute commands, subclass
+  registration is isolated from the parent, and unrelated public helper
+  classes are no longer treated as implicit commands.
 - Public export of `register_parser` and correction of the mkinit submodule
   specification.
 - The dead-code removals listed in the prior remediation pass.
@@ -770,14 +772,14 @@ behavioral, regression tests:
 | Finding | Status | Why it matters |
 | --- | --- | --- |
 | Extra / duplicate constructor arguments (§2) | **Open, reproduced** | Silently discards positional data or overrides it with a keyword |
-| Modal inheritance and broad class discovery (§2) | **Open, reproduced** | Subclasses lose commands; helper classes become invalid commands |
 | Unknown attribute assignment (§3) | **Open, reproduced** | Creates state that appears valid but is absent from config serialization |
 
 These are not architectural preferences. They are concrete runtime correctness
-defects and should be the next implementation work. Alias collisions are
-omitted from this table because the chosen contract is an explicit
-`Config.validate()` test or CI gate rather than a recurring production-time
-check; its current status is recorded separately as an opt-in safeguard.
+defects and should be the next implementation work. Modal inheritance and
+implicit command discovery are omitted because they are now fixed. Alias
+collisions are omitted from this table because the chosen contract is an
+explicit `Config.validate()` test or CI gate rather than a recurring
+production-time check; its current status is recorded separately as an opt-in safeguard.
 
 ### Open — narrower correctness and API defects
 

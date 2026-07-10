@@ -271,6 +271,13 @@ need `__command__` to override that -- most commonly to give a nested class a
 clean command name. Full precedence (high to low): `ModalValue(command=...)` >
 `__command__` > attribute name > class name.
 
+Modal command tables are inherited. Commands declared through attributes,
+`__subconfigs__`, or class-level `register()` remain available on subclasses;
+normal attribute overriding can replace or hide an attribute-declared command.
+Implicit attribute discovery is intentionally limited to `Config` and
+`ModalCLI` subclasses, so unrelated public helper classes are not treated as
+commands. Register custom command-protocol classes explicitly.
+
 ### Lifecycle aliases
 
 Rename old non-dunder helpers:

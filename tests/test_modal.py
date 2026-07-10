@@ -491,6 +491,145 @@ def test_modal_command_name_precedence():
     assert M4.main(argv=['WithoutCmd'], _noexit=True) == 0
 
 
+def test_modal_inherits_declared_commands():
+    """A modal subclass retains its parent's command tree."""
+    calls = []
+
+    class ParentCommand(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append('parent')
+            return 0
+
+    class ChildCommand(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append('child')
+            return 0
+
+    class Parent(kwconf.ModalCLI):
+        parent = ParentCommand
+
+    class Child(Parent):
+        child = ChildCommand
+
+    assert Child.main(argv=['parent'], _noexit=True) == 0
+    assert Child.main(argv=['child'], _noexit=True) == 0
+    assert calls == ['parent', 'child']
+
+    parent_help = Parent().argparse().format_help()
+    child_help = Child().argparse().format_help()
+    assert 'parent' in parent_help
+    assert 'child' not in parent_help
+    assert 'parent' in child_help
+    assert 'child' in child_help
+
+
+def test_modal_inherits_explicit_registrations_without_sharing_list():
+    """Explicit lists and register() participate in normal inheritance."""
+    calls = []
+
+    class ListedCommand(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append('listed')
+            return 0
+
+    class Parent(kwconf.ModalCLI):
+        __subconfigs__ = [ListedCommand]
+
+    @Parent.register(command='registered')
+    class RegisteredCommand(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append('registered')
+            return 0
+
+    class Child(Parent):
+        pass
+
+    @Child.register(command='child')
+    class ChildCommand(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append('child')
+            return 0
+
+    parent_commands = [
+        item.get('command') or item['cls'].__name__
+        for item in Parent.__subconfigs__
+    ]
+    child_commands = [
+        item.get('command') or item['cls'].__name__
+        for item in Child.__subconfigs__
+    ]
+    assert parent_commands == ['ListedCommand', 'registered']
+    assert child_commands == ['ListedCommand', 'registered', 'child']
+
+    assert Child.main(argv=['ListedCommand'], _noexit=True) == 0
+    assert Child.main(argv=['registered'], _noexit=True) == 0
+    assert Child.main(argv=['child'], _noexit=True) == 0
+    assert calls == ['listed', 'registered', 'child']
+
+
+def test_modal_command_attribute_override_and_shadow():
+    """Normal attribute overriding also applies to inherited commands."""
+    calls = []
+
+    class Original(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append('original')
+            return 0
+
+    class Replacement(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            calls.append('replacement')
+            return 0
+
+    class Helper:
+        pass
+
+    class Parent(kwconf.ModalCLI):
+        run = Original
+
+    class Replaced(Parent):
+        run = Replacement
+
+    class Hidden(Parent):
+        run = Helper
+
+    assert Replaced.main(argv=['run'], _noexit=True) == 0
+    assert calls == ['replacement']
+
+    assert Hidden.__subconfigs__ == []
+    Hidden().argparse()
+    assert Hidden.run is Helper
+
+
+def test_modal_ignores_unrelated_public_helper_classes():
+    """Only Config and ModalCLI subclasses are discovered implicitly."""
+
+    class Helper:
+        pass
+
+    class Command(kwconf.Config):
+        @classmethod
+        def main(cls, argv=None, **kwargs):
+            return 0
+
+    class App(kwconf.ModalCLI):
+        helper = Helper
+        command = Command
+
+    help_text = App().argparse().format_help()
+    assert 'command' in help_text
+    assert [item['command'] for item in App.__subconfigs__] == ['command']
+    assert App.helper is Helper
+    assert App.main(argv=['command'], _noexit=True) == 0
+
+
 def test_submodal_usage_improvement():
     """
     We print the deepest usage helps unlike default argparse
