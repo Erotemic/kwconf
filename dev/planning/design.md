@@ -160,6 +160,19 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
       each suits its caller; a CLI's top-level handler lets `SystemExit` exit
       and catches `ConfigValidationError` to print a clean line, and both land
       on the same exit code.
+- **Structural input validation is opt-in; safe precedence is not.**
+  `Config.cli(..., validate=...)` / `load(..., validate=...)` provide the
+  per-ingestion policy. `None` preserves field/class value validation but does
+  not add a structural traversal; explicit `'warn'` or `'error'` checks
+  contradictory spellings inside one source, and `False` disables runtime
+  validation for that ingestion. A class-level `__validate__ = 'error'` opts
+  into strict structural checks automatically, while the default class
+  `'warn'` remains value-only. This split is deliberate startup-cost policy,
+  not missing validation. The lean path must nevertheless remain safe and
+  deterministic: explicit `path.__class__` wins over scalar selector sugar,
+  so a declared SubConfig is never replaced with raw selector text. Static
+  schema checks remain the separate opt-in `Config.validate()` CI gate.
+  **[LOCKED 2026-07-10]**
 
 ## 5. Static typing strategy
 

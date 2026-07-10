@@ -14,7 +14,7 @@ short and operational.
 7. [ADR-0007 — Named parsers replace smart parsing](#adr-0007--named-parsers-replace-smart-parsing)
 8. [ADR-0008 — Nested configs are explicit](#adr-0008--nested-configs-are-explicit)
 9. [ADR-0009 — Coercion runs for string-only sources](#adr-0009--coercion-runs-for-string-only-sources)
-10. [ADR-0010 — Runtime validation defaults to warn](#adr-0010--runtime-validation-defaults-to-warn)
+10. [ADR-0010 — Runtime validation is tiered and performance-conscious](#adr-0010--runtime-validation-is-tiered-and-performance-conscious)
 
 ---
 
@@ -139,16 +139,33 @@ assignment, defaults, and typed YAML/JSON values are used as Python values.
 * `from_yaml` keeps the file format's native types.
 * Parsing is a boundary adapter, not a per-path field model.
 
-## ADR-0010 — Runtime validation defaults to warn
+## ADR-0010 — Runtime validation is tiered and performance-conscious
 
 **Decision**
-Validation checks user-supplied values against annotations after parsing. The
-default policy is `warn`.
+Annotation/value validation checks user-supplied values after parsing and
+defaults to `warn`. Structural source validation is opt-in through
+`cli(validate=...)` / `load(validate=...)`, or through the fully strict class
+policy `__validate__ = 'error'`. The default class `warn` policy intentionally
+does not add a structural traversal to every CLI startup.
 
 **Locks down**
 
-* `warn` accepts the value and emits `UserWarning`.
-* `error` / `True` raises `TypeError`.
-* `False` disables validation.
+* `validate=None` preserves field/class value policy and selects the lean
+  structural path.
+* Explicit `validate='warn'` checks structural input consistency, emits
+  `UserWarning`, and continues with deterministic safe precedence.
+* Explicit `validate='error'` / `True` raises `ConfigValidationError` before
+  applying structurally ambiguous input.
+* Explicit `validate=False` disables runtime validation for values ingested by
+  that call.
+* `__validate__ = 'error'` opts a class into strict structural checks; the
+  default `__validate__ = 'warn'` remains value-only.
+* The lean path is still safe: explicit `path.__class__` wins over scalar
+  selector sugar, so a SubConfig is never replaced by raw selector text.
+* Conflicts are scoped to one source. Normal precedence between defaults,
+  data/files, and argv remains intentional.
 * Field defaults are accepted as declared.
 * Unsupported annotation forms are skipped.
+* Parser-enforced constraints remain hard errors regardless of `validate`.
+* `Config.validate()` is the distinct opt-in static-schema gate for tests/CI;
+  it is never an implicit startup scan.

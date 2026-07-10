@@ -122,20 +122,48 @@ from kwconf.value import _Value as Value
 
 
 class ConfigValidationError(TypeError):
-    """Raised when a supplied value fails annotation validation.
+    """Raised when strict runtime validation rejects supplied configuration.
 
-    Emitted by :meth:`Config._validate_assignment` when validation is in
-    ``'error'`` mode (via a field's ``validate='error'`` or a class-level
-    ``__validate__ = 'error'``). It subclasses :class:`TypeError` so existing
-    ``except TypeError`` handlers keep working, while a CLI can catch this
-    specific type to turn a bad ``Literal``/annotation value into a clean
-    message instead of a traceback -- on every entry point (constructor,
-    ``data=``, assignment), matching the hard rejection argparse already gives
-    the ``argv`` path.
+    This includes annotation mismatches and opt-in structural input checks,
+    such as contradictory SubConfig selector spellings. It subclasses
+    :class:`TypeError` so existing ``except TypeError`` handlers keep working,
+    while callers can catch this specific type and render a clean diagnostic.
     """
 
 
 __all__ = ['Config', 'ConfigValidationError', 'define']
+
+
+def _normalize_validation_mode(mode: bool | str | None) -> bool | str | None:
+    """Normalize the public runtime-validation policy."""
+    if mode is True:
+        return 'error'
+    if mode is None or mode is False:
+        return mode
+    if isinstance(mode, str) and mode in {'warn', 'error'}:
+        return mode
+    raise ValueError(
+        f"validate must be None, False, 'warn', 'error', or True; got {mode!r}"
+    )
+
+
+def _structural_validation_mode(
+    cfg: 'Config', override: bool | str | None
+) -> bool | str:
+    """Resolve whether opt-in structural input checks should run.
+
+    The default class policy is ``'warn'`` for inexpensive per-assignment type
+    checks. It intentionally does *not* activate structural source scans. Such
+    scans run when ``validate=`` is explicitly supplied, or when a class opts
+    into the fully strict ``__validate__ = 'error'`` policy.
+    """
+    if override is not None:
+        mode = _normalize_validation_mode(override)
+        return False if mode is None else mode
+    class_mode = _normalize_validation_mode(
+        getattr(cfg, '__validate__', 'warn')
+    )
+    return 'error' if class_mode == 'error' else False
 
 
 def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
@@ -349,13 +377,17 @@ def _validate_mapping_payload(parsed: Any, source: Any) -> Dict[str, Any]:
 def _validate_class_aliases(
     class_name: str, defaults: Mapping[str, Any], fuzzy_hyphens: bool
 ) -> None:
-    """Reject ambiguous long option / mapping names at class creation.
+    """Reject ambiguous long option / mapping names during schema validation.
 
     Canonical field names and ``Value.alias`` spellings share one lookup
     namespace. When fuzzy hyphens are enabled, each underscore spelling also
     claims its generated hyphen spelling. Any spelling claimed by two fields
     would otherwise be resolved inconsistently by constructor/data lookup and
-    argparse, so fail while the schema is being defined.
+    argparse.
+
+    This check is intentionally opt-in through :meth:`Config.validate` so
+    production CLI startup does not repeatedly scan schemas that projects have
+    already validated in their test suite or CI.
     """
     spelling_owner: Dict[str, str] = {}
     spelling_source: Dict[str, str] = {}
@@ -552,12 +584,9 @@ class MetaConfig(_ABCMeta):
             )
         cls = super().__new__(mcls, name, bases, namespace, *args, **kwargs)  # type: ignore
 
-        if not is_root_config:
-            _validate_class_aliases(
-                class_name=name,
-                defaults=cls.__default__,
-                fuzzy_hyphens=bool(getattr(cls, '__fuzzy_hyphens__', 1)),
-            )
+        # Schema validation is deliberately opt-in via ``Config.validate``.
+        # Class construction is on every process startup, while a project's
+        # schemas are normally static and can be checked once in tests / CI.
 
         # Modify the __init__ docstring to surface the valid keys to help().
         if (
@@ -599,6 +628,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     Key methods:
 
+        * :meth:`validate` - check static schema invariants in tests / CI.
         * :meth:`cli` - construct a CLI-aware instance from argv.
         * :meth:`load` - update the instance from a file, dict, or argv.
         * :meth:`argparse` - build an :class:`argparse.ArgumentParser`.
@@ -630,6 +660,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     __default__: Dict[str, Any] = {}
     __description__: Optional[str] = None
     __epilog__: Optional[str] = None
+    __validate__: bool | str = 'warn'
     # __allow_newattr__ = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -703,6 +734,35 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         from kwconf.subconfig import wrap_subconfig_defaults
 
         wrap_subconfig_defaults(self, _dont_call_post_init=_dont_call_post_init)
+
+    @classmethod
+    def validate(cls) -> None:
+        """Validate static schema invariants for this Config class.
+
+        This method is intentionally not called during class construction or
+        normal CLI invocation. Projects should call it from their test suite or
+        CI so schema mistakes are caught without adding repeated startup work to
+        every command invocation.
+
+        Currently this checks that canonical field names, aliases, inherited
+        fields, and generated fuzzy-hyphen spellings form an unambiguous lookup
+        namespace. Additional static schema checks may be added here over time.
+
+        Raises:
+            ValueError:
+                If two fields claim the same accepted spelling.
+
+        Example:
+            >>> import kwconf
+            >>> class MyConfig(kwconf.Config):
+            ...     output_path = kwconf.Value('out.txt', alias=['output'])
+            >>> MyConfig.validate()
+        """
+        _validate_class_aliases(
+            class_name=cls.__name__,
+            defaults=cls.__default__,
+            fuzzy_hyphens=bool(getattr(cls, '__fuzzy_hyphens__', 1)),
+        )
 
     @classmethod
     def coerce(cls, **kwargs: Any) -> 'Config':
@@ -794,6 +854,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
+        validate: bool | str | None = None,
     ) -> Config:
         """
         Create a command-line aware config instance.
@@ -818,6 +879,16 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             strict (bool):
                 if True use ``parse_args`` otherwise use ``parse_known_args``.
                 Defaults to True.
+
+            validate (bool | str | None):
+                Per-invocation runtime-validation override. ``None`` preserves
+                field/class value-validation policy and keeps structural input
+                scans off unless ``__validate__ = 'error'``. ``False`` disables
+                validation for values ingested by this call. ``'warn'`` enables
+                structural checks and warns while applying deterministic safe
+                precedence. ``'error'`` / ``True`` raises
+                :class:`ConfigValidationError`. Parser-enforced constraints
+                such as ``Literal`` choices remain hard errors regardless.
 
             autocomplete (bool | str):
                 if True try to enable argcomplete.
@@ -884,6 +955,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             argv=argv,
             default=default,
             strict=strict,
+            validate=validate,
             autocomplete=autocomplete,
             special_options=special_options,
             allow_import=allow_import,
@@ -1102,7 +1174,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     def __setitem__(self, key: str, value: Any) -> None:
         self._setitem(key, value)
 
-    def _setitem(self, key: str, value: Any, validate: bool = True) -> None:
+    def _setitem(
+        self,
+        key: str,
+        value: Any,
+        validate: bool = True,
+        validation_mode: bool | str | None = None,
+    ) -> None:
         """
         Core assignment. ``validate=False`` stores a *trusted* value (the
         field's own default during the argv merge) without running annotation
@@ -1119,7 +1197,12 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             from kwconf.subconfig import _ensure_parent_node
 
             parent = _ensure_parent_node(self, parent_key)
-            parent._setitem(leaf, value, validate=validate)
+            parent._setitem(
+                leaf,
+                value,
+                validate=validate,
+                validation_mode=validation_mode,
+            )
             return
         if key not in self._data:
             key = self._normalize_alias_key(key)
@@ -1141,7 +1224,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 # from_cli/from_env parse explicitly). So store the value as-is.
                 coerced = value
                 if validate:
-                    self._validate_assignment(key, coerced, template)
+                    self._validate_assignment(
+                        key, coerced, template, mode=validation_mode
+                    )
                 self._data[key] = coerced
             else:
                 # If we don't have an underlying Value object simply set the
@@ -1149,13 +1234,19 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 self._data[key] = value
 
     def _validate_assignment(
-        self, key: str, value: Any, template: 'Value'
+        self,
+        key: str,
+        value: Any,
+        template: 'Value',
+        mode: bool | str | None = None,
     ) -> None:
         """
         Run optional annotation-based validation on an assignment.
 
-        Mode is resolved from ``template.validate`` first, falling back to
-        the class-level ``__validate__`` attribute (default ``'warn'``).
+        An explicit ``cli(validate=...)`` / ``load(validate=...)`` mode has
+        highest precedence. Without one, mode is resolved from
+        ``template.validate`` first, falling back to the class-level
+        ``__validate__`` attribute (default ``'warn'``).
 
         Modes:
           * ``'warn'`` (default) -- emit a ``UserWarning`` on mismatch.
@@ -1187,9 +1278,11 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         annotation = getattr(template, '_annotation', None)
         if annotation is None:
             return
-        mode = template.validate
         if mode is None:
-            mode = getattr(self, '__validate__', 'warn')
+            mode = template.validate
+            if mode is None:
+                mode = getattr(self, '__validate__', 'warn')
+        mode = _normalize_validation_mode(mode)
         if not mode:
             return
         if _value_matches_annotation(value, annotation):
@@ -1248,6 +1341,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
         _reset: bool = True,
+        validate: bool | str | None = None,
     ) -> Config:
         """
         Updates the configuration from a given data source.
@@ -1278,6 +1372,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             strict (bool):
                 if True an error will be raised if the command line
                 contains unknown arguments.
+
+            validate (bool | str | None):
+                Per-load runtime-validation override. The policy matches
+                :meth:`cli`: ``None`` preserves field/class value validation;
+                ``False`` disables it for this load; ``'warn'`` enables
+                structural diagnostics; and ``'error'`` / ``True`` raises
+                :class:`ConfigValidationError` on value or structural failures.
 
             autocomplete (bool):
                 if True, attempts to use the autocomplete package if it is
@@ -1350,6 +1451,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 f'argv={argv}, strict={strict}, special_options={special_options}',
             )
 
+        validate = _normalize_validation_mode(validate)
+        structural_validation = _structural_validation_mode(self, validate)
+
         if special_options is None:
             special_options = getattr(self, '__special_options__', False)
 
@@ -1413,9 +1517,15 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     allow_import=allow_import,
                     localns=localns,
                     stacklevel=None,
+                    validation_mode=validate,
+                    structural_validation=structural_validation,
                 )
         else:
-            self.update(user_config)
+            if validate is None:
+                self.update(user_config)
+            else:
+                for key, value in user_config.items():
+                    self._setitem(key, value, validation_mode=validate)
 
         if isinstance(argv, str):
             # allow specification using the actual command line arg string
@@ -1435,6 +1545,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 'pending_updates': pending_updates,
                 'localns': localns,
                 'stacklevel': next_stacklevel,
+                'validation_mode': validate,
+                'structural_validation': structural_validation,
             }
             if iterable(argv):
                 read_argv_kwargs['argv'] = argv
@@ -1510,6 +1622,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         pending_updates=None,
         localns=None,
         stacklevel=0,
+        validation_mode=None,
+        structural_validation=False,
     ):
         """
         Example:
@@ -1651,6 +1765,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 pending_updates=pending_updates,
                 localns=localns,
                 stacklevel=None,
+                validation_mode=validation_mode,
+                structural_validation=structural_validation,
             )
 
         if autocomplete:
@@ -1722,6 +1838,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                         allow_import=allow_import,
                         localns=localns,
                         stacklevel=None,
+                        validation_mode=validation_mode,
+                        structural_validation=structural_validation,
                     )
                     for key in selector_keys:
                         ns.pop(key, None)
@@ -1782,13 +1900,14 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     argv=False,
                     _dont_call_post_init=True,
                     _reset=False,
+                    validate=(False if has_subconfigs else validation_mode),
                 )
 
         # Finally load explicit CLI values. The parser action has already
         # coerced the raw token; we just need to store it.
         for key in explicit_keys:
             if key not in special_ns:
-                self[key] = ns[key]
+                self._setitem(key, ns[key], validation_mode=validation_mode)
 
         # Record argv provenance once values (and any subconfig class swaps)
         # are finalized. Use the raw ParseResult set so the snapshot faithfully

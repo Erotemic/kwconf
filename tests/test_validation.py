@@ -2,9 +2,10 @@
 """
 Tests for optional annotation-based validation on Config.
 
-Validation is opt-in via ``__validate__ = 'error' | 'warn'`` on the class
-or ``Value(..., validate=...)`` per field. Annotations consulted include
-plain types, ``Literal[...]``, unions, and parameterized collections.
+Validation policy is controlled by ``__validate__ = 'error' | 'warn'`` on the
+class, ``Value(..., validate=...)`` per field, or the per-ingestion
+``cli/load(validate=...)`` override. Annotations consulted include plain types,
+``Literal[...]``, unions, and parameterized collections.
 
 Many tests in this file deliberately pass values that violate the field
 annotations to exercise the runtime validator. Inline ``# ty: ignore``
@@ -257,3 +258,39 @@ def test_validation_message_names_union_and_generic():
     msg = str(caught[-1].message)
     assert 'int | None' in msg
     assert 'Union' not in msg
+
+
+def test_cli_validate_override_controls_value_validation():
+    """An explicit CLI policy overrides both class and field policy."""
+    import kwconf
+
+    class WarnConfig(kwconf.Config):
+        value: int = kwconf.Value(0, validate=False)
+
+    with pytest.raises(kwconf.ConfigValidationError, match='does not match'):
+        WarnConfig.cli(
+            data={'value': 'not-an-int'},
+            argv=False,
+            validate='error',
+        )
+
+    class ErrorConfig(kwconf.Config):
+        __validate__ = 'error'
+        value: int = 0
+
+    cfg = ErrorConfig.cli(
+        data={'value': 'not-an-int'},
+        argv=False,
+        validate=False,
+    )
+    assert cfg.value == 'not-an-int'
+
+
+def test_cli_validate_rejects_invalid_policy():
+    import kwconf
+
+    class C(kwconf.Config):
+        value = 1
+
+    with pytest.raises(ValueError, match='validate must be'):
+        C.cli(argv=False, validate='pedantic')

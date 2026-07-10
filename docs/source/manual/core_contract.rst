@@ -110,8 +110,10 @@ See :doc:`coercion_and_cli` for parser details.
 Validation contract
 -------------------
 
-Runtime validation checks user-supplied values against annotations after
-parsing. The default policy is ``'warn'``. Tune it per class or per field:
+Runtime validation has two deliberately different cost tiers.
+
+Value validation checks user-supplied values against annotations after
+parsing. Its class default is ``'warn'``. Tune it per class or per field:
 
 .. code-block:: python
 
@@ -122,6 +124,40 @@ parsing. The default policy is ``'warn'``. Tune it per class or per field:
 Validation runs on constructor values, data/file values, assignment, parsed
 argv values, and parsed env values. Field defaults are accepted as declared.
 Unsupported annotation forms are skipped.
+
+``Config.cli`` and ``Config.load`` also accept a per-ingestion ``validate=``
+override. It has highest precedence for values ingested by that call, ahead of
+field and class policy:
+
+.. code-block:: python
+
+    C.cli(data=payload, argv=False, validate=False)
+    C.cli(data=payload, argv=False, validate='warn')
+    C.cli(data=payload, argv=False, validate='error')
+
+``None`` is the default. It preserves field/class value validation and avoids
+an additional structural traversal. Explicit ``'warn'`` or ``'error'`` enables
+structural source checks; ``True`` is an alias for ``'error'``. A class with
+``__validate__ = 'error'`` also enables strict structural checks by default.
+The class default ``'warn'`` intentionally remains value-only so ordinary CLI
+startup stays lean.
+
+Structural validation currently detects contradictory SubConfig selector
+spellings within one source, such as both ``inner`` and
+``inner.__class__``. Warning mode reports the ambiguity and continues with
+safe deterministic precedence; error mode raises
+``ConfigValidationError`` before mutation. Overrides from separate sources are
+not conflicts: later argv may intentionally override earlier ``data=`` or a
+config file.
+
+Safety does not depend on enabling the diagnostic scan. On the lean path an
+explicit ``path.__class__`` selector wins over scalar ``path`` sugar, and raw
+selector text is never stored in place of a declared SubConfig.
+
+``Config.validate()`` is a separate, side-effect-free static schema gate for
+tests/CI. It is not called implicitly by class construction or CLI startup.
+Parser-enforced constraints such as ``Literal`` choices also remain hard
+errors regardless of runtime validation mode.
 
 Nested configs
 --------------

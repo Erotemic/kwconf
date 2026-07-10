@@ -56,42 +56,82 @@ def test_config_fuzzy_hyphens_optout():
         Strict.cli(argv=['--out-dir=A'], strict=True)
 
 
-def test_alias_collision_with_canonical_field_rejected():
+def test_config_schema_validation_is_opt_in(monkeypatch):
+    import importlib
+
     import pytest
 
     import kwconf
+
+    config_module = importlib.import_module('kwconf.config')
+
+    def fail_if_called(*args, **kwargs):
+        raise RuntimeError('schema validation ran')
+
+    monkeypatch.setattr(
+        config_module, '_validate_class_aliases', fail_if_called
+    )
+
+    class GoodConfig(kwconf.Config):
+        value = 1
+
+    # Neither class construction nor normal config / CLI construction performs
+    # a schema scan. Projects opt into it explicitly in tests or CI.
+    assert GoodConfig().value == 1
+    assert GoodConfig.cli(argv=False).value == 1
+    with pytest.raises(RuntimeError, match='schema validation ran'):
+        GoodConfig.validate()
+
+
+def test_config_validate_accepts_unambiguous_aliases():
+    import kwconf
+
+    class GoodConfig(kwconf.Config):
+        output_path = kwconf.Value('out.txt', alias=['output'])
+        workers = kwconf.Value(1, alias=['jobs'])
+
+    assert GoodConfig.validate() is None
+
+
+def test_alias_collision_with_canonical_field_rejected_by_validate():
+    import pytest
+
+    import kwconf
+
+    class BadConfig(kwconf.Config):
+        opt1 = kwconf.Value(1, alias=['opt2'])
+        opt2 = kwconf.Value(2)
 
     with pytest.raises(ValueError, match="spelling 'opt2'.*'opt1'.*'opt2'"):
-
-        class BadConfig(kwconf.Config):
-            opt1 = kwconf.Value(1, alias=['opt2'])
-            opt2 = kwconf.Value(2)
+        BadConfig.validate()
 
 
-def test_duplicate_alias_across_fields_rejected():
+def test_duplicate_alias_across_fields_rejected_by_validate():
     import pytest
 
     import kwconf
+
+    class BadConfig(kwconf.Config):
+        opt1 = kwconf.Value(1, alias=['shared'])
+        opt2 = kwconf.Value(2, alias=['shared'])
 
     with pytest.raises(ValueError, match="spelling 'shared'.*'opt1'.*'opt2'"):
-
-        class BadConfig(kwconf.Config):
-            opt1 = kwconf.Value(1, alias=['shared'])
-            opt2 = kwconf.Value(2, alias=['shared'])
+        BadConfig.validate()
 
 
-def test_fuzzy_alias_collision_rejected():
+def test_fuzzy_alias_collision_rejected_by_validate():
     import pytest
 
     import kwconf
 
-    with pytest.raises(ValueError, match="spelling 'output-dir'"):
+    class BadConfig(kwconf.Config):
+        __default__ = {
+            'output_dir': kwconf.Value('a'),
+            'other': kwconf.Value('b', alias=['output-dir']),
+        }
 
-        class BadConfig(kwconf.Config):
-            __default__ = {
-                'output_dir': kwconf.Value('a'),
-                'other': kwconf.Value('b', alias=['output-dir']),
-            }
+    with pytest.raises(ValueError, match="spelling 'output-dir'"):
+        BadConfig.validate()
 
 
 def test_fuzzy_alias_collision_allowed_when_disabled():
@@ -104,12 +144,13 @@ def test_fuzzy_alias_collision_allowed_when_disabled():
             'other': kwconf.Value('b', alias=['output-dir']),
         }
 
+    assert StrictConfig.validate() is None
     config = StrictConfig(output_dir='canonical', **{'output-dir': 'alias'})
     assert config.output_dir == 'canonical'
     assert config.other == 'alias'
 
 
-def test_inherited_alias_collision_rejected():
+def test_inherited_alias_collision_rejected_by_validate():
     import pytest
 
     import kwconf
@@ -117,7 +158,8 @@ def test_inherited_alias_collision_rejected():
     class BaseConfig(kwconf.Config):
         original = kwconf.Value(1, alias=['future_name'])
 
-    with pytest.raises(ValueError, match="spelling 'future_name'"):
+    class BadSubclass(BaseConfig):
+        future_name = kwconf.Value(2)
 
-        class BadSubclass(BaseConfig):
-            future_name = kwconf.Value(2)
+    with pytest.raises(ValueError, match="spelling 'future_name'"):
+        BadSubclass.validate()

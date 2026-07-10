@@ -3,9 +3,10 @@
 > **Current status (revalidated 2026-07-10).** The remediation pass fixed and
 > regression-tested every high-severity finding in §1, but the audit is **not
 > fully closed**. Several concrete correctness defects from §§2–3 remain
-> reproducible, including dropped constructor arguments, conflicting SubConfig
-> updates replacing a node with a raw value, modal inheritance/discovery
-> failures, and invisible unknown-attribute writes. Alias hijacking now has an
+> reproducible, including dropped constructor arguments, modal
+> inheritance/discovery failures, and invisible unknown-attribute writes.
+> Conflicting SubConfig selector spellings are now safe by default and have
+> opt-in warning/error diagnostics through `cli(validate=...)`. Alias hijacking now has an
 > **opt-in safeguard**, not an automatically enforced fix: projects can call
 > `MyConfig.validate()` in tests or CI, while normal class construction and CLI
 > startup do not rescan static schemas. The next planning step is to turn that
@@ -13,7 +14,7 @@
 > See [§8 Current sequencing](#8-current-sequencing-updated-2026-07-10) and
 > [§9 Remediation status](#9-remediation-status-revalidated-2026-07-10).
 >
-> Current verification snapshot: **386 passed, 3 skipped**;
+> Current verification snapshot: **397 passed, 2 skipped**;
 > `uv run --extra linting ./run_linter.sh` and
 > `uv run --with ty ty check ./kwconf` pass. The narrower configured Ruff gate
 > for `kwconf/` and `tests/` is clean, but `ruff check .` still reports nine
@@ -598,19 +599,13 @@ behind an optional CI validator.
    construction). Extra positional values are silently truncated, and a
    keyword silently replaces the same field supplied positionally. Match normal
    Python call semantics with `TypeError`.
-2. **Reject conflicting SubConfig selector/value updates** (§2, file/data
-   loading). A source containing both `inner.__class__` and a scalar `inner`
-   can replace a SubConfig node with a raw value. Define the accepted compound
-   mapping form and reject ambiguous sources before mutation. Static SubConfig
-   graph checks belong in validation, but this particular conflict is
-   input-dependent and requires a runtime guard.
-3. **Fix modal runtime semantics** (§2, class construction). Modal subclasses
+2. **Fix modal runtime semantics** (§2, class construction). Modal subclasses
    currently lose inherited commands, while unrelated public helper classes
    are auto-registered as commands. Preserve inherited registrations and
    restrict actual command discovery to supported or explicitly wrapped
    command types. `ModalCLI.validate()` should additionally diagnose static
    conflicts, but cannot substitute for correct runtime registration.
-4. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
+3. **Reject unknown attribute assignment by default** (§3). `cfg.typo = 5`
    currently succeeds but is absent from mapping access and serialization.
    Apply the same new-key policy to attribute and mapping assignment, with an
    explicit escape hatch only when requested.
@@ -695,7 +690,7 @@ explain the bugs as first observed; this section is the current risk register.
 
 ### Verification snapshot
 
-- `uv run pytest -q`: **386 passed, 3 skipped**. The three skips are xdoctest
+- `uv run pytest -q`: **397 passed, 2 skipped**. The two skips are xdoctest
   examples marked skipped, not the formerly disabled fuzzy-hyphen regression.
 - `uv run --extra linting ./run_linter.sh`: passes for `kwconf/` and `tests/`.
 - `uv run --with ty ty check ./kwconf`: passes.
@@ -738,6 +733,11 @@ behavioral, regression tests:
   `@dataconf` preservation of hooks and inherited fields.
 - Numeric-tower validation, annotation formatting, and typed
   `port_to_config()` output.
+- Conflicting SubConfig selector spellings no longer replace a nested Config
+  with raw selector text. Explicit `path.__class__` wins deterministically on
+  the lean path; `cli/load(validate='warn'|'error')` optionally diagnoses
+  ambiguous same-source declarations, and `__validate__ = 'error'` enables the
+  strict check class-wide. Cross-source precedence remains valid by design.
 - Public export of `register_parser` and correction of the mkinit submodule
   specification.
 - The dead-code removals listed in the prior remediation pass.
@@ -750,6 +750,13 @@ behavioral, regression tests:
 - **Available now:** `Config.validate()` checks canonical names, declared
   aliases, inherited fields, and generated fuzzy-hyphen spellings. Normal class
   construction and CLI invocation do not run the scan.
+- **Available now:** `Config.cli(..., validate=...)` and `load(validate=...)`
+  provide an explicit runtime policy beyond annotation checks. The default
+  `None` preserves class/field value validation without a structural source
+  scan; explicit `'warn'` / `'error'` diagnoses conflicting SubConfig selector
+  spellings; and `False` selects the lean opt-out. `__validate__ = 'error'`
+  enables strict structural checks class-wide. The baseline loader remains safe
+  without the scan through deterministic explicit-selector precedence.
 - **Status:** alias collision protection is an **opt-in safeguard available**,
   not a fixed-automatically invariant. Projects that do not run validation can
   still define an ambiguous schema.
@@ -763,7 +770,6 @@ behavioral, regression tests:
 | Finding | Status | Why it matters |
 | --- | --- | --- |
 | Extra / duplicate constructor arguments (§2) | **Open, reproduced** | Silently discards positional data or overrides it with a keyword |
-| Conflicting SubConfig selector + value (§2) | **Open, reproduced** | Can replace a declared nested Config with a raw scalar |
 | Modal inheritance and broad class discovery (§2) | **Open, reproduced** | Subclasses lose commands; helper classes become invalid commands |
 | Unknown attribute assignment (§3) | **Open, reproduced** | Creates state that appears valid but is absent from config serialization |
 

@@ -481,3 +481,170 @@ def test_scan_config_path_does_not_swallow_next_option():
 
     # Tokens after -- are positional, not a --config value.
     assert scan_config_path(['--', '--config', 'x.yaml']) is None
+
+
+def test_conflicting_subconfig_selectors_are_safe_without_scan():
+    """The lean path is deterministic and never stores selector text as a node."""
+
+    class A(kwconf.Config):
+        a = 1
+
+    class B(kwconf.Config):
+        b = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+
+    cfg = Outer.cli(
+        data={'inner': 'a', 'inner.__class__': 'b'},
+        argv=False,
+    )
+    assert isinstance(cfg.inner, B)
+    assert cfg.inner.b == 2
+
+
+def test_cli_validate_error_rejects_conflicting_subconfig_selectors():
+    import kwconf
+
+    class A(kwconf.Config):
+        a = 1
+
+    class B(kwconf.Config):
+        b = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+
+    with pytest.raises(
+        kwconf.ConfigValidationError,
+        match="Conflicting SubConfig selector updates for 'inner'",
+    ):
+        Outer.cli(
+            data={'inner': 'a', 'inner.__class__': 'b'},
+            argv=False,
+            validate='error',
+        )
+
+
+def test_cli_validate_warns_and_uses_safe_subconfig_precedence():
+    import kwconf
+
+    class A(kwconf.Config):
+        a = 1
+
+    class B(kwconf.Config):
+        b = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+
+    with pytest.warns(
+        UserWarning,
+        match="Conflicting SubConfig selector updates for 'inner'",
+    ):
+        cfg = Outer.cli(
+            data={'inner': 'a', 'inner.__class__': 'b'},
+            argv=False,
+            validate='warn',
+        )
+    assert isinstance(cfg.inner, B)
+
+
+def test_nested_and_dotted_selector_duplicates_are_validated():
+    import kwconf
+
+    class A(kwconf.Config):
+        a = 1
+
+    class B(kwconf.Config):
+        b = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+
+    with pytest.raises(
+        kwconf.ConfigValidationError,
+        match="Conflicting SubConfig selector updates for 'inner'",
+    ):
+        Outer.cli(
+            data={
+                'inner': {'__class__': 'a'},
+                'inner.__class__': 'b',
+            },
+            argv=False,
+            validate='error',
+        )
+
+
+def test_class_error_policy_enables_structural_validation():
+    import kwconf
+
+    class A(kwconf.Config):
+        a = 1
+
+    class B(kwconf.Config):
+        b = 2
+
+    class Outer(kwconf.Config):
+        __validate__ = 'error'
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+
+    with pytest.raises(kwconf.ConfigValidationError):
+        Outer.cli(
+            data={'inner': 'a', 'inner.__class__': 'b'},
+            argv=False,
+        )
+
+
+def test_cross_source_subconfig_override_is_not_a_conflict():
+    import kwconf
+
+    class A(kwconf.Config):
+        a = 1
+
+    class B(kwconf.Config):
+        b = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+
+    cfg = Outer.cli(
+        data={'inner': 'a'},
+        argv=['--inner=b'],
+        validate='error',
+    )
+    assert isinstance(cfg.inner, B)
+
+
+def test_default_cli_path_does_not_run_structural_scan(monkeypatch):
+    import kwconf.subconfig as subconfig_mod
+
+    class Inner(kwconf.Config):
+        value = 1
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(Inner, choices={'inner': Inner})
+
+    def fail_if_called(*args, **kwargs):
+        raise RuntimeError('structural validation scan ran')
+
+    monkeypatch.setattr(
+        subconfig_mod, '_find_selector_update_conflicts', fail_if_called
+    )
+    cfg = Outer.cli(data={'inner': {'value': 2}}, argv=False)
+    assert cfg.inner.value == 2
+
+
+def test_cli_validate_override_reaches_nested_values():
+    class Inner(kwconf.Config):
+        value: int = kwconf.Value(0, validate=False)
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(Inner)
+
+    with pytest.raises(kwconf.ConfigValidationError, match='does not match'):
+        Outer.cli(
+            data={'inner': {'value': 'not-an-int'}},
+            argv=False,
+            validate='error',
+        )

@@ -15,15 +15,26 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   build requirement, stale xcookie version, codespell path).
 
 ### Added
+* `Config.cli(..., validate=...)` and `Config.load(..., validate=...)` now
+  provide a per-ingestion override for runtime validation. `False` selects the
+  lean path, `'warn'` enables structural diagnostics while continuing with
+  deterministic safe precedence, and `'error'` / `True` raises
+  `ConfigValidationError`. The default `None` preserves existing field/class
+  value-validation policy without enabling an additional structural scan;
+  classes that set `__validate__ = 'error'` opt into strict structural checks
+  automatically.
+* `Config.validate()` provides an explicit static-schema validation gate for
+  project test suites and CI. It detects aliases that collide with canonical
+  field names, aliases on other fields, inherited fields, or generated
+  fuzzy-hyphen spellings. Validation is intentionally opt-in and is never run
+  during class construction or normal CLI invocation, avoiding repeated
+  startup work for schemas that have already been checked in CI.
 * `register_parser` (the documented parser extension point) is now exported at
   the top level: `kwconf.register_parser(...)`.
-* `kwconf.ConfigValidationError` (a `TypeError` subclass) is now raised when a
-  value fails annotation validation in ``'error'`` mode (``validate='error'``
-  or class-level ``__validate__ = 'error'``), instead of a bare `TypeError`.
-  Existing ``except TypeError`` handlers keep working; a CLI can now catch this
-  specific type to render bad ``Literal``/annotation values as a clean message
-  on every entry point (constructor, ``data=``, assignment), complementing the
-  hard rejection argparse already gives the ``argv`` path.
+* `kwconf.ConfigValidationError` (a `TypeError` subclass) is now raised for
+  strict runtime-validation failures, including annotation mismatches and
+  contradictory SubConfig selector spellings. Existing ``except TypeError``
+  handlers keep working while a CLI can catch the specific validation failure.
 
 ### Changed
 * Modal ``--help`` command listings now show a single spelling per command by
@@ -39,12 +50,13 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
-* Config classes now reject ambiguous aliases at class-definition time. A
-  declared alias can no longer collide with another field's canonical name,
-  another field's alias, or a generated fuzzy-hyphen spelling and silently
-  route constructor/data values to the wrong field. Inherited fields are
-  validated as part of the same namespace; configs that disable fuzzy hyphens
-  are validated without generated spellings.
+* A data source containing both scalar SubConfig sugar (`inner: a`) and an
+  explicit selector (`inner.__class__: b`) can no longer replace the realized
+  nested Config with the raw string `a`. The explicit `.__class__` spelling
+  wins deterministically on the lean path. Opt-in runtime validation diagnoses
+  the ambiguous source: `validate='warn'` warns and continues safely, while
+  `validate='error'` raises before mutation. Nested and dotted duplicate
+  selector spellings are diagnosed by the same check.
 * `ModalCLI.main` no longer prints a stray ``ERROR ex = <repr>`` line to
   stdout before re-raising a subcommand exception. The leftover debug
   print (and an unreachable ``return 1`` after the ``raise``) double-reported

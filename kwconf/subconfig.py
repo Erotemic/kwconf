@@ -24,10 +24,11 @@ Example:
 from __future__ import annotations
 
 import inspect
+import warnings
 from collections.abc import Mapping
 from typing import IO, Any
 
-from kwconf.config import Config
+from kwconf.config import Config, ConfigValidationError
 from kwconf.util.util_misc import iterable
 from kwconf.util.util_yaml import import_yaml
 from kwconf.value import _Value as Value
@@ -443,7 +444,7 @@ def _flatten_nested(mapping, cfg=None):
     """
     if not isinstance(mapping, Mapping):
         raise TypeError('Expected mapping')
-    stack = [(iter(mapping.items()), ())]
+    stack: list[tuple[Any, tuple[str, ...]]] = [(iter(mapping.items()), ())]
     while stack:
         iterator, prefix = stack[-1]
         try:
@@ -467,6 +468,77 @@ def _flatten_nested(mapping, cfg=None):
             # An empty mapping on a subconfig path carries no update: skip it.
         else:
             yield '.'.join(next_prefix), v  # type: ignore
+
+
+def _iter_flat_update_sources(mapping, cfg=None):
+    """Yield flattened updates together with their original spelling path.
+
+    This is intentionally separate from :func:`_flatten_nested`: it is used
+    only by opt-in structural validation, so normal loading does not allocate
+    provenance records or perform a second traversal.
+    """
+    if not isinstance(mapping, Mapping):
+        raise TypeError('Expected mapping')
+    stack: list[tuple[Any, tuple[str, ...]]] = [(iter(mapping.items()), ())]
+    while stack:
+        iterator, prefix = stack[-1]
+        try:
+            k, v = next(iterator)
+        except StopIteration:
+            stack.pop()
+            continue
+        next_prefix = prefix + (str(k),)
+        flat_key = '.'.join(next_prefix)
+        is_subconfig = cfg is not None and _path_is_subconfig(
+            cfg, flat_key.split('.')
+        )
+        if isinstance(v, Mapping):
+            if cfg is not None and not is_subconfig:
+                yield flat_key, v, next_prefix
+            elif len(v) > 0:
+                stack.append((iter(v.items()), next_prefix))
+        else:
+            yield flat_key, v, next_prefix
+
+
+def _find_selector_update_conflicts(cfg, updates):
+    """Find duplicate semantic SubConfig selector declarations."""
+    explicit = {}
+    direct = {}
+    for flat_key, value, source_parts in _iter_flat_update_sources(
+        updates, cfg=cfg
+    ):
+        record = (source_parts, value)
+        if flat_key.endswith('.__class__'):
+            path = flat_key[: -len('.__class__')]
+            explicit.setdefault(path, []).append(record)
+        else:
+            direct.setdefault(flat_key, []).append(record)
+
+    issues = []
+    for path, records in explicit.items():
+        records = [*records, *direct.get(path, [])]
+        if len(records) > 1:
+            rendered = []
+            for source_parts, value in records:
+                source = ' -> '.join(repr(part) for part in source_parts)
+                rendered.append(f'{source}={value!r}')
+            issues.append(
+                f'Conflicting SubConfig selector updates for {path!r}: '
+                + ', '.join(rendered)
+            )
+    return issues
+
+
+def _report_structural_validation(mode, issues):
+    """Warn or raise for opt-in structural validation issues."""
+    if not issues:
+        return
+    message = '\n'.join(issues)
+    if mode == 'warn':
+        warnings.warn(message, UserWarning, stacklevel=4)
+    else:
+        raise ConfigValidationError(message)
 
 
 def _split_option_token(
@@ -733,7 +805,14 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
 
 
 def apply_dot_updates(
-    cfg, updates, *, allow_import=True, localns=None, stacklevel=None
+    cfg,
+    updates,
+    *,
+    allow_import=True,
+    localns=None,
+    stacklevel=None,
+    validation_mode=None,
+    structural_validation=False,
 ):
     """
     Apply dotted-path updates and selectors to a nested Config.
@@ -754,6 +833,10 @@ def apply_dot_updates(
 
     if stacklevel is not None:
         localns = resolve_localns(localns, stacklevel)
+
+    if structural_validation:
+        issues = _find_selector_update_conflicts(cfg, updates)
+        _report_structural_validation(structural_validation, issues)
 
     flat_updates = {}
     if isinstance(updates, Mapping):
@@ -784,7 +867,13 @@ def apply_dot_updates(
         if isinstance(parent, Config) and parts[-1] in getattr(
             parent, '_subconfig_meta', {}
         ):
-            if key not in selectors:
+            if key in selectors:
+                # Safe baseline semantics with no validation scan: the
+                # explicit ``path.__class__`` spelling wins over scalar sugar
+                # at ``path``. Never overwrite a realized SubConfig with the
+                # raw selector token.
+                leaf_updates.pop(key, None)
+            else:
                 sugar[key] = value
                 leaf_updates.pop(key, None)
     if sugar:
@@ -804,7 +893,7 @@ def apply_dot_updates(
             leaf = parent._normalize_alias_key(leaf)
         if leaf not in parent._data:
             raise KeyError(f'Unknown configuration key: {key}')
-        parent[leaf] = value
+        parent._setitem(leaf, value, validation_mode=validation_mode)
     return cfg
 
 
@@ -919,6 +1008,8 @@ def expand_multipass_parser(
     pending_updates=None,
     localns=None,
     stacklevel=None,
+    validation_mode=None,
+    structural_validation=False,
 ):
     """
     Expand an argparse parser for configs with nested SubConfig nodes.
@@ -958,6 +1049,8 @@ def expand_multipass_parser(
                 allow_import=allow_import,
                 localns=localns,
                 stacklevel=stacklevel,
+                validation_mode=validation_mode,
+                structural_validation=structural_validation,
             )
 
     if pending_updates is not None:
@@ -974,6 +1067,8 @@ def expand_multipass_parser(
             allow_import=allow_import,
             localns=localns,
             stacklevel=stacklevel,
+            validation_mode=validation_mode,
+            structural_validation=structural_validation,
         )
 
     if allow_subconfig_overrides:
@@ -991,6 +1086,8 @@ def expand_multipass_parser(
                 allow_import=allow_import,
                 localns=localns,
                 stacklevel=stacklevel,
+                validation_mode=validation_mode,
+                structural_validation=structural_validation,
             )
         flat_helper = flat_config_from_tree(cfg, include_class_options=True)
         parser = flat_helper.argparse(special_options=special_options)

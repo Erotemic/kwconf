@@ -319,7 +319,8 @@ Direct calls to `template.cast(value)` become `template.coerce(value)`.
 ## Validation
 
 `kwconf` checks user-supplied values against annotations after parsing. The
-default policy is `warn`. Use `__validate__ = 'error'` for stricter CLIs.
+class default is `warn`. Use `__validate__ = 'error'` for an application that
+wants strict value and structural input checks by default.
 
 ```python
 class C(kwconf.Config):
@@ -328,7 +329,17 @@ class C(kwconf.Config):
 ```
 
 Validation applies to constructor values, loaded data, assignment, parsed argv,
-and parsed env. Field defaults are accepted as declared. See [Core Contract](core_contract.rst).
+and parsed env. Field defaults are accepted as declared.
+
+`Config.cli` and `Config.load` additionally accept a per-call `validate=`
+override. `None` (the default) preserves class/field value checking without an
+extra structural scan; `False` is the lean opt-out; explicit `warn` or `error`
+checks contradictory source spellings such as both `inner` and
+`inner.__class__`. This performance split is intentional. The unscanned path
+still uses safe deterministic precedence and never stores selector text in
+place of a SubConfig. Static schema checks such as alias ambiguity belong in
+the separate opt-in `MyConfig.validate()` CI gate. See
+[Core Contract](core_contract.rst).
 
 ## Things that stayed familiar
 
