@@ -60,6 +60,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* ``expand_multipass_parser(parser=...)`` now extends and returns the supplied
+  parser instead of replacing it, preserving parser identity, custom arguments,
+  groups, and caller configuration. SubConfig CLI ingestion now starts from a
+  bare root parser and materializes the realized schema into it once, avoiding
+  duplicate arguments from the preliminary default variant.
 * Modal invocations without a leaf command now print usage from the deepest
   selected parser, so root usage has a stable class-derived program name and
   nested usage retains the full command path. ``NoCommandError`` now carries an

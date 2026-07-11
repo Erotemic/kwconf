@@ -95,3 +95,12 @@ Help output
 The parser is variant-aware. If the user selects ``--optim=sgd`` before
 ``--help``, the help output includes ``optim.momentum`` and omits Adam-only
 fields such as ``optim.beta1``.
+
+Custom parser integration
+-------------------------
+
+The lower-level :func:`kwconf.subconfig.expand_multipass_parser` helper extends
+its supplied parser in place after selector realization. Existing custom
+arguments, groups, parser settings, and object identity are preserved. Callers
+should pass a parser containing only their own arguments; kwconf adds the
+realized nested schema exactly once.

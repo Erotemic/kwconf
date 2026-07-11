@@ -1780,13 +1780,15 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             argv = shlex.split(argv)
 
         # TODO: warn about any unused flags
-        parser = self.argparse(special_options=special_options)
         has_subconfigs = getattr(self, '_has_subconfigs', False)
         if has_subconfigs:
-            # Subconfig argv parsing is staged: realize selector overrides first,
-            # then rebuild a parser for the realized tree before parsing values.
+            # Start from a bare root parser. The multipass helper realizes the
+            # selected tree and extends this exact parser once; pre-populating it
+            # with the default variant would create duplicate/stale arguments.
+            from kwconf import argparse_ext
             from kwconf import subconfig as _subcfg_mod
 
+            parser = argparse_ext.ExtendedArgumentParser(**self._parserkw())
             localns = _subcfg_mod.resolve_localns(localns, stacklevel)
             parser, argv = _subcfg_mod.expand_multipass_parser(
                 self,
@@ -1801,6 +1803,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 validation_mode=validation_mode,
                 structural_validation=structural_validation,
             )
+        else:
+            parser = self.argparse(special_options=special_options)
 
         if autocomplete:
             try:

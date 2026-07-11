@@ -1006,9 +1006,10 @@ def expand_multipass_parser(
     """
     Expand an argparse parser for configs with nested SubConfig nodes.
 
-    This staged parse realizes selector overrides first, then rebuilds a
-    parser for the realized tree so the full argv can be parsed in a
-    single pass with the standard logic in _read_argv.
+    This staged parse realizes selector overrides first, then extends the
+    supplied parser with arguments for the realized tree so the full argv can
+    be parsed in a single pass with the standard logic in ``_read_argv``.
+    Existing caller-defined arguments and parser identity are preserved.
 
     Example:
         >>> import argparse
@@ -1020,7 +1021,11 @@ def expand_multipass_parser(
         >>> cfg = Outer(_dont_call_post_init=True)
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> parser = argparse.ArgumentParser()
+        >>> parser.add_argument('--sentinel')
+        >>> original = parser
         >>> parser, argv = expand_multipass_parser(cfg, parser, argv=['--inner.x=2'])
+        >>> assert parser is original
+        >>> assert '--sentinel' in parser._option_string_actions
         >>> assert '--inner.x' in parser._option_string_actions
     """
     argv_list, _want_help = coerce_argv(True if argv is None else argv)
@@ -1082,11 +1087,11 @@ def expand_multipass_parser(
                 structural_validation=structural_validation,
             )
         flat_helper = flat_config_from_tree(cfg, include_class_options=True)
-        parser = flat_helper.argparse(special_options=special_options)
+        flat_helper.argparse(parser=parser, special_options=special_options)
     else:
         # Static parse path: disallow selector overrides and fail early.
         flat_helper = flat_config_from_tree(cfg, include_class_options=False)
-        parser = flat_helper.argparse(special_options=special_options)
+        flat_helper.argparse(parser=parser, special_options=special_options)
         add_forbidden_selector_args(parser, cfg)
     return parser, argv_list
 

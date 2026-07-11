@@ -652,8 +652,9 @@ than Phase B.
 
 - Clear parser provenance on every parse; `_explicitly_given` currently
   accumulates when a parser object is reused.
-- Make `expand_multipass_parser(parser=...)` extend the supplied parser, or
-  remove the misleading parameter.
+- **Completed:** `expand_multipass_parser(parser=...)` extends and returns the
+  supplied parser; SubConfig ingestion starts from a bare parser to avoid stale
+  default-variant arguments.
 - **Completed:** root and nested no-command diagnostics use the deepest selected
   parser, and `NoCommandError` separates integer exit status from message text.
 - Split special-option collision handling into two layers: statically diagnose
@@ -806,7 +807,7 @@ production-time check; its current status is recorded separately as an opt-in sa
 ### Open — narrower correctness and API defects
 
 - Parser `_explicitly_given` provenance remains sticky across parser reuse.
-- `expand_multipass_parser` still ignores the supplied parser.
+- `expand_multipass_parser` now preserves and extends the supplied parser.
 - Root/nested no-command usage and `NoCommandError` programmatic semantics are
   fixed.
 - Special-option collisions still surface as low-level argparse conflicts;
