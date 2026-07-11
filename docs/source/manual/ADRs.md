@@ -42,6 +42,9 @@ arguments.
 * Documentation and examples use `Config`.
 * New features target `Config`.
 * `kwconf.DataConfig` is outside the public API.
+* `kwconf.subconfig` publicly exports only `SubConfig`; the module's
+  loading and staged-parser helpers are implementation details even though they
+  remain available through explicit imports.
 * The `cli` / `load` / `argparse` / `dump` lifecycle lives on `Config`.
 
 ## ADR-0003 — Class attributes are the preferred schema style

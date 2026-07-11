@@ -33,20 +33,12 @@ from kwconf.util.util_misc import iterable
 from kwconf.util.util_yaml import import_yaml
 from kwconf.value import _Value as Value
 
-__all__ = [
-    'SubConfig',
-    'add_forbidden_selector_args',
-    'apply_dot_updates',
-    'config_to_nested_dict',
-    'expand_multipass_parser',
-    'ensure_subconfigs_instantiated',
-    'find_subconfig_paths',
-    'finalize_post_init',
-    'flat_config_from_tree',
-    'resolve_localns',
-    'scan_config_path',
-    'wrap_subconfig_defaults',
-]
+# ``SubConfig`` is the supported public surface of this module. The remaining
+# functions implement Config's nested-loading and staged-parser machinery and
+# may change without compatibility guarantees. They remain explicitly
+# importable for kwconf internals, but wildcard imports intentionally expose
+# only the declaration type.
+__all__ = ['SubConfig']
 
 import argparse
 import typing

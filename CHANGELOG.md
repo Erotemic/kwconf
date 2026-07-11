@@ -37,6 +37,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   handlers keep working while a CLI can catch the specific validation failure.
 
 ### Changed
+* ``kwconf.subconfig.__all__`` now reflects the intended public API: wildcard
+  imports expose only ``SubConfig``. The module's parser/loading helpers remain
+  explicitly importable for internal and advanced use, but are documented as
+  implementation details without compatibility guarantees.
 * Documentation now makes the object-state boundary explicit: declared fields
   are the mapping, CLI, validation, and persistence contract, while undeclared
   attributes are intentional transient Python state and are omitted from
