@@ -13,7 +13,7 @@ def test_newattr():
     config = TestNewattrCLI()
 
     # By default new attributes are not allowed via the dictionary interface
-    with pytest.raises(Exception):
+    with pytest.raises(KeyError):
         config['newattr1'] = 123
 
     # Quirk: they are allowed via setattr, but they do not become part of the

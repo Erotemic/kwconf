@@ -56,6 +56,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Remaining bare ``Exception`` raises now use catchable, intent-specific
+  exception types: undeclared mapping keys raise ``KeyError``, incompatible
+  positional use of boolean/counter argparse actions raises ``TypeError``, and
+  the removed ``style='orig'`` exporter raises ``NotImplementedError``.
 * ``Config`` construction now rejects extra positional arguments and duplicate
   bindings (including positional-plus-keyword and canonical-plus-alias forms)
   with ``TypeError`` instead of silently truncating or overwriting values. The

@@ -1241,7 +1241,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             key = self._normalize_alias_key(key)
             if key not in self._data:
                 if not getattr(self, '__allow_newattr__', False):
-                    raise Exception(
+                    raise KeyError(
                         'Cannot add keys to kwconf.Config objects unless '
                         'self.__allow_newattr__ is True'
                     )
@@ -2231,7 +2231,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             pad = ' ' * 8
 
         if style == 'orig':
-            raise Exception('no longer supported')
+            raise NotImplementedError("style='orig' is no longer supported")
         elif style == 'config':
             recon_str = [
                 'import kwconf',

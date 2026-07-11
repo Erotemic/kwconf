@@ -342,14 +342,14 @@ class BooleanFlagOrKeyValAction(_Base):
         """
         key_is_negative: bool = False
         if option_string is None:
-            raise Exception(
+            raise TypeError(
                 'Cannot use a BooleanFlagOrKeyValAction as a positional argument'
             )
         if option_string in self.option_strings:
             # Was the positive or negated key given?
             key_is_negative = option_string.startswith('--no-')
         else:
-            raise Exception(
+            raise TypeError(
                 'Cannot use a BooleanFlagOrKeyValAction as a positional argument'
             )
 
@@ -428,7 +428,7 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
         option_string: str | None = None,
     ) -> None:
         if option_string is None:
-            raise Exception(
+            raise TypeError(
                 'Cannot use a CounterFlagOrKeyValAction as a positional argument'
             )
         if option_string in self.option_strings:

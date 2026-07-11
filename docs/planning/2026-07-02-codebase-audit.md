@@ -662,8 +662,9 @@ than Phase B.
   reaches parser construction.
 - Distinguish generated negation flags from genuine user-declared `--no-*`
   options in help formatting.
-- Reconcile `subconfig.py.__all__` with its supported public surface and replace
-  remaining bare `Exception` raises with typed exceptions.
+- Reconcile `subconfig.py.__all__` with its supported public surface.
+- **Completed:** remaining bare `Exception` raises now use `KeyError`,
+  `TypeError`, or `NotImplementedError` according to the failed contract.
 
 ### Phase E — tooling and release confidence
 
@@ -810,8 +811,8 @@ production-time check; its current status is recorded separately as an opt-in sa
 - Special-option collisions still surface as low-level argparse conflicts;
   static CLI validation and a safe runtime diagnostic are both still open.
 - Genuine `--no-*` options can still receive generated-negation help treatment.
-- `subconfig.py.__all__` remains incomplete, and some error paths still raise
-  bare `Exception`.
+- `subconfig.py.__all__` remains incomplete. Bare `Exception` raises have been
+  replaced with intent-specific exception types.
 
 ### Decision required — not safely dismissible as “just design”
 
