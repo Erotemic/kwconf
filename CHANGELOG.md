@@ -60,6 +60,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Modal invocations without a leaf command now print usage from the deepest
+  selected parser, so root usage has a stable class-derived program name and
+  nested usage retains the full command path. ``NoCommandError`` now carries an
+  integer exit ``code`` plus separate ``message`` and ``parser`` attributes
+  instead of storing diagnostic text in ``SystemExit.code``.
 * Remaining bare ``Exception`` raises now use catchable, intent-specific
   exception types: undeclared mapping keys raise ``KeyError``, incompatible
   positional use of boolean/counter argparse actions raises ``TypeError``, and

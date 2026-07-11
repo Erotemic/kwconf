@@ -118,3 +118,9 @@ Help and version behavior
 ``--help`` is available at every modal level, and ``--version`` reports the
 version for the modal currently being addressed. Unknown command errors print
 usage for the deepest parser that could be resolved.
+
+If no leaf command is selected, kwconf prints usage for that same deepest
+parser and raises :class:`kwconf.modal.NoCommandError`. The exception keeps an
+integer process status in ``code`` and exposes the diagnostic text and parser as
+``message`` and ``parser`` for programmatic callers. A modal without an explicit
+``__prog__`` uses its class name for deterministic root usage.

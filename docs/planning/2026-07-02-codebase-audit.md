@@ -654,8 +654,8 @@ than Phase B.
   accumulates when a parser object is reused.
 - Make `expand_multipass_parser(parser=...)` extend the supplied parser, or
   remove the misleading parameter.
-- Correct root no-command usage and messaging, and normalize
-  `NoCommandError` for programmatic callers.
+- **Completed:** root and nested no-command diagnostics use the deepest selected
+  parser, and `NoCommandError` separates integer exit status from message text.
 - Split special-option collision handling into two layers: statically diagnose
   known `config` / `dump` / `dumps` namespace conflicts in CLI validation, and
   still fail safely with a kwconf-specific error if an unvalidated schema
@@ -807,8 +807,8 @@ production-time check; its current status is recorded separately as an opt-in sa
 
 - Parser `_explicitly_given` provenance remains sticky across parser reuse.
 - `expand_multipass_parser` still ignores the supplied parser.
-- Root no-command usage/message and `NoCommandError` programmatic semantics
-  remain misleading.
+- Root/nested no-command usage and `NoCommandError` programmatic semantics are
+  fixed.
 - Special-option collisions still surface as low-level argparse conflicts;
   static CLI validation and a safe runtime diagnostic are both still open.
 - Genuine `--no-*` options can still receive generated-negation help treatment.

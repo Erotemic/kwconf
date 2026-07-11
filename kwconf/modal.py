@@ -647,8 +647,10 @@ class ModalCLI(metaclass=MetaModalCLI):
             description=self.description,
             formatter_class=RawDescriptionDefaultsHelpFormatter,
             epilog=getattr(self, '__epilog__', None),
-            prog=getattr(self, '__prog__', None),
         )
+        prog = getattr(self, '__prog__', None)
+        if prog is not None:
+            parserkw['prog'] = prog
         if hasattr(self, '__allow_abbrev__'):
             parserkw['allow_abbrev'] = self.__allow_abbrev__
         return parserkw
@@ -676,6 +678,7 @@ class ModalCLI(metaclass=MetaModalCLI):
 
         if parser is None:
             parserkw: Dict[str, Any] = self._parserkw()
+            parserkw.setdefault('prog', self.__class__.__name__)
             # import argparse as argparse_mod
             # parser = argparse_mod.ArgumentParser(**parserkw)
             from kwconf import argparse_ext
@@ -1014,32 +1017,21 @@ class ModalCLI(metaclass=MetaModalCLI):
                 print(version)
             return 0
 
-        if sub_modal is not None:
-            # This case happens when a submodal is not given any commands
+        if sub_modal is not None or sub_main is None:
+            # No leaf command was selected. Use the parser reached by argv so a
+            # nested omission reports the full invocation path (``Root child``)
+            # instead of rebuilding a child parser with a detached program name.
+            selected_parser = parse_result.selected_parser
+            message = f'{selected_parser.prog}: error: no command was given'
             if diagnostics.DEBUG_MODAL:
                 print(
-                    f'[kwconf.modal.ModalCLI.main] returned main, but it belongs to a different ModalCLI {sub_modal}, using our hack to print help and exit'
+                    '[kwconf.modal.ModalCLI.main] no leaf command was selected; '
+                    f'using parser {selected_parser.prog!r}'
                 )
-            sub_modal.argparse().print_usage(sys.stderr)
-            # sub_modal.argparse().print_help(sys.stderr)
+            selected_parser.print_usage(sys.stderr)
+            print(message, file=sys.stderr)
             if not _noexit:
-                raise NoCommandError(
-                    'A submodal CLI was executed but no command was given.'
-                )
-            return 1
-
-        if sub_main is None:
-            # This case happens when the root modal is not given any commands
-            if diagnostics.DEBUG_MODAL:
-                print(
-                    '[kwconf.modal.ModalCLI.main] returned modal options did not specify the main function, printing help and exiting'
-                )
-            parser.print_usage(sys.stderr)
-            # parser.print_help(sys.stderr)
-            if not _noexit:
-                raise NoCommandError(
-                    'A modal CLI was executed but no command was given.'
-                )
+                raise NoCommandError(message, parser=selected_parser)
             return 1
 
         # Check how main wants to be invoked
@@ -1083,7 +1075,20 @@ def _dump_parser(parser, indent=0):
                 _dump_parser(sp, indent + 1)
 
 
-class NoCommandError(SystemExit): ...
+class NoCommandError(SystemExit):
+    """Raised when a modal invocation does not select a leaf command.
+
+    ``code`` is always an integer process status. The diagnostic text is
+    available separately as ``message`` for programmatic callers.
+    """
+
+    def __init__(self, message: str, *, parser=None, code: int = 1) -> None:
+        super().__init__(code)
+        self.message = message
+        self.parser = parser
+
+    def __str__(self) -> str:
+        return self.message
 
 
 from contextlib import contextmanager  # NOQA
