@@ -85,9 +85,16 @@ explicit CLI overrides. See :doc:`core_contract`.
 Import safety
 -------------
 
-``SubConfig`` supports dynamic class-path selection when ``allow_import`` is
-enabled. Prefer explicit ``choices`` for stable CLIs and disable imports when
-config files or argv come from untrusted sources.
+``SubConfig`` supports dynamic class-path selection. Selectors may use either
+``module.qualname.Class`` or ``module:qualname.Class`` syntax, including nested
+classes. The call-level ``allow_import`` value is the default policy. A field
+with ``SubConfig(..., allow_import=None)`` inherits it, while field-level True
+or False explicitly enables or disables imports for that node.
+
+Prefer explicit ``choices`` for stable CLIs and disable imports when config
+files or argv come from untrusted sources. To impose one policy uniformly,
+avoid field-level overrides; to permit a small audited exception beneath a
+restrictive caller, use ``SubConfig(..., allow_import=True)`` deliberately.
 
 Help output
 -----------
@@ -106,6 +113,20 @@ small selector-only ``ArgumentParser`` uses ``parse_known_args`` to realize the
 current tree; the final realized parser then parses the original argv normally.
 Kwconf does not manually split option tokens or reimplement argparse's
 ``nargs``, abbreviation, separator, or value-boundary rules.
+
+Realization is progress-based rather than depth-limited. Each bootstrap pass
+must consume at least one selector, and selecting the class already present at
+a node is idempotent: kwconf does not reconstruct that node or discard values
+loaded from a lower-precedence source. Source order remains defaults, then
+``data=``, then ``--config``, then explicit argv values.
+
+Mapping sources remain structured until selector realization. This matters
+when a parent selector reveals a nested SubConfig that was absent from the
+default implementation: kwconf realizes the parent first, then applies the
+nested mapping against the newly selected schema. Ordinary dict-valued leaves
+remain whole, including through the staged ``--config`` path. Opt-in structural
+validation therefore sees the original nested and dotted spellings rather than
+a prematurely flattened approximation.
 
 Custom parser integration
 -------------------------

@@ -648,3 +648,447 @@ def test_cli_validate_override_reaches_nested_values():
             argv=False,
             validate='error',
         )
+
+
+def test_same_selector_does_not_rebuild_or_erase_lower_precedence_data():
+    counts = {'a': 0, 'b': 0}
+
+    class A(kwconf.Config):
+        x = 1
+
+        def __init__(self, *args, **kwargs):
+            counts['a'] += 1
+            super().__init__(*args, **kwargs)
+
+    class B(kwconf.Config):
+        y = 2
+
+        def __init__(self, *args, **kwargs):
+            counts['b'] += 1
+            super().__init__(*args, **kwargs)
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+
+    cfg = Outer.cli(
+        data={'inner': 'b', 'inner.y': 7},
+        argv=['--inner=b'],
+    )
+    assert isinstance(cfg.inner, B)
+    assert cfg.inner.y == 7
+    # The selected implementation is constructed only once. Reapplying the
+    # same selector used to rebuild it three times and discard data= values.
+    assert counts['b'] == 1
+
+
+def test_subconfig_source_precedence_data_then_config_then_argv(tmp_path):
+    class A(kwconf.Config):
+        x = 1
+
+    class B(kwconf.Config):
+        y = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+        marker = 0
+
+    config_path = tmp_path / 'config.yaml'
+    config_path.write_text('inner: a\ninner.x: 5\nmarker: 2\n')
+
+    cfg = Outer.cli(
+        data={'inner': 'a', 'inner.x': 3, 'marker': 1},
+        argv=[
+            '--config',
+            str(config_path),
+            '--inner=b',
+            '--inner.y=9',
+            '--marker=4',
+        ],
+        special_options=True,
+    )
+    assert isinstance(cfg.inner, B)
+    assert cfg.inner.y == 9
+    assert cfg.marker == 4
+
+    cfg_without_cli_values = Outer.cli(
+        data={'inner': 'a', 'inner.x': 3, 'marker': 1},
+        argv=['--config', str(config_path)],
+        special_options=True,
+    )
+    assert isinstance(cfg_without_cli_values.inner, A)
+    assert cfg_without_cli_values.inner.x == 5
+    assert cfg_without_cli_values.marker == 2
+
+
+def test_plain_dict_dunder_class_is_not_a_subconfig_selector():
+    class Inner(kwconf.Config):
+        x = 1
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(Inner)
+        metadata = {}
+
+    cfg = Outer.cli(
+        data={'metadata': {'__class__': 'ordinary-payload'}},
+        argv=['--inner.x=2'],
+        allow_subconfig_overrides=False,
+    )
+    assert cfg.metadata == {'__class__': 'ordinary-payload'}
+    assert cfg.inner.x == 2
+
+
+def test_selector_realization_has_no_arbitrary_depth_limit():
+    depth = 24
+
+    class Terminal(kwconf.Config):
+        value = 0
+
+    default_cls = Terminal
+    selected_cls = Terminal
+    selected_classes = {}
+    for index in reversed(range(depth)):
+        next_default = default_cls
+        next_selected = selected_cls
+
+        default_cls = type(
+            f'Default{index}',
+            (kwconf.Config,),
+            {'__module__': __name__, 'value': index},
+        )
+        selected_cls = type(
+            f'Selected{index}',
+            (kwconf.Config,),
+            {
+                '__module__': __name__,
+                'next': kwconf.SubConfig(
+                    next_default, choices={'selected': next_selected}
+                ),
+            },
+        )
+        selected_classes[index] = selected_cls
+
+    class Root(kwconf.Config):
+        node = kwconf.SubConfig(default_cls, choices={'selected': selected_cls})
+
+    argv = []
+    path = 'node'
+    for _ in range(depth):
+        argv.append(f'--{path}=selected')
+        path += '.next'
+
+    cfg = Root.cli(argv=argv)
+    node = cfg.node
+    for _ in range(depth - 1):
+        node = node.next
+    assert isinstance(node, selected_classes[depth - 1])
+    assert isinstance(node.next, Terminal)
+
+
+def test_invalid_import_selector_has_targeted_error():
+    class Inner(kwconf.Config):
+        x = 1
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(Inner)
+
+    with pytest.raises(ValueError, match='Cannot interpret class spec'):
+        Outer.cli(argv=['--inner=not_a_class_path'], stacklevel=None)
+
+
+def test_nested_qualname_import_roundtrip(monkeypatch):
+    """Nested importable classes keep a resolvable serialized identifier."""
+    import sys
+    import types
+
+    module_name = 'kwconf_test_nested_import_target'
+    module = types.ModuleType(module_name)
+    nested_cls = type(
+        'NestedChoice',
+        (kwconf.Config,),
+        {
+            '__module__': module_name,
+            '__qualname__': 'ImportContainer.NestedChoice',
+            'value': 11,
+        },
+    )
+    container = type('ImportContainer', (), {'NestedChoice': nested_cls})
+    module.ImportContainer = container
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    class DefaultChoice(kwconf.Config):
+        value = 0
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(DefaultChoice)
+
+    selector = f'{module_name}.ImportContainer.NestedChoice'
+    cfg = Outer.cli(argv=[f'--inner={selector}'], stacklevel=None)
+    assert type(cfg.inner) is nested_cls
+
+    data = cfg.to_dict()
+    assert data['inner']['__class__'] == selector
+
+    restored = Outer.cli(data=data, argv=False, stacklevel=None)
+    assert type(restored.inner) is nested_cls
+    assert restored.inner.value == 11
+
+
+def test_field_allow_import_true_overrides_call_policy(monkeypatch):
+    """The field-local tri-state may explicitly enable an import."""
+    import sys
+    import types
+
+    module_name = 'kwconf_test_import_policy_target'
+    module = types.ModuleType(module_name)
+    imported_cls = type(
+        'ImportedChoice',
+        (kwconf.Config,),
+        {'__module__': module_name, 'value': 3},
+    )
+    module.ImportedChoice = imported_cls
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    class DefaultChoice(kwconf.Config):
+        value = 0
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(DefaultChoice, allow_import=True)
+
+    cfg = Outer.cli(
+        argv=[f'--inner={module_name}.ImportedChoice'],
+        allow_import=False,
+        stacklevel=None,
+    )
+    assert type(cfg.inner) is imported_cls
+
+
+def test_call_level_allow_import_false_applies_when_field_inherits(monkeypatch):
+    """A field with no override inherits the call-level import policy."""
+    import sys
+    import types
+
+    module_name = 'kwconf_test_inherited_import_policy_target'
+    module = types.ModuleType(module_name)
+    imported_cls = type(
+        'ImportedChoice',
+        (kwconf.Config,),
+        {'__module__': module_name, 'value': 3},
+    )
+    module.ImportedChoice = imported_cls
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    class DefaultChoice(kwconf.Config):
+        value = 0
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(DefaultChoice)
+
+    with pytest.raises(ValueError, match='not allowed'):
+        Outer.cli(
+            argv=[f'--inner={module_name}.ImportedChoice'],
+            allow_import=False,
+            stacklevel=None,
+        )
+
+
+def test_field_allow_import_false_opts_out(monkeypatch):
+    """A SubConfig field may prohibit imports under a permissive caller."""
+    import sys
+    import types
+
+    module_name = 'kwconf_test_field_import_policy_target'
+    module = types.ModuleType(module_name)
+    imported_cls = type(
+        'ImportedChoice',
+        (kwconf.Config,),
+        {'__module__': module_name, 'value': 3},
+    )
+    module.ImportedChoice = imported_cls
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    class DefaultChoice(kwconf.Config):
+        value = 0
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(DefaultChoice, allow_import=False)
+
+    with pytest.raises(ValueError, match='not allowed'):
+        Outer.cli(
+            argv=[f'--inner={module_name}.ImportedChoice'],
+            allow_import=True,
+            stacklevel=None,
+        )
+
+
+def test_choice_serialization_uses_exact_selected_class():
+    """A subclass must not serialize as an earlier base-class choice."""
+
+    class BaseChoice(kwconf.Config):
+        base = 1
+
+    class ChildChoice(BaseChoice):
+        child = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(
+            BaseChoice,
+            choices={'base': BaseChoice, 'child': ChildChoice},
+        )
+
+    cfg = Outer.cli(argv=['--inner=child'])
+    data = cfg.to_dict()
+    assert data['inner']['__class__'] == 'child'
+
+    restored = Outer.cli(data=data, argv=False)
+    assert type(restored.inner) is ChildChoice
+    assert restored.inner.child == 2
+
+
+def test_config_option_preserves_ordinary_dict_leaf(tmp_path):
+    """The staged --config path must flatten with the live schema."""
+
+    class Inner(kwconf.Config):
+        value = 1
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(Inner)
+        metadata = {}
+
+    config_path = tmp_path / 'config.yaml'
+    config_path.write_text(
+        'metadata:\n  __class__: ordinary-payload\n  nested:\n    value: 3\n'
+    )
+    cfg = Outer.cli(
+        argv=['--config', str(config_path)],
+        special_options=True,
+    )
+    assert cfg.metadata == {
+        '__class__': 'ordinary-payload',
+        'nested': {'value': 3},
+    }
+
+
+def test_parent_selector_can_reveal_nested_mapping_subconfig():
+    """Deferred mappings are applied after their parent schema is realized."""
+
+    class LeafA(kwconf.Config):
+        x = 1
+
+    class LeafB(kwconf.Config):
+        y = 2
+
+    class ParentA(kwconf.Config):
+        marker = 'a'
+
+    class ParentB(kwconf.Config):
+        child = kwconf.SubConfig(
+            LeafA,
+            choices={'a': LeafA, 'b': LeafB},
+        )
+
+    class Root(kwconf.Config):
+        parent = kwconf.SubConfig(
+            ParentA,
+            choices={'a': ParentA, 'b': ParentB},
+        )
+
+    cfg = Root.cli(
+        data={
+            'parent': {
+                '__class__': 'b',
+                'child': {'__class__': 'b', 'y': 9},
+            }
+        },
+        argv=False,
+    )
+    assert type(cfg.parent) is ParentB
+    assert type(cfg.parent.child) is LeafB
+    assert cfg.parent.child.y == 9
+
+
+def test_explicit_nested_selector_wins_over_deferred_mapping_selector():
+    """Dotted selector precedence remains safe for newly revealed paths."""
+
+    class LeafA(kwconf.Config):
+        x = 1
+
+    class LeafB(kwconf.Config):
+        y = 2
+
+    class ParentA(kwconf.Config):
+        marker = 'a'
+
+    class ParentB(kwconf.Config):
+        child = kwconf.SubConfig(
+            LeafA,
+            choices={'a': LeafA, 'b': LeafB},
+        )
+
+    class Root(kwconf.Config):
+        parent = kwconf.SubConfig(
+            ParentA,
+            choices={'a': ParentA, 'b': ParentB},
+        )
+
+    cfg = Root.cli(
+        data={
+            'parent.__class__': 'b',
+            'parent.child.__class__': 'b',
+            'parent': {'child': {'__class__': 'a', 'y': 9}},
+        },
+        argv=False,
+    )
+    assert type(cfg.parent.child) is LeafB
+    assert cfg.parent.child.y == 9
+
+
+def test_structural_validation_survives_staged_data_loading():
+    """Adding argv must not erase nested-vs-dotted source provenance."""
+
+    class A(kwconf.Config):
+        value = 1
+
+    class B(kwconf.Config):
+        value = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+        marker = 0
+
+    with pytest.raises(
+        kwconf.ConfigValidationError,
+        match="Conflicting SubConfig selector updates for 'inner'",
+    ):
+        Outer.cli(
+            data={
+                'inner': {'__class__': 'a'},
+                'inner.__class__': 'b',
+            },
+            argv=['--marker=1'],
+            validate='error',
+        )
+
+
+def test_structural_validation_preserves_config_file_provenance(tmp_path):
+    """The --config bootstrap must validate before flattening the source."""
+
+    class A(kwconf.Config):
+        value = 1
+
+    class B(kwconf.Config):
+        value = 2
+
+    class Outer(kwconf.Config):
+        inner = kwconf.SubConfig(A, choices={'a': A, 'b': B})
+
+    config_path = tmp_path / 'conflict.yaml'
+    config_path.write_text('inner:\n  __class__: a\ninner.__class__: b\n')
+    with pytest.raises(
+        kwconf.ConfigValidationError,
+        match="Conflicting SubConfig selector updates for 'inner'",
+    ):
+        Outer.cli(
+            argv=['--config', str(config_path)],
+            special_options=True,
+            validate='error',
+        )

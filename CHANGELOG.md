@@ -76,6 +76,39 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Audited and simplified the staged SubConfig parser path. Selector choices are
+  now applied exactly once, selecting the already-realized class is idempotent,
+  and lower-precedence ``data=`` / ``--config`` values are no longer erased by
+  repeated reconstruction. Nested source precedence is now consistently
+  defaults < data < ``--config`` < explicit argv, including when argv changes
+  the selected implementation.
+* SubConfig selector discovery no longer has arbitrary 20-pass / 32-pass
+  convergence limits. Each pass must consume selector tokens and each
+  fixed-point step must remove resolved paths, so valid deeply nested schemas
+  terminate by progress rather than a magic depth bound.
+* ``allow_subconfig_overrides=False`` no longer mistakes an ordinary dict leaf
+  containing a ``__class__`` key for a SubConfig selector. Reused nested config
+  instances also clear stale child ``_explicit_argv_keys`` provenance on every
+  parse.
+* Parse provenance is now reset for kwconf actions installed on plain
+  ``argparse.ArgumentParser`` objects as well as ``ExtendedArgumentParser``
+  instances, including parser trees with subcommands.
+* Invalid bare SubConfig import selectors now raise a targeted
+  ``Cannot interpret class spec`` error instead of leaking an unpacking error;
+  imported non-Config objects receive a precise ``TypeError``.
+* SubConfig import policy now honors its tri-state API: field-level ``None``
+  inherits the call-level default, while True or False explicitly enables or
+  disables imports for that node. Nested importable classes now serialize and
+  resolve through their full ``module.qualname.Class`` path instead of losing
+  the qualname.
+* SubConfig choice serialization now matches the selected implementation by
+  exact class identity. A subclass can no longer serialize as an earlier
+  base-class choice and then deserialize into the wrong class.
+* Staged nested loading now preserves raw mapping structure until the canonical
+  update boundary. This keeps structural-validation provenance when argv or
+  ``--config`` is present, preserves ordinary dict-valued fields in config
+  files, and correctly applies nested mappings for SubConfigs revealed by a
+  parent selector instead of treating those mappings as selector tokens.
 * Reusing an argparse parser no longer carries explicit-option provenance from
   an earlier parse into a later one. Provenance is replaced on each parse,
   remains scoped to the selected modal parser, and is no longer exposed as a

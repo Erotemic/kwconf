@@ -128,6 +128,19 @@ Nested configs are declared with `SubConfig`. Dotted keys are update syntax.
 * Dotted overrides are an interface convenience.
 * Serialized config represents the logical nested structure.
 * Selector choices should prefer explicit registries.
+* Dynamic import policy is tri-state: field-level ``None`` inherits the
+  call-level default, while field-level True or False explicitly overrides it.
+* Applications that require a uniform prohibition should pass
+  ``allow_import=False`` and avoid field-level True overrides; explicit
+  registries remain the preferred stable interface.
+* Importable selectors and serialized class identifiers use resolvable
+  ``module.qualname.Class`` syntax, including nested classes.
+* Mapping/file sources retain their original structure until the canonical
+  SubConfig update boundary. Selector realization may expose nested schemas
+  before deferred mappings are applied; ordinary dict leaves are never
+  flattened merely because another field is a SubConfig.
+* Registry choice serialization uses exact class identity, not ``isinstance``,
+  so subclass choices round-trip to the selected implementation.
 
 ## ADR-0009 — Coercion runs for string-only sources
 
@@ -226,6 +239,14 @@ implement an independent argv grammar.
 * Multipass selection may rebuild the known selector set, but every pass uses
   ``argparse.parse_known_args``. Kwconf does not manually decide token/value
   boundaries.
+* Selector realization is monotone: each bootstrap pass consumes recognized
+  selector tokens, resolved selector paths leave the pending set, and selecting
+  the class already present at a node is a no-op. There is no arbitrary nesting
+  depth limit and no repeated reconstruction of the same selected class.
+* Nested source precedence is defaults < ``data=`` < ``--config`` < explicit
+  argv. Parser realization may inspect those sources early, but it must not
+  reapply a lower-precedence source after argv or erase values when the selected
+  class is unchanged.
 * Kwconf parser actions subclass public ``argparse.Action``. The package does
   not vendor ``parse_known_args`` or override argparse's private
   ``_parse_optional`` / ``_get_option_tuples`` engine.
@@ -233,4 +254,3 @@ implement an independent argv grammar.
   enumerating registered option strings, walking selected subparsers, and
   importing/exporting parser structure. Those adapters require behavioral
   tests whenever supported Python versions change.
-

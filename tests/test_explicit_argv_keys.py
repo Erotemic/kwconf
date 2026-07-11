@@ -107,3 +107,13 @@ def test_setitem_does_not_populate_provenance():
     cfg = Flat.cli(argv=['--a=99'])
     cfg['b'] = 123
     assert cfg._explicit_argv_keys == frozenset({'a'})
+
+
+def test_reused_nested_config_clears_child_provenance():
+    cfg = Outer()
+    cfg._read_argv(['--inner.x=5'])
+    assert cfg._data['inner']._explicit_argv_keys == frozenset({'x'})
+
+    cfg._read_argv(['--a=99'])
+    assert cfg._explicit_argv_keys == frozenset({'a'})
+    assert cfg._data['inner']._explicit_argv_keys == frozenset()

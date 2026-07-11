@@ -706,7 +706,7 @@ explain the bugs as first observed; this section is the current risk register.
 
 ### Verification snapshot
 
-- `uv run pytest -q`: **427 passed, 3 skipped**. The three skips are
+- `uv run pytest -q`: **445 passed, 3 skipped**. The three skips are
   xdoctest examples marked skipped, not disabled behavior regressions.
 - `uv run --extra linting ./run_linter.sh`: passes for `kwconf/` and `tests/`.
 - `uv run --with ty ty check ./kwconf`: passes.
@@ -766,6 +766,26 @@ behavioral, regression tests:
 - Constructor calls reject extra positional values and duplicate semantic
   bindings with `TypeError`. The fast path avoids a full field-name list and
   combines keyword alias normalization and conflict detection in one pass.
+- A follow-up audit of the staged SubConfig code removed redundant selector
+  application and arbitrary convergence guards. Selectors are now monotone and
+  idempotent, nested source precedence is preserved as defaults < data <
+  `--config` < argv, ordinary dict leaves containing `__class__` are not
+  misclassified as selectors, and reused nested configs clear child argv
+  provenance.
+- The same audit repaired the dynamic-import tri-state: field-level `None`
+  inherits the call-level policy, while True or False explicitly overrides it.
+  Nested classes use resolvable `module.qualname.Class` identifiers for import
+  and serialization.
+- SubConfig serialization now resolves registry choices by exact class
+  identity, preventing a selected subclass from being recorded as an earlier
+  base-class choice and restored as the wrong implementation.
+- The staged loader now keeps mapping/config-file structure intact until the
+  canonical update boundary. This preserves conflict-validation provenance,
+  prevents ``--config`` from shredding ordinary dict leaves, and lets parent
+  selectors reveal nested SubConfigs before their mappings are applied.
+- Parse-result provenance now resets at the shared boundary for both kwconf's
+  extended parser and ordinary `argparse.ArgumentParser` instances using
+  kwconf actions.
 - Public export of `register_parser` and correction of the mkinit submodule
   specification.
 - The dead-code removals listed in the prior remediation pass.
@@ -795,23 +815,19 @@ behavioral, regression tests:
 
 ### Open — correctness blockers
 
-| Finding | Status | Why it matters |
-| --- | --- | --- |
-| Unknown attribute assignment (§3) | **Open, reproduced** | Creates state that appears valid but is absent from config serialization |
-
-This is not an architectural preference. It is a concrete runtime correctness
-defect. Extra and duplicate constructor arguments are omitted because they are
-now rejected automatically with Python-like `TypeError` semantics. Modal
-inheritance and implicit command discovery are also omitted because they are
-fixed. Alias
-collisions are omitted from this table because the chosen contract is an
-explicit `Config.validate()` test or CI gate rather than a recurring
-production-time check; its current status is recorded separately as an opt-in safeguard.
+No remaining item is currently classified as a confirmed release-blocking
+runtime correctness defect. Unknown attached attributes are resolved by
+contract: declared fields are the persistence boundary, while undeclared
+attributes are ordinary transient Python state and intentionally do not round
+trip. `__allow_newattr__` remains a separate experimental dynamic-field design
+question. Alias collisions remain an opt-in `Config.validate()` safeguard
+rather than a recurring production-time check.
 
 ### Open — narrower correctness and API defects
 
-- Parser `_explicitly_given` provenance remains sticky across parser reuse.
-- `expand_multipass_parser` now preserves and extends the supplied parser.
+- Parser provenance is replaced on every parse for extended and plain argparse
+  parsers, including selected child parsers.
+- `expand_multipass_parser` preserves and extends the supplied parser.
 - Root/nested no-command usage and `NoCommandError` programmatic semantics are
   fixed.
 - Special-option collisions still surface as low-level argparse conflicts;
@@ -849,7 +865,10 @@ The earlier remediation text said the tree was Ruff-clean and Ruff was
 
 The first three systemic themes in §4 are now substantially resolved: state
 ownership is explicit, loading/parser construction have canonical paths, and
-kwconf no longer vendors argparse's private parse engine. The remaining
-architectural risk is concentrated in fixed-point SubConfig realization and a
-few isolated argparse introspection adapters. Those should remain covered by
-behavioral tests rather than motivating another broad rewrite by default.
+kwconf no longer vendors argparse's private parse engine. The fixed-point
+SubConfig path has also been hardened: progress, not magic iteration counts,
+drives convergence; selector application is idempotent; and source precedence
+is tested directly. Remaining architectural risk is limited to the inherent
+complexity of dynamic schema realization and a few isolated argparse
+introspection adapters. Those should remain covered by behavioral tests rather
+than motivating another broad rewrite by default.

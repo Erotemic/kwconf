@@ -23,7 +23,9 @@ Example:
 
 from __future__ import annotations
 
+import argparse
 import inspect
+import typing
 import warnings
 from collections.abc import Mapping
 from typing import Any
@@ -38,8 +40,8 @@ from kwconf.value import _Value as Value
 # only the declaration type.
 __all__ = ['SubConfig']
 
-import argparse
-import typing
+_SELECTOR_SUFFIX = '.__class__'
+_MISSING = object()
 
 if typing.TYPE_CHECKING:
     from types import FrameType
@@ -57,7 +59,7 @@ def get_stack_frame(stacklevel: int = 0) -> FrameType:
         FrameType: frame_cur
 
     Example:
-        >>> from kwconf.subconfig import *  # NOQA
+        >>> from kwconf.subconfig import get_stack_frame
         >>> frame_cur = get_stack_frame(stacklevel=0)
         >>> print('frame_cur = %r' % (frame_cur,))
         >>> assert frame_cur.f_globals['frame_cur'] is frame_cur
@@ -143,14 +145,15 @@ def add_forbidden_selector_args(parser, cfg):
 
 class SubConfig(Value):
     """
-    Wrapper used to declare nested :class:`Config` / :class:`Config` nodes.
+    Wrapper used to declare nested :class:`Config` nodes.
 
     Args:
         default (Type[Config] | Config): a Config subclass or instance.
         choices (dict | None): optional registry mapping selector keys to
             Config subclasses.
-        allow_import (bool): if True, allow class-path selectors
-            (``module.qualname.Class``) to be dynamically imported.
+        allow_import (bool | None): per-field dynamic-import policy. ``None``
+            inherits the call-level ``allow_import`` switch; True or False
+            explicitly enables or disables imports for this field.
 
     Example:
         >>> import kwconf
@@ -448,7 +451,7 @@ def extract_selector_overrides(
         localns = resolve_localns(localns, stacklevel)
     working = list(argv)
     collected = {}
-    for _guard in range(20):
+    while True:
         parser = _selector_bootstrap_parser(cfg)
         try:
             namespace, remaining = parser.parse_known_args(working)
@@ -457,6 +460,8 @@ def extract_selector_overrides(
         selectors = vars(namespace)
         if not selectors:
             return collected, remaining
+        if len(remaining) >= len(working):  # nocover - argparse invariant
+            raise RuntimeError('Selector parsing made no progress')
         collected.update(selectors)
         apply_dot_updates(
             cfg,
@@ -466,7 +471,6 @@ def extract_selector_overrides(
             stacklevel=None,
         )
         working = remaining
-    raise RuntimeError('Selector resolution did not converge')
 
 
 def _ensure_parent_node(cfg, parts):
@@ -529,26 +533,59 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
             candidate = localns.get(spec)
             if inspect.isclass(candidate) and issubclass(candidate, Config):
                 return candidate
-        if not (meta.allow_import or allow_import):
+        import_allowed = (
+            allow_import if meta.allow_import is None else meta.allow_import
+        )
+        if not import_allowed:
             raise ValueError(
                 f'Importing {spec!r} not allowed for this SubConfig'
             )
-        if ':' in spec:
-            modname, clsname = spec.split(':', 1)
-        else:
-            modname, clsname = spec.rsplit('.', 1)
-            if not modname or not clsname:
-                raise ValueError(f'Cannot interpret class spec {spec!r}')
-        import importlib
-
-        mod = importlib.import_module(modname)
-        if not hasattr(mod, clsname):
-            raise ValueError(f'Module {modname!r} has no attribute {clsname!r}')
-        cls = getattr(mod, clsname)
+        cls = _import_selector_object(spec)
         if not inspect.isclass(cls) or not issubclass(cls, Config):
-            raise TypeError(f'Specified class {cls!r} is not a Config/Config')
+            raise TypeError(f'Specified object {cls!r} is not a Config class')
         return cls
     raise ValueError(f'Unknown selector spec {spec!r}')
+
+
+def _import_selector_object(spec: str):
+    """Import ``module:qualname`` or ``module.qualname`` selector syntax."""
+    import importlib
+
+    if ':' in spec:
+        modname, qualname = spec.split(':', 1)
+        if not modname or not qualname:
+            raise ValueError(f'Cannot interpret class spec {spec!r}')
+        module = importlib.import_module(modname)
+    else:
+        parts = spec.split('.')
+        if len(parts) < 2:
+            raise ValueError(f'Cannot interpret class spec {spec!r}')
+        module = None
+        qualname_parts = None
+        for split_idx in range(len(parts) - 1, 0, -1):
+            candidate = '.'.join(parts[:split_idx])
+            try:
+                module = importlib.import_module(candidate)
+            except ModuleNotFoundError as ex:
+                missing = ex.name or ''
+                if missing == candidate or candidate.startswith(missing + '.'):
+                    continue
+                raise
+            qualname_parts = parts[split_idx:]
+            modname = candidate
+            break
+        if module is None or qualname_parts is None:
+            raise ValueError(f'Cannot import class spec {spec!r}')
+        qualname = '.'.join(qualname_parts)
+
+    obj = module
+    for attr in qualname.split('.'):
+        if not hasattr(obj, attr):
+            raise ValueError(
+                f'Object {modname!r} has no attribute path {qualname!r}'
+            )
+        obj = getattr(obj, attr)
+    return obj
 
 
 def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
@@ -569,14 +606,8 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
         >>> assert isinstance(cfg['optim'], Sgd)
     """
     remaining = dict(selectors)
-    applied_any = True
-    max_iter = 32
-    iter_idx = 0
-    while applied_any:
-        iter_idx += 1
-        if iter_idx > max_iter:
-            raise RuntimeError('Selector resolution failed to converge')
-        applied_any = False
+    while remaining:
+        applied_paths = []
         for path, spec in list(remaining.items()):
             parts = tuple(p for p in path.split('.') if p)
             if not parts:
@@ -592,9 +623,14 @@ def _apply_selectors_fixpoint(cfg, selectors, allow_import=True, localns=None):
             if meta is None:
                 continue
             cls = _resolve_class_spec(meta, spec, allow_import, localns=localns)
-            parent._data[leaf] = cls(_dont_call_post_init=True)
-            applied_any = True
-            remaining.pop(path, None)
+            current = parent._data.get(leaf)
+            if current.__class__ is not cls:
+                parent._data[leaf] = cls(_dont_call_post_init=True)
+            applied_paths.append(path)
+        if not applied_paths:
+            break
+        for path in applied_paths:
+            remaining.pop(path)
     if remaining:
         raise KeyError(f'Could not resolve selectors for: {sorted(remaining)}')
 
@@ -643,8 +679,8 @@ def apply_dot_updates(
     selectors = {}
     leaf_updates = {}
     for key, value in flat_updates.items():
-        if key.endswith('.__class__'):
-            selectors[key[: -len('.__class__')]] = value
+        if key.endswith(_SELECTOR_SUFFIX):
+            selectors[key[: -len(_SELECTOR_SUFFIX)]] = value
         else:
             leaf_updates[key] = value
 
@@ -652,26 +688,26 @@ def apply_dot_updates(
         cfg, selectors, allow_import=allow_import, localns=localns
     )
 
-    sugar = {}
-    for key, value in list(leaf_updates.items()):
-        parts = key.split('.')
-        try:
-            parent = _ensure_parent_node(cfg, parts[:-1])
-        except KeyError:
-            continue
-        if isinstance(parent, Config) and parts[-1] in getattr(
-            parent, '_subconfig_meta', {}
-        ):
-            if key in selectors:
-                # Safe baseline semantics with no validation scan: the
-                # explicit ``path.__class__`` spelling wins over scalar sugar
-                # at ``path``. Never overwrite a realized SubConfig with the
-                # raw selector token.
-                leaf_updates.pop(key, None)
-            else:
-                sugar[key] = value
-                leaf_updates.pop(key, None)
-    if sugar:
+    # Scalar values assigned directly to a SubConfig path are selector sugar.
+    # Apply them to a fixed point because selecting a parent implementation may
+    # reveal additional nested SubConfig paths. Mapping values are deferred:
+    # they represent nested updates, not selector tokens.
+    while True:
+        sugar = {}
+        for key, value in list(leaf_updates.items()):
+            if isinstance(value, Mapping):
+                continue
+            parts = key.split('.')
+            try:
+                parent = _ensure_parent_node(cfg, parts[:-1])
+            except KeyError:
+                continue
+            if parts[-1] in getattr(parent, '_subconfig_meta', {}):
+                leaf_updates.pop(key)
+                if key not in selectors:
+                    sugar[key] = value
+        if not sugar:
+            break
         _apply_selectors_fixpoint(
             cfg, sugar, allow_import=allow_import, localns=localns
         )
@@ -688,7 +724,46 @@ def apply_dot_updates(
             leaf = parent._normalize_alias_key(leaf)
         if leaf not in parent._data:
             raise KeyError(f'Unknown configuration key: {key}')
-        parent._setitem(leaf, value, validation_mode=validation_mode)
+
+        if leaf in getattr(parent, '_subconfig_meta', {}):
+            if not isinstance(value, Mapping):  # nocover - consumed as sugar
+                raise TypeError(
+                    f'SubConfig update for {key!r} must be a selector or mapping'
+                )
+            nested_updates = value
+            nested_selector = value.get('__class__', _MISSING)
+            if key not in selectors and nested_selector is not _MISSING:
+                # This mapping was deferred because an earlier parent selector
+                # had not exposed the SubConfig path yet. Realize its own
+                # selector now, at the parent boundary, before applying child
+                # fields.
+                _apply_selectors_fixpoint(
+                    cfg,
+                    {key: nested_selector},
+                    allow_import=allow_import,
+                    localns=localns,
+                )
+            if nested_selector is not _MISSING:
+                # A dotted selector at this source boundary wins over the
+                # mapping spelling. In either case, the selector has already
+                # been applied and must not be treated as a child field.
+                nested_updates = {
+                    nested_key: nested_value
+                    for nested_key, nested_value in value.items()
+                    if nested_key != '__class__'
+                }
+            child = parent._data[leaf]
+            apply_dot_updates(
+                child,
+                nested_updates,
+                allow_import=allow_import,
+                localns=localns,
+                stacklevel=None,
+                validation_mode=validation_mode,
+                structural_validation=structural_validation,
+            )
+        else:
+            parent._setitem(leaf, value, validation_mode=validation_mode)
     return cfg
 
 
@@ -708,16 +783,16 @@ def has_selector_overrides(cfg, updates):
     """
     if not updates:
         return False
-    flat_updates = {}
     if isinstance(updates, Mapping):
-        for k, v in _flatten_nested(updates):
-            flat_updates[k] = v
+        flat_updates = dict(_flatten_nested(updates, cfg=cfg))
     else:
         return False
     subconfig_paths = set(find_subconfig_paths(cfg))
     for key in flat_updates:
-        if key.endswith('.__class__'):
-            return True
+        if key.endswith(_SELECTOR_SUFFIX):
+            selector_path = key[: -len(_SELECTOR_SUFFIX)]
+            if selector_path in subconfig_paths:
+                return True
         if key in subconfig_paths:
             return True
     return False
@@ -831,28 +906,10 @@ def expand_multipass_parser(
         >>> assert '--sentinel' in parser._option_string_actions
         >>> assert '--inner.x' in parser._option_string_actions
     """
-    argv_list, _want_help = coerce_argv(True if argv is None else argv)
+    argv_list, _ = coerce_argv(True if argv is None else argv)
 
-    if special_options:
-        config_fpath = scan_config_path(argv_list)
-        if config_fpath is not None:
-            cfg_updates = coerce_data_updates(config_fpath)
-            if not allow_subconfig_overrides and has_selector_overrides(
-                cfg, cfg_updates
-            ):
-                raise ValueError(
-                    'SubConfig selection overrides require allow_subconfig_overrides=True'
-                )
-            apply_dot_updates(
-                cfg,
-                cfg_updates,
-                allow_import=allow_import,
-                localns=localns,
-                stacklevel=stacklevel,
-                validation_mode=validation_mode,
-                structural_validation=structural_validation,
-            )
-
+    # Apply lower-precedence mapping data before a --config file. This mirrors
+    # the public load order: defaults < data= < --config < explicit argv.
     if pending_updates is not None:
         cfg_updates = pending_updates
         if not allow_subconfig_overrides and has_selector_overrides(
@@ -871,24 +928,39 @@ def expand_multipass_parser(
             structural_validation=structural_validation,
         )
 
-    if allow_subconfig_overrides:
-        selector_updates, _stage2_argv = extract_selector_overrides(
-            cfg,
-            argv_list,
-            allow_import=allow_import,
-            localns=localns,
-            stacklevel=stacklevel,
-        )
-        if selector_updates:
+    if special_options:
+        config_fpath = scan_config_path(argv_list)
+        if config_fpath is not None:
+            from kwconf._ingest import coerce_mapping_source
+
+            # Preserve the source mapping until apply_dot_updates so structural
+            # validation can compare nested and dotted spellings before either
+            # one is flattened away.
+            cfg_updates = coerce_mapping_source(config_fpath)
+            if not allow_subconfig_overrides and has_selector_overrides(
+                cfg, cfg_updates
+            ):
+                raise ValueError(
+                    'SubConfig selection overrides require allow_subconfig_overrides=True'
+                )
             apply_dot_updates(
                 cfg,
-                selector_updates,
+                cfg_updates,
                 allow_import=allow_import,
                 localns=localns,
                 stacklevel=stacklevel,
                 validation_mode=validation_mode,
                 structural_validation=structural_validation,
             )
+
+    if allow_subconfig_overrides:
+        extract_selector_overrides(
+            cfg,
+            argv_list,
+            allow_import=allow_import,
+            localns=localns,
+            stacklevel=stacklevel,
+        )
         flat_helper = flat_config_from_tree(cfg, include_class_options=True)
         flat_helper.argparse(parser=parser, special_options=special_options)
     else:
@@ -913,14 +985,14 @@ def finalize_post_init(cfg):
         >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
         >>> finalize_post_init(cfg)
     """
-    if isinstance(cfg, Config):
-        if not getattr(cfg, '_kwconf_post_init_done', False):
-            cfg.__post_init__()
-            cfg._kwconf_post_init_done = True
-    if isinstance(cfg, Config):
-        for value in cfg._data.values():
-            if isinstance(value, Config):
-                finalize_post_init(value)
+    if not isinstance(cfg, Config):
+        return
+    if not getattr(cfg, '_kwconf_post_init_done', False):
+        cfg.__post_init__()
+        cfg._kwconf_post_init_done = True
+    for value in cfg._data.values():
+        if isinstance(value, Config):
+            finalize_post_init(value)
 
 
 def _class_identifier(cls):
@@ -931,7 +1003,12 @@ def _class_identifier(cls):
         >>> import kwconf
         >>> assert _class_identifier(kwconf.Config).endswith('.Config')
     """
-    return f'{cls.__module__}.{cls.__name__}'
+    qualname = cls.__qualname__
+    if '<locals>' in qualname:
+        # Local classes are not importable by qualname. Preserve the historical
+        # best-effort spelling; stable round trips should use explicit choices.
+        qualname = cls.__name__
+    return f'{cls.__module__}.{qualname}'
 
 
 def find_subconfig_paths(cfg):
@@ -988,7 +1065,7 @@ def distribute_explicit_argv_keys(cfg, keys):
     cfg._explicit_argv_keys = keys
     # Group dotted keys by their first segment so each subconfig child receives
     # the remainder of the path.
-    child_keys: dict = {}
+    child_keys: dict[str, set[str]] = {}
     for key in keys:
         head, sep, tail = key.partition('.')
         if not sep or not tail:
@@ -996,8 +1073,9 @@ def distribute_explicit_argv_keys(cfg, keys):
         child = cfg._data.get(head)
         if isinstance(child, Config):
             child_keys.setdefault(head, set()).add(tail)
-    for head, subkeys in child_keys.items():
-        distribute_explicit_argv_keys(cfg._data[head], subkeys)
+    for head, child in cfg._data.items():
+        if isinstance(child, Config):
+            distribute_explicit_argv_keys(child, child_keys.get(head, set()))
 
 
 def config_to_nested_dict(cfg, include_class=True):
@@ -1029,8 +1107,9 @@ def config_to_nested_dict(cfg, include_class=True):
             child = config_to_nested_dict(value, include_class=include_class)
             selector = None
             if meta is not None and meta.choices:
+                selected_cls = type(value)
                 for name, cls in meta.choices.items():
-                    if isinstance(value, cls):
+                    if selected_cls is cls:
                         selector = name
                         break
             if selector is None:

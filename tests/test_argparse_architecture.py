@@ -55,3 +55,35 @@ def test_fuzzy_normalization_respects_end_of_options_separator():
     namespace = parser.parse_args(['--', '--my_option=value'])
     assert namespace.my_option is None
     assert namespace.rest == ['--my_option=value']
+
+
+def test_plain_argparse_parser_reuse_resets_kwconf_provenance():
+    import argparse
+
+    from kwconf import argparse_ext
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--flag', action=argparse_ext.BooleanFlagOrKeyValAction)
+
+    first = argparse_ext.parse_known_result(parser, ['--flag'])
+    second = argparse_ext.parse_known_result(parser, [])
+
+    assert first.explicit_keys == frozenset({'flag'})
+    assert second.explicit_keys == frozenset()
+    assert vars(second.namespace) == {'flag': None}
+
+
+def test_plain_argparse_subparser_provenance_uses_namespace_fallback():
+    import argparse
+
+    from kwconf import argparse_ext
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command')
+    child = subparsers.add_parser('run')
+    child.add_argument('--flag', action=argparse_ext.BooleanFlagOrKeyValAction)
+
+    result = argparse_ext.parse_known_result(parser, ['run', '--flag'])
+
+    assert result.explicit_keys == frozenset({'flag'})
+    assert vars(result.namespace) == {'command': 'run', 'flag': True}

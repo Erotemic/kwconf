@@ -256,7 +256,10 @@ keys:
     assert cfg.inner.depth == 3
 
 Variant nodes use ``choices`` for explicit selectors. Dynamic import selectors
-are controlled by ``allow_import``.
+use a tri-state policy: the call-level ``allow_import`` value is the default,
+``SubConfig(..., allow_import=None)`` inherits it, and a field-level True or
+False explicitly overrides it. Importable selectors use
+``module.qualname.Class`` or ``module:qualname.Class`` syntax.
 
 Modal CLIs
 ----------

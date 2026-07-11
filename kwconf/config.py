@@ -899,9 +899,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 user-defined config via standard keys: verbose, quiet, silent.
 
             allow_import (bool):
-                If True, allow module path selectors like
-                ``pkg.mod.ClassName``
-                for SubConfig selection. Defaults to True.
+                Default policy for importable selectors such as
+                ``pkg.mod.Container.ClassName``. Individual ``SubConfig``
+                fields may explicitly enable or disable imports; fields with
+                ``allow_import=None`` inherit this value. Defaults to True.
 
             allow_subconfig_overrides (bool):
                 If True, enable multipass CLI parsing to allow SubConfig
@@ -1372,9 +1373,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 ``special_options=True`` explicitly.
 
             allow_import (bool):
-                If True, allow module path selectors like
-                ``pkg.mod.ClassName``
-                for SubConfig selection. Defaults to True.
+                Default policy for importable selectors such as
+                ``pkg.mod.Container.ClassName``. Individual ``SubConfig``
+                fields may explicitly enable or disable imports; fields with
+                ``allow_import=None`` inherit this value. Defaults to True.
 
             allow_subconfig_overrides (bool):
                 If True, enable multipass CLI parsing to allow SubConfig
@@ -1485,9 +1487,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         pending_updates = None
         if getattr(self, '_has_subconfigs', False):
             if argv:
-                pending_updates = _subcfg_mod.coerce_data_updates(
-                    user_config, cfg=self
-                )
+                # Preserve the original mapping shape until the canonical
+                # SubConfig update boundary. Pre-flattening here discards the
+                # provenance needed to diagnose nested-vs-dotted conflicts.
+                pending_updates = user_config
             else:
                 _subcfg_mod.apply_dot_updates(
                     self,
@@ -1794,8 +1797,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             special_ns = {}
 
         if has_subconfigs:
-            # Subconfig selectors need special handling, but regular values
-            # can use the standard Config setitem logic.
+            # Selector options were already applied while realizing the parser
+            # schema. The final parse only needs to remove them from the leaf
+            # value update set; applying them again would reconstruct the same
+            # SubConfig and erase lower-precedence data/config values.
             from kwconf import subconfig as _subcfg_mod
 
             subconfig_paths = set(_subcfg_mod.find_subconfig_paths(self))
@@ -1806,18 +1811,6 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     if k.endswith('.__class__') or k in subconfig_paths
                 }
                 if selector_keys:
-                    selector_updates = {
-                        k: ns[k] for k in selector_keys if k in ns
-                    }
-                    _subcfg_mod.apply_dot_updates(
-                        self,
-                        selector_updates,
-                        allow_import=allow_import,
-                        localns=localns,
-                        stacklevel=None,
-                        validation_mode=validation_mode,
-                        structural_validation=structural_validation,
-                    )
                     for key in selector_keys:
                         ns.pop(key, None)
                     explicit_keys = explicit_keys - selector_keys
@@ -1832,7 +1825,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # for keys the file never mentions.
         if special_options:
             config_fpath = special_ns['config']
-            if config_fpath is not None:
+            if config_fpath is not None and not has_subconfigs:
+                # Nested configs apply --config during parser realization so
+                # selector-dependent arguments exist before the final parse.
+                # Flat configs still load the file here.
                 self.load(
                     config_fpath,
                     argv=False,

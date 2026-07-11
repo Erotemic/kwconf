@@ -106,7 +106,7 @@ class ParseResult:
     resolved values separate from user intent.
     """
 
-    namespace: argparse.Namespace | None
+    namespace: argparse.Namespace
     unknown_args: List[str]
     parser: argparse.ArgumentParser
     selected_parser: argparse.ArgumentParser
@@ -140,6 +140,7 @@ def parse_known_result(
         args = sys.argv[1:]
     else:
         args = [os.fspath(a) if isinstance(a, os.PathLike) else a for a in args]
+    _reset_parser_provenance(parser)
     if namespace is None:
         namespace, unknown_args = parser.parse_known_args(args=args)
     else:
@@ -152,15 +153,17 @@ def parse_known_result(
         selected_parser = parser
     else:
         selected_parser = deepest(args) or parser
-    parser_explicit = getattr(
-        selected_parser, '_kwconf_last_explicit_keys', None
-    )
-    if parser_explicit is None:
-        explicit_keys = frozenset(
-            getattr(namespace, _EXPLICIT_KEYS_ATTR, set())
-        )
+    namespace_explicit = getattr(namespace, _EXPLICIT_KEYS_ATTR, None)
+    if namespace_explicit is not None:
+        # Plain argparse parsers do not expose a public way to recover the
+        # selected child parser. Kwconf actions therefore leave a parse-local
+        # namespace marker that correctly aggregates root and child actions.
+        explicit_keys = frozenset(namespace_explicit)
     else:
-        explicit_keys = frozenset(parser_explicit)
+        parser_explicit = getattr(
+            selected_parser, '_kwconf_last_explicit_keys', None
+        )
+        explicit_keys = frozenset(parser_explicit or ())
     if hasattr(namespace, _EXPLICIT_KEYS_ATTR):
         delattr(namespace, _EXPLICIT_KEYS_ATTR)
     return ParseResult(
@@ -170,6 +173,34 @@ def parse_known_result(
         selected_parser=selected_parser,
         explicit_keys=explicit_keys,
     )
+
+
+def _reset_parser_provenance(parser: argparse.ArgumentParser) -> None:
+    """Clear parse-local explicit-key state across a parser tree.
+
+    Kwconf actions can be installed on either :class:`ExtendedArgumentParser`
+    or a plain :class:`argparse.ArgumentParser`. Reset at this shared boundary
+    so parser reuse has identical semantics in both cases, including selected
+    subparsers.
+    """
+    stack = [parser]
+    seen = set()
+    while stack:
+        current = stack.pop()
+        current_id = id(current)
+        if current_id in seen:
+            continue
+        seen.add(current_id)
+        setattr(current, '_kwconf_last_explicit_keys', set())
+        for action in getattr(current, '_actions', ()):
+            choices = getattr(action, 'choices', None)
+            if not isinstance(choices, dict):
+                continue
+            stack.extend(
+                choice
+                for choice in choices.values()
+                if isinstance(choice, argparse.ArgumentParser)
+            )
 
 
 def parse_result(
