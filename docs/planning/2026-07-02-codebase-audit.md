@@ -650,8 +650,8 @@ claimed.
 These are real defects or misleading APIs, but their blast radius is narrower
 than Phase B.
 
-- Clear parser provenance on every parse; `_explicitly_given` currently
-  accumulates when a parser object is reused.
+- **Completed:** parser provenance is replaced on every parse, scoped to the
+  selected parser, and removed from returned argparse namespaces.
 - **Completed:** `expand_multipass_parser(parser=...)` extends and returns the
   supplied parser; SubConfig ingestion starts from a bare parser to avoid stale
   default-variant arguments.
@@ -677,20 +677,24 @@ than Phase B.
   group has Ruff but not flake8 or ty, so the documented successful invocations
   require `--extra linting` and `--with ty` respectively.
 - Add prerelease/python-dev coverage and behavioral conformance tests around
-  the copied argparse internals before the next supported-Python expansion.
+  the remaining argparse introspection adapters before the next
+  supported-Python expansion.
 
 ### Phase F — architectural refactors, only after the concrete defects
 
 The systemic themes in §4 remain valid engineering risks, but they are not all
 current release blockers. Do not let them displace the focused fixes above.
 
-- Clarify ownership among `__default__`, `_default`, and `_data` and freeze
-  class templates by invariant.
-- Consolidate duplicated load/normalize and `add_argument` construction paths.
-- Reduce the private argparse surface where practical and back the remaining
-  overrides with conformance tests.
-- Simplify the SubConfig selector machinery when next making a substantive
-  change there.
+- **Completed:** `__default__` is schema-only, `_default` is the independent
+  per-instance reset baseline, and `_data` contains current runtime values.
+- **Completed:** flat/nested source ingestion, parser-shell construction, field
+  argument generation, and argparse-port generation use canonical helpers.
+- **Completed:** version-pinned argparse engine copies and private Action bases
+  are gone; selector discovery uses argparse bootstrap parsers. Remaining
+  private access is isolated to option/subparser/parser-structure introspection.
+- **Partially completed:** selector token parsing is now argparse-owned, but the
+  fixed-point SubConfig realization model remains inherently complex and should
+  be simplified only when making another substantive feature change there.
 
 ---
 
@@ -702,7 +706,7 @@ explain the bugs as first observed; this section is the current risk register.
 
 ### Verification snapshot
 
-- `uv run pytest -q`: **402 passed, 3 skipped**. The three skips are
+- `uv run pytest -q`: **427 passed, 3 skipped**. The three skips are
   xdoctest examples marked skipped, not disabled behavior regressions.
 - `uv run --extra linting ./run_linter.sh`: passes for `kwconf/` and `tests/`.
 - `uv run --with ty ty check ./kwconf`: passes.
@@ -843,8 +847,9 @@ The earlier remediation text said the tree was Ruff-clean and Ruff was
 
 ### Deferred architectural risks
 
-The systemic themes in §4 still hold: the three-layer config state model,
-duplicated load/parser construction paths, private argparse implementation
-pinning, and SubConfig selector complexity are maintenance risks. They should
-be tracked as standalone projects, but none should be used as a reason to defer
-the smaller open correctness blockers above.
+The first three systemic themes in §4 are now substantially resolved: state
+ownership is explicit, loading/parser construction have canonical paths, and
+kwconf no longer vendors argparse's private parse engine. The remaining
+architectural risk is concentrated in fixed-point SubConfig realization and a
+few isolated argparse introspection adapters. Those should remain covered by
+behavioral tests rather than motivating another broad rewrite by default.

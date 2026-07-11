@@ -102,6 +102,41 @@ outside schema-generated CLI and static validation unless explicit metadata is
 provided. That direction is intentionally separate from ordinary attached
 attributes, which remain transient object state.
 
+State ownership
+---------------
+
+The class schema, instance reset baseline, and current values are separate:
+
+``Class.__default__``
+    Schema templates. These carry ``Value`` / ``SubConfig`` metadata and are
+    never mutated or materialized by normal instance operations.
+
+``cfg._default``
+    An instance-owned clone of the schema plus that instance's reset defaults.
+    Constructor values and ``default=`` overrides update this layer without
+    changing the class.
+
+``cfg._data``
+    Current raw values and realized nested Config objects. Mutable values are
+    independent from the reset baseline, so changing current state cannot
+    corrupt a later reset or another instance.
+
+These are internal attributes, but the ownership rule is a compatibility
+invariant. Public code should use mapping/attribute access and ``load`` rather
+than editing them directly.
+
+Input and parser ownership
+--------------------------
+
+Mapping objects, files, streams, and inline YAML/JSON share one ingestion
+boundary. Flat configs and nested ``SubConfig`` trees therefore agree on source
+classification, path errors, empty documents, and mapping-type requirements.
+
+Parser construction also has one canonical route for field ordering, aliases,
+flags, coercion, groups, and special options. ``port_to_argparse`` consumes the
+same argument specification as the live parser rather than maintaining a
+second interpretation of ``Value`` metadata.
+
 CLI contract
 ------------
 

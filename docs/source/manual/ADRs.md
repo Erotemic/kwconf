@@ -203,3 +203,34 @@ round-trip-capable mapping extension mode. Unknown loaded keys should then be
 accepted symmetrically, while schema-derived CLI and static validation remain
 limited to declared fields unless metadata is supplied explicitly.
 
+## ADR-0012 — State and parser ownership have one canonical path
+
+**Decision**
+Configuration state has three non-overlapping ownership layers, and all input
+and parser construction paths share canonical normalization/building helpers.
+Staged SubConfig selection is orchestration around argparse; kwconf does not
+implement an independent argv grammar.
+
+**Locks down**
+
+* Class ``__default__`` entries are schema templates. Instance operations never
+  store runtime values into them or materialize mutable defaults through them.
+* Instance ``_default`` entries are cloned metadata plus the reset baseline for
+  that instance. Constructor and ``default=`` overrides modify only this layer.
+* Instance ``_data`` contains current raw values and realized SubConfig objects.
+  Mutable values never alias the corresponding reset baseline.
+* Flat loading and nested loading use the same mapping/file/inline-text
+  normalization boundary; argv forms use the same argv normalizer.
+* ``Config.argparse``, SubConfig parser expansion, and argparse port generation
+  derive their field calls from canonical parser-building helpers.
+* Multipass selection may rebuild the known selector set, but every pass uses
+  ``argparse.parse_known_args``. Kwconf does not manually decide token/value
+  boundaries.
+* Kwconf parser actions subclass public ``argparse.Action``. The package does
+  not vendor ``parse_known_args`` or override argparse's private
+  ``_parse_optional`` / ``_get_option_tuples`` engine.
+* Private argparse access is confined to small compatibility adapters for
+  enumerating registered option strings, walking selected subparsers, and
+  importing/exporting parser structure. Those adapters require behavioral
+  tests whenever supported Python versions change.
+

@@ -26,11 +26,9 @@ from __future__ import annotations
 import inspect
 import warnings
 from collections.abc import Mapping
-from typing import IO, Any
+from typing import Any
 
 from kwconf.config import Config, ConfigValidationError
-from kwconf.util.util_misc import iterable
-from kwconf.util.util_yaml import import_yaml
 from kwconf.value import _Value as Value
 
 # ``SubConfig`` is the supported public surface of this module. The remaining
@@ -217,74 +215,22 @@ class SubConfig(Value):
 
 
 def wrap_subconfig_defaults(cfg, _dont_call_post_init=False):
-    """
-    Normalize any SubConfig defaults into tracked metadata.
+    """Compatibility wrapper for indexing and realizing SubConfig fields.
 
-    Example:
-        >>> import kwconf
-        >>> class Inner(kwconf.Config):
-        ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
-        ...     __default__ = {'inner': Inner()}
-        >>> cfg = Outer(_dont_call_post_init=True)
-        >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
-        >>> assert cfg._has_subconfigs
-        >>> class OuterValue(kwconf.Config):
-        ...     __default__ = {'inner': kwconf.Value(Inner())}
-        >>> cfg = OuterValue(_dont_call_post_init=True)
-        >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
-        >>> assert isinstance(cfg._subconfig_meta['inner'], kwconf.SubConfig)
+    Class normalization owns schema conversion.  This helper no longer rewrites
+    ``cfg._default``; it only refreshes the instance index and ensures current
+    runtime values are realized Config objects.
     """
-    cfg._subconfig_meta = {}
-    cfg._has_subconfigs = False
-    for k, v in list(cfg._default.items()):
-        meta = None
-        if isinstance(v, SubConfig):
-            meta = v
-        elif isinstance(v, Value) and not isinstance(v, SubConfig):
-            inner = v.value
-            if isinstance(inner, SubConfig):
-                if v.help and not inner.help:
-                    inner.parsekw['help'] = v.help
-                meta = inner
-            elif isinstance(inner, Config):
-                meta = SubConfig(inner, help=v.help)
-                cfg._default[k] = meta
-            elif inspect.isclass(inner) and issubclass(inner, Config):
-                meta = SubConfig(inner, help=v.help)
-                cfg._default[k] = meta
-        elif isinstance(v, Config):
-            meta = SubConfig(v)
-            cfg._default[k] = meta
-        elif inspect.isclass(v) and issubclass(v, Config):
-            meta = SubConfig(v)
-            cfg._default[k] = meta
-        if meta is not None:
-            cfg._has_subconfigs = True
-            cfg._subconfig_meta[k] = meta
-            cfg._data[k] = meta.instantiate(
-                _dont_call_post_init=_dont_call_post_init
-            )
+    cfg._index_subconfigs()
+    ensure_subconfigs_instantiated(
+        cfg, _dont_call_post_init=_dont_call_post_init
+    )
 
 
 def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
-    """
-    Ensure SubConfig values are instantiated on the config.
-
-    Example:
-        >>> import kwconf
-        >>> class Inner(kwconf.Config):
-        ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
-        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
-        >>> cfg = Outer(_dont_call_post_init=True)
-        >>> cfg._data['inner'] = None
-        >>> ensure_subconfigs_instantiated(cfg, _dont_call_post_init=True)
-        >>> assert isinstance(cfg._data['inner'], Inner)
-    """
-    if not getattr(cfg, '_has_subconfigs', False):
-        return
-    for key, meta in getattr(cfg, '_subconfig_meta', {}).items():
+    """Ensure every indexed SubConfig has a realized runtime instance."""
+    cfg._index_subconfigs()
+    for key, meta in cfg._subconfig_meta.items():
         if not isinstance(cfg._data.get(key), Config):
             cfg._data[key] = meta.instantiate(
                 _dont_call_post_init=_dont_call_post_init
@@ -292,127 +238,32 @@ def ensure_subconfigs_instantiated(cfg, _dont_call_post_init=False):
 
 
 def coerce_argv(cmdline: Any) -> tuple[list[str], bool]:
-    """
-    Normalize cmdline inputs into an argv list and help flag.
+    """Normalize cmdline inputs into an argv list and help flag."""
+    from kwconf._ingest import coerce_argv as _coerce_argv
 
-    Example:
-        >>> argv, want_help = coerce_argv('--foo=bar --help')
-        >>> assert argv == ['--foo=bar', '--help']
-        >>> assert want_help
-    """
-    import shlex
-    import sys
-
-    if not cmdline:
-        return [], False
-    argv: list[str]
-    if cmdline is True:
-        argv = sys.argv[1:]
-    elif isinstance(cmdline, str):
-        argv = shlex.split(cmdline)
-    elif iterable(cmdline):
-        argv = list(cmdline)
-    else:
-        raise TypeError(f'Unsupported argv={cmdline!r}')
-    want_help: bool = any(a in {'-h', '--help'} for a in argv)
-    return argv, want_help
+    argv = _coerce_argv(cmdline)
+    return argv, any(arg in {'-h', '--help'} for arg in argv)
 
 
 def scan_config_path(argv: list[str]) -> str | None:
-    """
-    Extract a --config value from argv if present.
-
-    Example:
-        >>> scan_config_path(['--config', 'demo.yaml'])
-        'demo.yaml'
-        >>> scan_config_path(['--config=demo.yaml'])
-        'demo.yaml'
-    """
-    config_fpath: str | None = None
-    for i, tok in enumerate(argv):
-        if tok == '--':
-            # Everything after the end-of-options separator is positional.
-            break
-        if tok == '--config':
-            nxt = argv[i + 1] if i + 1 < len(argv) else None
-            if nxt is None or nxt.startswith('-'):
-                # A following option (or nothing) means --config was given
-                # no value; do not greedily swallow the next flag.
-                raise ValueError('--config requires a value')
-            config_fpath = nxt
-        elif tok.startswith('--config='):
-            config_fpath = tok.split('=', 1)[1]
-    return config_fpath
+    """Extract ``--config`` using argparse's own option semantics."""
+    parser = argparse.ArgumentParser(
+        add_help=False, allow_abbrev=False, exit_on_error=False
+    )
+    parser.add_argument('--config')
+    try:
+        namespace, _unknown = parser.parse_known_args(argv)
+    except argparse.ArgumentError as ex:
+        raise ValueError(str(ex)) from ex
+    return typing.cast(str | None, namespace.config)
 
 
 def coerce_data_updates(data, mode=None, cfg=None):
-    """
-    Convert a data source (dict or filepath) into dotted updates.
+    """Convert a shared mapping source into config-aware dotted updates."""
+    from kwconf._ingest import coerce_mapping_source
 
-    When ``cfg`` is given, nested mappings are only flattened across SubConfig
-    boundaries; plain dict-valued leaf fields are kept intact.
-
-    Example:
-        >>> updates = coerce_data_updates({'a': 1, 'b': {'c': 2}})
-        >>> assert updates['a'] == 1
-        >>> assert updates['b.c'] == 2
-    """
-    if data is None:
-        return {}
-
-    import os
-
-    from kwconf.util.util_fileio import looks_like_config_path, open_text_input
-
-    if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
-        if isinstance(data, str) and not os.path.exists(data):
-            if looks_like_config_path(data):
-                raise FileNotFoundError(f'config file does not exist: {data!r}')
-            import json
-
-            try:
-                user_config = json.loads(data)
-            except Exception:
-                import io
-
-                yaml = import_yaml('YAML parsing')
-                stream: IO[Any] = io.StringIO(data)
-                user_config = yaml.load(stream, Loader=yaml.SafeLoader)
-        else:
-            if mode is None and isinstance(data, (str, os.PathLike)):
-                if str(data).lower().endswith('.json'):
-                    mode = 'json'
-            if mode is None:
-                mode = 'yaml'
-            with open_text_input(data, 'r') as file:
-                if mode == 'yaml':
-                    yaml = import_yaml('YAML file loading')
-                    user_config = yaml.load(file, Loader=yaml.SafeLoader)
-                elif mode == 'json':
-                    import json
-
-                    user_config = json.load(file)
-                else:
-                    raise KeyError(mode)
-    elif isinstance(data, Mapping):
-        user_config = data
-    elif isinstance(data, Config):
-        user_config = data.to_dict()
-    else:
-        raise TypeError(f'Expected path or dict, but got {type(data)}')
-
-    if user_config is None:
-        return {}
-    if not isinstance(user_config, Mapping):
-        raise TypeError(
-            f'config source {data!r} did not parse to a mapping '
-            f'(got {type(user_config).__name__})'
-        )
-
-    flat = {}
-    for k, v in _flatten_nested(user_config, cfg=cfg):
-        flat[k] = v
-    return flat
+    user_config = coerce_mapping_source(data, mode=mode)
+    return dict(_flatten_nested(user_config, cfg=cfg))
 
 
 def _flatten_nested(mapping, cfg=None):
@@ -533,28 +384,19 @@ def _report_structural_validation(mode, issues):
         raise ConfigValidationError(message)
 
 
-def _split_option_token(
-    argv: list[str], idx: int
-) -> tuple[str | None, str | None, int]:
-    """
-    Split an argv token into (key, value, consumed).
-
-    Example:
-        >>> _split_option_token(['--a=1'], 0)
-        ('a', '1', 1)
-    """
-    tok: str = argv[idx]
-    if not tok.startswith('--'):
-        return None, None, 1
-    key: str = tok[2:]
-    if '=' in key:
-        key, val = key.split('=', 1)
-        return key, val, 1
-    if idx + 1 < len(argv):
-        nxt: str = argv[idx + 1]
-        if not nxt.startswith('-') or nxt == '-':
-            return key, nxt, 2
-    return key, None, 1
+def _selector_bootstrap_parser(cfg):
+    """Build the tiny argparse parser used to realize the current tree."""
+    parser = argparse.ArgumentParser(
+        add_help=False, allow_abbrev=False, exit_on_error=False
+    )
+    for path in find_subconfig_paths(cfg):
+        parser.add_argument(
+            f'--{path}',
+            f'--{path}.__class__',
+            dest=path,
+            default=argparse.SUPPRESS,
+        )
+    return parser
 
 
 def _path_is_subconfig(cfg, parts):
@@ -596,74 +438,35 @@ def _path_is_subconfig(cfg, parts):
 def extract_selector_overrides(
     cfg, argv, allow_import=True, localns=None, stacklevel=None
 ):
-    """
-    Extract and apply selector-like arguments from argv in a staged manner.
+    """Realize selector options through iterative argparse bootstrap passes.
 
-    Example:
-        >>> import kwconf
-        >>> class Adam(kwconf.Config):
-        ...     __default__ = {'lr': 1e-3}
-        >>> class Sgd(kwconf.Config):
-        ...     __default__ = {'momentum': 0.9}
-        >>> class Train(kwconf.Config):
-        ...     __default__ = {'optim': kwconf.SubConfig(Adam, choices={'adam': Adam, 'sgd': Sgd})}
-        >>> cfg = Train(_dont_call_post_init=True)
-        >>> wrap_subconfig_defaults(cfg, _dont_call_post_init=True)
-        >>> selectors, _ = extract_selector_overrides(cfg, ['--optim=sgd'])
-        >>> assert selectors['optim'] == 'sgd'
+    Kwconf orchestrates the passes, but argparse owns token interpretation in
+    every pass.  Each pass recognizes only selectors exposed by the currently
+    realized tree; applying those selectors may reveal another nested level.
     """
     if stacklevel is not None:
         localns = resolve_localns(localns, stacklevel)
     working = list(argv)
     collected = {}
-    changed = True
-    max_iter = 20
-    guard = 0
-    while changed:
-        guard += 1
-        if guard > max_iter:
-            raise RuntimeError('Selector resolution did not converge')
-        changed = False
-        new_selectors = {}
-        kept = []
-        i = 0
-        while i < len(working):
-            tok = working[i]
-            key, val, consumed = _split_option_token(working, i)
-            if key is None:
-                kept.append(tok)
-                i += 1
-                continue
-            if key.endswith('.__class__'):
-                sel_key = key[: -len('.__class__')]
-                if val is None:
-                    raise ValueError(f'Missing value for selector {key}')
-                new_selectors[sel_key] = val
-                changed = True
-                i += consumed
-                continue
-            if _path_is_subconfig(cfg, key.split('.')):
-                if val is None:
-                    raise ValueError(f'Missing value for selector {key}')
-                new_selectors[key] = val
-                changed = True
-                i += consumed
-                continue
-            kept.append(tok)
-            i += 1
-        if new_selectors:
-            collected.update(new_selectors)
-            working = kept
-            apply_dot_updates(
-                cfg,
-                new_selectors,
-                allow_import=allow_import,
-                localns=localns,
-                stacklevel=None,
-            )
-        else:
-            working = kept
-    return collected, working
+    for _guard in range(20):
+        parser = _selector_bootstrap_parser(cfg)
+        try:
+            namespace, remaining = parser.parse_known_args(working)
+        except argparse.ArgumentError as ex:
+            raise ValueError(str(ex)) from ex
+        selectors = vars(namespace)
+        if not selectors:
+            return collected, remaining
+        collected.update(selectors)
+        apply_dot_updates(
+            cfg,
+            selectors,
+            allow_import=allow_import,
+            localns=localns,
+            stacklevel=None,
+        )
+        working = remaining
+    raise RuntimeError('Selector resolution did not converge')
 
 
 def _ensure_parent_node(cfg, parts):

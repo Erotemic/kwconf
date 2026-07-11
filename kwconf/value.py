@@ -759,6 +759,84 @@ def Flag(
     )
 
 
+def _value_argument_invocations(
+    value: Any,
+    template: Optional[_Value],
+    key: str,
+    fuzzy_hyphens: int | bool = False,
+    portable: bool = False,
+) -> dict[str, tuple[str, tuple[str, ...], dict[str, Any]]]:
+    """Build the canonical argparse calls for one field.
+
+    Both live parser construction and ``port_to_argparse`` consume this single
+    representation, preventing their coercion / flag / alias semantics from
+    drifting.
+    """
+    from kwconf import argparse_ext
+
+    name = key
+    argkw: dict[str, Any] = {'help': ''}
+    positional: Optional[int] = None
+    isflag: bool | str = False
+    required = False
+    if template is not None:
+        argkw.update(template.parsekw)
+        required = template.required
+        isflag = template.isflag
+        positional = template.position
+
+    argkw['help'] = argkw.get('help') or ''
+    argkw['default'] = value
+    argkw['action'] = _maker_smart_parse_action(template)
+
+    if not isflag and not portable:
+        # ParseAction routes conversion through Value.coerce, so argparse's
+        # independent type converter must not run as a second parser.
+        argkw.pop('type', None)
+
+    invocations: dict[str, tuple[str, tuple[str, ...], dict[str, Any]]] = {}
+    if positional:
+        invocations['positional'] = (
+            'add_argument',
+            (name,),
+            argkw.copy(),
+        )
+
+    option_kw = argkw.copy()
+    option_kw['dest'] = name
+    option_strings = tuple(_resolve_alias(name, template, fuzzy_hyphens))
+
+    if isflag:
+        option_kw.pop('type', None)
+        option_kw.pop('choices', None)
+        option_kw.pop('action', None)
+        option_kw.pop('nargs', None)
+        if isflag == 'counter':
+            option_kw['action'] = argparse_ext.CounterOrKeyValAction
+        else:
+            option_kw['action'] = argparse_ext.BooleanFlagOrKeyValAction
+
+    if option_kw.get('nargs') is not None and option_kw.get('type') in {
+        list,
+        tuple,
+        set,
+        frozenset,
+    }:
+        option_kw.pop('type', None)
+
+    if isinstance(option_kw.get('type'), str):
+        raise TypeError(
+            'Value type must be a callable or None at parser-build time, '
+            f'got the string {option_kw["type"]!r}. Named-type sentinels '
+            'are resolved in Value.__init__; if you reached this branch the '
+            'string was set after construction.'
+        )
+
+    option_kw['required'] = required
+    invocations['key_value'] = ('add_argument', option_strings, option_kw)
+    return invocations
+
+
 def _value_add_argument_to_parser(
     value: Any,
     _value: Optional[_Value],
@@ -767,128 +845,40 @@ def _value_add_argument_to_parser(
     key: str,
     fuzzy_hyphens: int | bool = False,
 ) -> None:
-    """
-    POC for a new simplified way for a value to add itself as an argument to a
-    parser.
-
-    Args:
-        value (Any): the unwrapped default value
-        _value (Value): the value metadata
-        self (Config): the parent kwconf object
-        parser (ArgumentParser): the parser to add to
-        key (str) : the name or destination
-        fuzzy_hyphens (bool | int): enable fuzzy hyphens or not
-    """
-    # import argparse
-    from kwconf import argparse_ext
-
-    # value: Any | Value
-    name: str = key
-    argkw: dict[str, Any] = {}
-    argkw['help'] = ''
-    positional: Optional[int] = None
-    isflag: bool | str = False
-    required: bool = False
-
+    """Add one field using the canonical invocation representation."""
     group_lut: dict[str, Any] = getattr(parser, '_sc_group_lut', {})
     mutex_group_lut: dict[str, Any] = getattr(parser, '_sc_mutex_group_lut', {})
-    parser._sc_mutex_group_lut = mutex_group_lut
     parser._sc_group_lut = group_lut
+    parser._sc_mutex_group_lut = mutex_group_lut
 
-    parent: Any = parser
-    if _value is not None:
-        # Use the metadata in the Value class to enhance argparse
-        # _value = _metadata[name]
-        argkw.update(_value.parsekw)
-        required = _value.required
-        value = _value.value
-        isflag = _value.isflag
-        positional = _value.position
+    parent = parser
+    if _value is not None and _value.group is not None:
+        if _value.group not in group_lut:
+            groupkw = (
+                {'title': _value.group} if isinstance(_value.group, str) else {}
+            )
+            group_lut[_value.group] = parser.add_argument_group(**groupkw)
+        parent = group_lut[_value.group]
+    if _value is not None and _value.mutex_group is not None:
+        if _value.mutex_group not in mutex_group_lut:
+            mutex_group_lut[_value.mutex_group] = (
+                parent.add_mutually_exclusive_group()
+            )
+        parent = mutex_group_lut[_value.mutex_group]
 
-        # If the args are flagged as belonging to a group, resepct that.
-        if _value.group is not None:
-            if _value.group not in group_lut:
-                groupkw: dict[str, Any] = {}
-                if isinstance(_value.group, str):
-                    groupkw['title'] = _value.group
-                group_lut[_value.group] = parent.add_argument_group(**groupkw)
-            parent = group_lut[_value.group]
-
-        if _value.mutex_group is not None:
-            if _value.mutex_group not in mutex_group_lut:
-                mutex_group_lut[_value.mutex_group] = (
-                    parent.add_mutually_exclusive_group()
-                )
-            parent = mutex_group_lut[_value.mutex_group]
-
-    if not argkw['help']:
-        # argkw['help'] = '<undocumented>'
-        argkw['help'] = ''
-
-    argkw['default'] = value
-    argkw['action'] = _maker_smart_parse_action(self)
-
-    if not isflag:
-        # Route CLI conversion through the field's coerce() (the annotation-
-        # gated 'auto' parser / deprecated type= / coerce=), so CLI parsing
-        # matches Config.coerce() and honors unions. With no argparse ``type``
-        # set, the ParseAction installs a _smart_type that calls
-        # template.coerce() for scalars and per-element coercion for nargs
-        # fields. Flag fields keep their own (argparse_ext) handling.
-        argkw.pop('type', None)
-
-    if positional:
-        parent.add_argument(name, **argkw)
-
-    argkw['dest'] = name
-
-    option_strings: list[str] = _resolve_alias(name, _value, fuzzy_hyphens)
-
-    if isflag:
-        # Can we support both flag and setitem methods of cli
-        # parsing?
-        # argkw.pop('type', None)
-        argkw.pop('choices', None)
-        argkw.pop('action', None)
-        argkw.pop('nargs', None)
-        argkw['dest'] = name
-
-        if isflag == 'counter':
-            argkw['action'] = argparse_ext.CounterOrKeyValAction
-        else:
-            argkw['action'] = argparse_ext.BooleanFlagOrKeyValAction
-
-    if argkw.get('nargs', None) is not None and argkw.get('type', None) in {
-        list,
-        tuple,
-        set,
-        frozenset,
-    }:
-        # argparse applies ``type`` to each token, so collection types here
-        # would split strings into characters instead of preserving argv items.
-        argkw.pop('type', None)
-
-    if isinstance(argkw.get('type', None), str):
-        # Named-type sentinels (e.g. 'yaml') should have been resolved to
-        # callables in ``Value.__init__``. Anything still a string here is
-        # either an unsupported sentinel or a value built via a code path
-        # that bypasses the resolver.
-        raise TypeError(
-            f'Value type must be a callable or None at parser-build time, '
-            f'got the string {argkw["type"]!r}. Named-type sentinels are '
-            f'resolved in Value.__init__; if you reached this branch the '
-            f'string was set after construction.'
-        )
-
+    invocations = _value_argument_invocations(
+        value, _value, key, fuzzy_hyphens=fuzzy_hyphens
+    )
     try:
-        parent.add_argument(*option_strings, required=required, **argkw)
+        for _kind, (method_name, args, kwargs) in invocations.items():
+            getattr(parent, method_name)(*args, **kwargs)
     except Exception:
         print(
-            'ERROR: Failed to add argument (in _value_add_argument_to_parser / Config.argparse)'
+            'ERROR: Failed to add argument '
+            '(in _value_add_argument_to_parser / Config.argparse)'
         )
-        print('argkw = {}'.format(pprint.pformat(argkw)))
-        print('required = {}'.format(pprint.pformat(required)))
-        print('option_strings = {}'.format(pprint.pformat(option_strings)))
+        print(f'key = {key!r}')
+        print(f'invocations = {pprint.pformat(invocations)}')
         raise
 
 
@@ -899,111 +889,14 @@ def _value_add_argument_kw(
     key: str,
     fuzzy_hyphens: int = 0,
 ) -> dict[str, tuple]:
-    """
-    TODO: resolve with :func:`_value_add_argument_to_parser`. This just creates
-    one or more kwargs for add_argument. (Depending on how many variants of the
-    argument we want).
-
-    Args:
-        value (Any): the unwrapped default value
-        _value (Value): the value metadata
-
-    Returns:
-        Dict[str, Tuple[str, Tuple, Dict]]:
-            special keys to the method name, args, kwargs invocations.
-    """
-    # import argparse
-    from kwconf import argparse_ext
-
-    # value: Any | Value
-    name: str = key
-    argkw: dict[str, Any] = {}
-    argkw['help'] = ''
-    positional: Optional[int] = None
-    isflag: bool | str = False
-    required: bool = False
-
-    # group_lut = getattr(parser, '_sc_group_lut', {})
-    # mutex_group_lut = getattr(parser, '_sc_mutex_group_lut', {})
-    # parser._sc_mutex_group_lut = mutex_group_lut
-    # parser._sc_group_lut = group_lut
-
-    invocations: dict[str, tuple] = {}
-
-    # parent = parser
-    if _value is not None:
-        # Use the metadata in the Value class to enhance argparse
-        # _value = _metadata[name]
-        argkw.update(_value.parsekw)
-        required = _value.required
-        value = _value.value
-        isflag = _value.isflag
-        positional = _value.position
-
-        # TODO: handle groups
-        # If the args are flagged as belonging to a group, resepct that.
-        # if _value.group is not None:
-        #     if _value.group not in group_lut:
-        #         groupkw = {}
-        #         if isinstance(_value.group, str):
-        #             groupkw['title'] = _value.group
-        #         group_lut[_value.group] = parent.add_argument_group(**groupkw)
-        #     parent = group_lut[_value.group]
-
-        # if _value.mutex_group is not None:
-        #     if _value.mutex_group not in mutex_group_lut:
-        #         mutex_group_lut[_value.mutex_group] = parent.add_mutually_exclusive_group()
-        #     parent = mutex_group_lut[_value.mutex_group]
-
-    if not argkw['help']:
-        # argkw['help'] = '<undocumented>'
-        argkw['help'] = ''
-
-    argkw['default'] = value
-    argkw['action'] = _maker_smart_parse_action(self)
-
-    if positional:
-        invocations['positional'] = (
-            'add_argument',
-            (name,),
-            argkw.copy(),
-        )
-
-    argkw['dest'] = name
-
-    option_strings: list[str] = _resolve_alias(name, _value, fuzzy_hyphens)
-
-    if isflag:
-        # Can we support both flag and setitem methods of cli
-        # parsing?
-        argkw.pop('type', None)
-        argkw.pop('choices', None)
-        argkw.pop('action', None)
-        argkw.pop('nargs', None)
-        argkw['dest'] = name
-
-        if isflag == 'counter':
-            argkw['action'] = argparse_ext.CounterOrKeyValAction
-        else:
-            argkw['action'] = argparse_ext.BooleanFlagOrKeyValAction
-
-    if argkw.get('nargs', None) is not None and argkw.get('type', None) in {
-        list,
-        tuple,
-        set,
-        frozenset,
-    }:
-        argkw.pop('type', None)
-
-    argkw['required'] = required
-    # parent.add_argument(*option_strings, required=required, **argkw)
-
-    invocations['key_value'] = (
-        'add_argument',
-        option_strings,
-        argkw,
+    """Return the same canonical calls used by live parser construction."""
+    return _value_argument_invocations(
+        value,
+        _value,
+        key,
+        fuzzy_hyphens=fuzzy_hyphens,
+        portable=True,
     )
-    return invocations
 
 
 def _resolve_alias(
@@ -1039,12 +932,10 @@ def _resolve_alias(
     return option_strings
 
 
-def _maker_smart_parse_action(self):
+def _maker_smart_parse_action(template):
     import argparse
 
-    kwconf_object = self
-
-    class ParseAction(argparse._StoreAction):
+    class ParseAction(argparse.Action):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             # with script config nothing should be required by default
@@ -1061,7 +952,8 @@ def _maker_smart_parse_action(self):
                 # the per-token results into a list (the uniform "apply the
                 # parser to each value" rule).
                 def _smart_type(value):
-                    template = kwconf_object.__default__[self.dest]
+                    if template is None:
+                        return value
                     if self.nargs is not None:
                         from kwconf import coerce as _coerce_mod
 
@@ -1086,11 +978,9 @@ def _maker_smart_parse_action(self):
             # old concat hack is gone (it created ambiguity for structured
             # tokens, e.g. csv 1,2 3,4 -> [1,2,3,4] vs [[1,2],[3,4]]).
             setattr(namespace, action.dest, values)
-            if not hasattr(parser, '_explicitly_given'):
-                # We might be given a subparser / parent parser
-                # and not the original one we created.
-                parser._explicitly_given = set()
-            parser._explicitly_given.add(action.dest)
+            from kwconf.argparse_ext import mark_explicit
+
+            mark_explicit(parser, namespace, action.dest)
 
     return ParseAction
 

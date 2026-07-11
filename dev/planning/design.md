@@ -51,6 +51,15 @@ master `kwconf_primatives` switch exists; granular ones are future work).
   ergonomics. Positional `Value(10)` stays. **[LOCKED]**
 - Static typing (primary checker: **ty**; also mypy/pyright) is a *bonus we lean
   into where it's free*, never a constraint that warps the API. **[LOCKED]**
+- **State ownership is strict:** class ``__default__`` values are frozen schema
+  templates, instance ``_default`` values are independent reset baselines, and
+  ``_data`` contains only current raw/runtime values. Loading and parser
+  construction each have one canonical implementation path. **[LOCKED
+  2026-07-10]**
+- **Argparse owns argv grammar in every pass.** Dynamic SubConfig selection may
+  orchestrate multiple ``parse_known_args`` stages, but kwconf does not vendor
+  or override argparse's private parse engine. Remaining private access is
+  isolated introspection, not token parsing. **[LOCKED 2026-07-10]**
 - **Declared fields are the persistence contract.** Undeclared attributes may
   be attached as transient Python state and intentionally do not participate in
   mapping access, CLI generation, validation, serialization, or

@@ -37,6 +37,22 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   handlers keep working while a CLI can catch the specific validation failure.
 
 ### Changed
+* Config state ownership is now explicit. Class-level ``__default__`` entries
+  are treated as immutable schema templates; each instance owns an independent ``_default``
+  reset baseline; and ``_data`` contains only current raw values and realized
+  SubConfigs. Constructor/default overrides update cloned instance metadata, and
+  resetting a config deep-copies from the instance baseline instead of exposing
+  or materializing class templates.
+* Mapping/file/string ingestion now goes through one shared normalization
+  boundary for flat and nested configs. Parser creation, argument ordering,
+  special options, and live/ported ``add_argument`` specifications likewise use
+  canonical builders instead of parallel implementations.
+* Staged SubConfig realization remains supported, but argparse now interprets
+  argv in every pass. The manual selector-token scanner and version-pinned
+  copies of argparse's parse engine were removed. Kwconf actions now subclass
+  the public ``argparse.Action`` API; remaining private reads are isolated to
+  option/subparser introspection where argparse exposes no public enumeration
+  interface.
 * ``kwconf.subconfig.__all__`` now reflects the intended public API: wildcard
   imports expose only ``SubConfig``. The module's parser/loading helpers remain
   explicitly importable for internal and advanced use, but are documented as
@@ -60,6 +76,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Reusing an argparse parser no longer carries explicit-option provenance from
+  an earlier parse into a later one. Provenance is replaced on each parse,
+  remains scoped to the selected modal parser, and is no longer exposed as a
+  private marker in ordinary ``argparse.Namespace`` dictionaries.
 * ``expand_multipass_parser(parser=...)`` now extends and returns the supplied
   parser instead of replacing it, preserving parser identity, custom arguments,
   groups, and caller configuration. SubConfig CLI ingestion now starts from a

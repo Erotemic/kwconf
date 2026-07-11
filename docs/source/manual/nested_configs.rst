@@ -96,6 +96,17 @@ The parser is variant-aware. If the user selects ``--optim=sgd`` before
 ``--help``, the help output includes ``optim.momentum`` and omits Adam-only
 fields such as ``optim.beta1``.
 
+Selector parsing architecture
+-----------------------------
+
+Variant-aware options require staged schema realization: selecting one
+SubConfig class can reveal another set of fields or selectors. Kwconf retains
+that orchestration, but argparse owns token interpretation in every stage. A
+small selector-only ``ArgumentParser`` uses ``parse_known_args`` to realize the
+current tree; the final realized parser then parses the original argv normally.
+Kwconf does not manually split option tokens or reimplement argparse's
+``nargs``, abbreviation, separator, or value-boundary rules.
+
 Custom parser integration
 -------------------------
 

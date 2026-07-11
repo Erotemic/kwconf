@@ -73,7 +73,6 @@ import argparse as argparse_mod
 import copy
 import inspect
 import itertools as it
-import os
 import pprint
 import sys
 import warnings
@@ -91,7 +90,6 @@ from typing import (
     Optional,
     Tuple,
     Type,
-    Union,
     cast,
 )
 
@@ -111,7 +109,6 @@ from kwconf.annotations import (
 from kwconf.annotations import (
     value_matches_annotation as _value_matches_annotation,
 )
-from kwconf.util.util_fileio import open_text_input
 from kwconf.util.util_misc import import_ubelt, iterable
 from kwconf.util.util_repr import NiceRepr
 from kwconf.util.util_text import codeblock, indent, paragraph
@@ -294,84 +291,10 @@ def _materialize_default_items(defaults: Mapping[str, Any]) -> Dict[str, Any]:
 def _coerce_data_to_dict(
     data: Any, mode: Optional[str] = None
 ) -> Dict[str, Any]:
-    """
-    Normalize a ``data`` argument (None, dict, Config, file/path/string) into
-    a plain dict ready for Config.load.
+    """Compatibility wrapper around the shared ingestion boundary."""
+    from kwconf._ingest import coerce_mapping_source
 
-    Supports:
-
-      * ``None`` -> ``{}``
-      * a :class:`Config` instance -> ``data.asdict()``
-      * a :class:`dict` -> shallow-copied (load renames alias keys and pops
-        unknown keys; the caller's dict must not see those edits)
-      * a file path (str / os.PathLike) or readable file -> parsed by
-        ``mode`` (auto-detected from file extension; defaults to yaml).
-      * a raw json or yaml string -> parsed in-memory.
-    """
-    if data is None:
-        return {}
-    if isinstance(data, Config):
-        return data.asdict()
-    if isinstance(data, dict):
-        return dict(data)
-    if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
-        from kwconf.util.util_fileio import looks_like_config_path
-
-        if isinstance(data, str) and not os.path.exists(data):
-            if looks_like_config_path(data):
-                # A mistyped path (e.g. 'no_such.yaml') should not be silently
-                # parsed as inline content.
-                raise FileNotFoundError(f'config file does not exist: {data!r}')
-            import json
-
-            try:
-                parsed = json.loads(data)
-            except Exception:
-                import io
-
-                yaml = import_yaml('YAML parsing')
-                parsed = yaml.load(io.StringIO(data), Loader=yaml.SafeLoader)
-            return _validate_mapping_payload(parsed, data)
-        if mode is None:
-            if isinstance(data, str) and data.lower().endswith('.json'):
-                mode = 'json'
-            elif isinstance(data, os.PathLike) and os.fspath(
-                data
-            ).lower().endswith('.json'):
-                mode = 'json'
-            else:
-                mode = 'yaml'
-        with open_text_input(
-            cast(Union[str, os.PathLike, IO[Any]], data), 'r'
-        ) as file:
-            if mode == 'yaml':
-                yaml = import_yaml('YAML file loading')
-                parsed = yaml.load(file, Loader=yaml.SafeLoader)
-            elif mode == 'json':
-                import json
-
-                parsed = json.load(file)
-            else:
-                raise KeyError(mode)
-            return _validate_mapping_payload(parsed, data)
-    raise TypeError(f'Expected path, dict, or Config; got {type(data)!r}')
-
-
-def _validate_mapping_payload(parsed: Any, source: Any) -> Dict[str, Any]:
-    """
-    Ensure a parsed config payload is a mapping (an empty file parses to None
-    and means "no overrides"). Anything else -- e.g. a bare scalar from a
-    mistyped path or a malformed file -- gets a clear error instead of an
-    obscure downstream ``AttributeError``/``KeyError``.
-    """
-    if parsed is None:
-        return {}
-    if isinstance(parsed, Mapping):
-        return dict(parsed)
-    raise TypeError(
-        f'config source {source!r} did not parse to a mapping '
-        f'(got {type(parsed).__name__})'
-    )
+    return coerce_mapping_source(data, mode=mode)
 
 
 def _validate_class_aliases(
@@ -719,14 +642,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 )
             )
         for key, value in new_values.items():
-            template = self._default.get(key)
-            if isinstance(template, Value) and not isinstance(value, Value):
-                new_template = template.copy()
-                new_template.value = value
-                self._default[key] = new_template
-            else:
-                self._default[key] = value
+            # Constructor values define this instance's reset baseline, but
+            # the baseline and current value must never alias.  Keep metadata
+            # in ``_default`` and runtime values in ``_data``.
+            self._set_default_value(key, value)
             self[key] = value
+        if new_values:
+            self._index_subconfigs()
 
         self._enable_setattr = True
         if not _dont_call_post_init:
@@ -758,15 +680,52 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         cls_default = getattr(self, '__default__', None)
         if cls_default:
             self._default.update(_materialize_default_items(cls_default))
-        # Seed _data with raw values; wrap_subconfig_defaults may overwrite
-        # entries for SubConfig nodes with realized config instances.
-        self._data = {
-            key: (value.value if isinstance(value, Value) else value)
-            for key, value in self._default.items()
-        }
-        from kwconf.subconfig import wrap_subconfig_defaults
+        self._reset_data_from_defaults(
+            _dont_call_post_init=_dont_call_post_init
+        )
 
-        wrap_subconfig_defaults(self, _dont_call_post_init=_dont_call_post_init)
+    def _set_default_value(self, key: str, value: Any) -> None:
+        """Replace one instance baseline while preserving field metadata."""
+        template = self._default[key]
+        if isinstance(value, Value):
+            new_template = value.clone_default()
+        elif isinstance(template, Value):
+            new_template = copy.deepcopy(template)
+            new_template.value = copy.deepcopy(value)
+        else:
+            new_template = copy.deepcopy(value)
+        self._default[key] = new_template
+        self._alias_map = None
+
+    def _index_subconfigs(self) -> None:
+        """Index SubConfig metadata without mutating default templates."""
+        from kwconf.subconfig import SubConfig
+
+        self._subconfig_meta = {
+            key: template
+            for key, template in self._default.items()
+            if isinstance(template, SubConfig)
+        }
+        self._has_subconfigs = bool(self._subconfig_meta)
+
+    def _reset_data_from_defaults(
+        self, *, _dont_call_post_init: bool = False
+    ) -> None:
+        """Reset current values from the independent instance baseline."""
+        from kwconf.subconfig import SubConfig
+
+        self._index_subconfigs()
+        values: Dict[str, Any] = {}
+        for key, template in self._default.items():
+            if isinstance(template, SubConfig):
+                values[key] = template.instantiate(
+                    _dont_call_post_init=_dont_call_post_init
+                )
+            elif isinstance(template, Value):
+                values[key] = copy.deepcopy(template.value)
+            else:
+                values[key] = copy.deepcopy(template)
+        self._data = values
 
     @classmethod
     def validate(cls) -> None:
@@ -1339,25 +1298,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Args:
             default (dict): new defaults
         """
-        import copy
-
         default = dict(self._normalize_alias_dict(default))
-
-        # The user might pass raw values in which case we should keep the
-        # metadata from the existing wrapped Values and just update the .value
-        # attribute.
-        for k, v in default.items():
-            old_default = self._default[k]
-            if isinstance(old_default, Value) and not isinstance(v, Value):
-                new_default = copy.deepcopy(old_default)
-                new_default.value = v
-                default[k] = new_default
-
-        self._default.update(default)
-        self._alias_map = None
-        from kwconf.subconfig import wrap_subconfig_defaults
-
-        wrap_subconfig_defaults(self, _dont_call_post_init=True)
+        for key, value in default.items():
+            if key not in self._default:
+                raise KeyError(key)
+            self._set_default_value(key, value)
+        if default:
+            self._index_subconfigs()
 
     def load(
         self,
@@ -1493,11 +1440,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if default:
             self.update_defaults(default)
 
-        _default = copy.deepcopy(self._default)
         user_config = _coerce_data_to_dict(data, mode=mode)
 
         # check for unknown values
-        indirect_keys = set(user_config) - set(_default)
+        indirect_keys = set(user_config) - set(self._default)
         if indirect_keys:
             # Check if unknown keys are aliases
             unknown_keys = []
@@ -1533,12 +1479,11 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         localns = _subcfg_mod.resolve_localns(localns, stacklevel)  # type: ignore
         if _reset:
-            self._data = {key: value.value for key, value in _default.items()}
+            self._reset_data_from_defaults(
+                _dont_call_post_init=_dont_call_post_init
+            )
         pending_updates = None
         if getattr(self, '_has_subconfigs', False):
-            _subcfg_mod.ensure_subconfigs_instantiated(
-                self, _dont_call_post_init=_dont_call_post_init
-            )
             if argv:
                 pending_updates = _subcfg_mod.coerce_data_updates(
                     user_config, cfg=self
@@ -1560,13 +1505,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 for key, value in user_config.items():
                     self._setitem(key, value, validation_mode=validate)
 
-        if isinstance(argv, str):
-            # allow specification using the actual command line arg string
-            import shlex
-
-            argv = shlex.split(os.path.expandvars(argv))
-
         if argv or iterable(argv):
+            from kwconf._ingest import coerce_argv
+
+            argv = coerce_argv(argv, expand_vars=True)
             next_stacklevel = None if stacklevel is None else stacklevel + 1
             read_argv_kwargs: Dict[str, Any] = {
                 'special_options': special_options,
@@ -1581,8 +1523,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 'validation_mode': validate,
                 'structural_validation': structural_validation,
             }
-            if iterable(argv):
-                read_argv_kwargs['argv'] = argv
+            read_argv_kwargs['argv'] = argv
             self._read_argv(**read_argv_kwargs)
 
         if not _dont_call_post_init:
@@ -1774,10 +1715,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if special_options is None:
             special_options = getattr(self, '__special_options__', False)
 
-        if isinstance(argv, str):
-            import shlex
+        if argv is not None:
+            from kwconf._ingest import coerce_argv
 
-            argv = shlex.split(argv)
+            argv = coerce_argv(argv)
 
         # TODO: warn about any unused flags
         has_subconfigs = getattr(self, '_has_subconfigs', False)
@@ -1785,10 +1726,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             # Start from a bare root parser. The multipass helper realizes the
             # selected tree and extends this exact parser once; pre-populating it
             # with the default variant would create duplicate/stale arguments.
-            from kwconf import argparse_ext
             from kwconf import subconfig as _subcfg_mod
 
-            parser = argparse_ext.ExtendedArgumentParser(**self._parserkw())
+            parser = self._new_argparse_parser()
             localns = _subcfg_mod.resolve_localns(localns, stacklevel)
             parser, argv = _subcfg_mod.expand_multipass_parser(
                 self,
@@ -1887,45 +1827,6 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 explicit_keys = {
                     key for key in explicit_keys if key not in subconfig_paths
                 }
-        # First load argparse defaults in first
-        _not_given = set(ns.keys()) - explicit_keys
-        # print('_not_given = {!r}'.format(_not_given))
-        # print('parser._explicitly_given = {!r}'.format(parser._explicitly_given))
-        for key in _not_given:
-            if key not in self.__default__:
-                # Skip dotted selector keys or unknown argparse entries.
-                continue
-            # NOTE: this implementation is messy and needs refactor.
-            # Currently the .__default__ .default, ._default, and ._data
-            # attributes can all be Value objects, but this gets messy when the
-            # "default" constructor argument is used. We should refactor so
-            # _data and _default only store the raw current values,
-            # post-casting.
-            #
-            # Read the PER-INSTANCE default, never the class template:
-            # class-template .value reads materialize (and cache) any
-            # default_factory on the shared template, and storing that object
-            # into _data would alias every instance -- and the class itself --
-            # to one mutable default.
-            template = self._default.get(key, None)
-            if template is None:
-                template = self.__default__[key].clone_default()
-            default_value = (
-                template.value if isinstance(template, Value) else template
-            )
-            # BOUNDARY (design.md §4): for keys not supplied on argv, use the
-            # kwconf default verbatim rather than ``ns[key]``. argparse coerces
-            # *string* defaults through the action's ``type=`` (e.g. a default
-            # of ``'512'`` would come back as ``512``); the Python-boundary
-            # default must stay WYSIWYG.
-            if self._data.get(key, default_value) != default_value:
-                # Preserve any data/default overrides already applied before
-                # argparse defaults are merged in.
-                continue
-            # Trusted default (not runtime-supplied): skip validation so a
-            # WYSIWYG default never warns about itself.
-            self._setitem(key, default_value, validate=False)
-
         # Then load config file defaults. Merge (not reset): a full load()
         # would first restore every key to its default, wiping data= values
         # for keys the file never mentions.
@@ -2893,6 +2794,96 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         return argparse_mod.Namespace(**dict(self))
 
+    def _new_argparse_parser(self) -> argparse_mod.ArgumentParser:
+        """Create the canonical parser shell for this config."""
+        from kwconf import argparse_ext
+
+        return argparse_ext.ExtendedArgumentParser(**self._parserkw())
+
+    def _argument_key_order(self) -> list[str]:
+        """Return declaration order with explicit positions first."""
+        positions = {
+            key: template.position
+            for key, template in self._default.items()
+            if isinstance(template, Value) and template.position is not None
+        }
+        duplicates = [
+            position
+            for position, count in Counter(positions.values()).items()
+            if count > 1
+        ]
+        if duplicates:
+            conflicts = {
+                position: sorted(
+                    key for key, value in positions.items() if value == position
+                )
+                for position in duplicates
+            }
+            raise ValueError(
+                f'Multiple fields declare the same CLI position: {conflicts}'
+            )
+        if not positions:
+            return list(self._data)
+        ordered = sorted(positions, key=positions.__getitem__)
+        seen = set(ordered)
+        ordered.extend(key for key in self._data if key not in seen)
+        return ordered
+
+    def _add_special_options(self, parser: argparse_mod.ArgumentParser) -> None:
+        """Add kwconf's opt-in config/dump control options."""
+        from kwconf import argparse_ext
+
+        special_group = parser.add_argument_group('kwconf options')
+        special_group.add_argument(
+            '--config',
+            default=None,
+            help=codeblock(
+                """
+                special kwconf option that accepts the path to an on-disk
+                configuration file and loads it into this {!r} object.
+                """
+            ).format(self.__class__.__name__),
+        )
+        special_group.add_argument(
+            '--dump',
+            default=None,
+            help='If specified, dump this config to disk.',
+        )
+        special_group.add_argument(
+            '--dumps',
+            action=argparse_ext.BooleanFlagOrKeyValAction,
+            help='If specified, dump this config to stdout.',
+        )
+
+    def _populate_argparse_parser(
+        self,
+        parser: argparse_mod.ArgumentParser,
+        *,
+        special_options: bool = False,
+        fuzzy_hyphens: Optional[int] = None,
+    ) -> argparse_mod.ArgumentParser:
+        """Populate a parser from the current values and instance schema."""
+        own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
+        effective_fuzzy = (
+            own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
+        )
+        setattr(parser, '_kwconf_fuzzy_hyphens', bool(effective_fuzzy))
+
+        from kwconf import value as value_mod
+
+        for key in self._argument_key_order():
+            value_mod._value_add_argument_to_parser(
+                self._data[key],
+                self._default[key],
+                self,
+                parser,
+                key,
+                fuzzy_hyphens=effective_fuzzy,
+            )
+        if special_options:
+            self._add_special_options(parser)
+        return parser
+
     def argparse(
         self,
         parser: Optional[argparse_mod.ArgumentParser] = None,
@@ -3060,8 +3051,6 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> self._read_argv(argv=['--arg5'])
             >>> self._read_argv(argv=[])
         """
-        from kwconf import argparse_ext
-
         if getattr(self, '_has_subconfigs', False):
             if allow_subconfig_overrides:
                 raise RuntimeError(
@@ -3079,104 +3068,12 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             return parser
 
         if parser is None:
-            parserkw = self._parserkw()
-            # parser = argparse.ArgumentParser(**parserkw)
-            parser = argparse_ext.ExtendedArgumentParser(**parserkw)
-
-        # Use custom action used to mark which values were explicitly set on
-        # the commandline
-        parser._explicitly_given = set()  # type: ignore
-
-        _positions = {
-            k: v.position
-            for k, v in self._default.items()
-            if v.position is not None
-        }
-        if _positions:
-            dup_positions = [
-                p for p, n in Counter(_positions.values()).items() if n > 1
-            ]
-            if dup_positions:
-                # Build a {position: [keys...]} report so the error names the
-                # offending fields rather than just saying a clash exists.
-                conflicts = {
-                    pos: sorted(k for k, p in _positions.items() if p == pos)
-                    for pos in dup_positions
-                }
-                raise ValueError(
-                    f'Multiple fields declare the same CLI position: {conflicts}'
-                )
-            # Positional fields are added to the parser in ``position`` order;
-            # remaining fields keep declaration order after them. argparse
-            # binds positionals by the order they are added, so this is what
-            # makes ``position=`` actually control positional binding.
-            _keyorder = sorted(_positions, key=_positions.__getitem__)
-            _seen = set(_keyorder)
-            _keyorder = _keyorder + [k for k in self._data if k not in _seen]
-        else:
-            _keyorder = list(self._data.keys())
-
-        own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
-        # ``fuzzy_hyphens`` (when not None) is the effective setting propagated
-        # from a parent modal at resolve time: effective = own, but forced off
-        # if an ancestor opted out. Threaded per-call, so a Config reused under
-        # two different modals resolves independently (no class mutation).
-        FUZZY_HYPHENS = (
-            own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
+            parser = self._new_argparse_parser()
+        return self._populate_argparse_parser(
+            parser,
+            special_options=special_options,
+            fuzzy_hyphens=fuzzy_hyphens,
         )
-        # Let the parser honor this setting on the input side too, so
-        # __fuzzy_hyphens__ = False actually stops "_"/"-" being interchangeable
-        # (not just stops advertising the hyphen variant in --help).
-        # Use setattr: ``parser`` is typed as a stdlib ArgumentParser, which
-        # does not declare this kwconf-private attribute (read back via getattr
-        # in argparse_ext). setattr keeps both mypy and ty quiet.
-        setattr(parser, '_kwconf_fuzzy_hyphens', bool(FUZZY_HYPHENS))
-
-        # Need to clean this up, metadata probably isn't necessary.
-        for key in _keyorder:
-            value = self._data[key]
-            # Use the metadata in the Value class to enhance argparse
-            _value = self._default[key]
-            from kwconf import value as value_mod
-
-            value_mod._value_add_argument_to_parser(
-                value, _value, self, parser, key, fuzzy_hyphens=FUZZY_HYPHENS
-            )
-
-        if special_options:
-            special_group = parser.add_argument_group('kwconf options')
-            special_group.add_argument(
-                '--config',
-                default=None,
-                help=codeblock(
-                    """
-                special kwconf option that accepts the path to a on-disk
-                configuration file, and loads that into this {!r} object.
-                """
-                ).format(self.__class__.__name__),
-            )
-
-            special_group.add_argument(
-                '--dump',
-                default=None,
-                help=codeblock(
-                    """
-                If specified, dump this config to disk.
-                """
-                ).format(self.__class__.__name__),
-            )
-
-            special_group.add_argument(
-                '--dumps',
-                action=argparse_ext.BooleanFlagOrKeyValAction,
-                help=codeblock(
-                    """
-                    If specified, dump this config stdout
-                    """
-                ).format(self.__class__.__name__),
-            )
-
-        return parser
 
 
 __notes__ = """
