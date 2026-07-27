@@ -28,7 +28,7 @@ import inspect
 import typing
 import warnings
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from kwconf.config import Config, ConfigValidationError
 from kwconf.value import _Value as Value
@@ -209,7 +209,9 @@ class SubConfig(Value):
         import copy
 
         if inspect.isclass(self.value):
-            instance = self.value(_dont_call_post_init=_dont_call_post_init)
+            # __init__ validated that a class value is a Config subclass.
+            subconfig_cls = cast(type[Config], self.value)
+            instance = subconfig_cls(_dont_call_post_init=_dont_call_post_init)
         else:
             instance = copy.deepcopy(self.value)
             if _dont_call_post_init and hasattr(instance, '_enable_setattr'):
@@ -349,8 +351,10 @@ def _iter_flat_update_sources(mapping, cfg=None):
 
 def _find_selector_update_conflicts(cfg, updates):
     """Find duplicate semantic SubConfig selector declarations."""
-    explicit = {}
-    direct = {}
+    # path -> [(spelling parts, value), ...]
+    _Records = dict[str, list[tuple[tuple[str, ...], Any]]]
+    explicit: _Records = {}
+    direct: _Records = {}
     for flat_key, value, source_parts in _iter_flat_update_sources(
         updates, cfg=cfg
     ):
@@ -450,7 +454,7 @@ def extract_selector_overrides(
     if stacklevel is not None:
         localns = resolve_localns(localns, stacklevel)
     working = list(argv)
-    collected = {}
+    collected: dict[str, Any] = {}
     while True:
         parser = _selector_bootstrap_parser(cfg)
         try:

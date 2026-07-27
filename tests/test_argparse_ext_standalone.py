@@ -80,6 +80,59 @@ def test_deepest_subparser_skips_leading_options():
     )
 
 
+def test_separator_before_subcommand_is_consumed():
+    """
+    ``--`` in front of a subcommand belongs to the parser, not to the
+    subparsers action. CPython only learned this in 3.13 (and late 3.12 patch
+    releases), so kwconf backports it to keep every supported version honest.
+    """
+    from kwconf.argparse_ext import ExtendedArgumentParser
+
+    parser = ExtendedArgumentParser(prog='app')
+    sub = parser.add_subparsers(dest='command')
+    child = sub.add_parser('run')
+    child.add_argument('--opt')
+
+    ns = parser.parse_args(['--', 'run', '--opt=1'])
+    assert vars(ns) == {'command': 'run', 'opt': '1'}
+
+    # The separator is only stripped once: it still shields later tokens that
+    # the subcommand itself wants to read positionally.
+    child.add_argument('rest', nargs='*')
+    ns = parser.parse_args(['--', 'run', '--', '--opt=1'])
+    assert ns.opt is None
+    assert ns.rest == ['--opt=1']
+
+
+def test_unrecognized_arguments_respect_exit_on_error():
+    """
+    With ``exit_on_error=False`` an unrecognized argument must surface as an
+    ``ArgumentError`` rather than a ``SystemExit`` (stdlib behavior from 3.13
+    onward, backported for older versions).
+    """
+    import argparse
+
+    import pytest
+
+    from kwconf.argparse_ext import (
+        CompatArgumentParser,
+        ExtendedArgumentParser,
+    )
+
+    for cls in (CompatArgumentParser, ExtendedArgumentParser):
+        parser = cls(prog='app', exit_on_error=False)
+        parser.add_argument('--known')
+        with pytest.raises(argparse.ArgumentError) as ctx:
+            parser.parse_args(['--unknown=1'])
+        assert 'unrecognized arguments: --unknown=1' in str(ctx.value)
+
+    # The default policy still exits.
+    parser = ExtendedArgumentParser(prog='app')
+    parser.add_argument('--known')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['--unknown=1'])
+
+
 def test_fuzzy_hyphens_independent_of_allow_abbrev():
     """
     Underscore/hyphen interchange (fuzzy hyphens) is an exact-normalized

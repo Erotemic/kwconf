@@ -397,10 +397,13 @@ def format_annotation(annotation: Any) -> str:
         return '...'
     # Parameterized generics (list[int]) and unions (int | None) have a
     # __name__ that names only the origin ('list', 'Union'), which is
-    # useless in a mismatch message. Only trust __name__ for plain classes.
-    if isinstance(annotation, type):
-        return cast(str, annotation.__name__)
+    # useless in a mismatch message. Only trust __name__ for plain classes,
+    # i.e. those without an origin -- note that ``list[int]`` is itself an
+    # instance of ``type`` before Python 3.11, so the origin is what
+    # distinguishes the two cases on every supported version.
     origin = typing.get_origin(annotation)
+    if origin is None and isinstance(annotation, type):
+        return cast(str, annotation.__name__)
     if origin in {Union, types.UnionType}:
         return ' | '.join(
             format_annotation(arg) for arg in typing.get_args(annotation)

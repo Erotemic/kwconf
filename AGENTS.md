@@ -12,6 +12,11 @@ Notes for agents working in this repo.
   * `uv run ruff format <paths>`
   * `uv run ruff check <paths>`
 * Use the Ruff formatter. Ruff is configured in `pyproject.toml`.
+* `uv run` uses the newest interpreter; CI covers the whole supported range
+  (3.10+). Do not assume the newest stdlib behavior when touching argparse or
+  typing introspection -- both drift between releases, including patch
+  releases. Where the code must adapt, probe the interpreter's actual behavior
+  rather than gating on `sys.version_info`.
 * CLI entrypoints are argcomplete-aware. Preserve `# PYTHON_ARGCOMPLETE_OK`.
 * Add a `CHANGELOG.md` entry for user-visible or behavior-relevant changes when
   one is not already present. The changelog uses Keep a Changelog sections.

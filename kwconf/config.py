@@ -1036,9 +1036,11 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         numpy: Any
         try:
-            import numpy
+            import numpy as _numpy
         except ImportError:
-            numpy = None  # type: ignore
+            numpy = None
+        else:
+            numpy = _numpy
         data = self.asdict()
 
         BUILTIN_SCALAR_TYPES = (str, int, float, complex)
@@ -1909,8 +1911,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
             # Use a local Dumper subclass; registering the representer on the
             # shared yaml.SafeDumper would change the behavior of every other
-            # safe_dump call in the process.
-            class _OrderedDumper(yaml.SafeDumper): ...
+            # safe_dump call in the process. (The ignore is because PyYAML is
+            # imported lazily, so the base is a local name to a checker.)
+            class _OrderedDumper(yaml.SafeDumper):  # type: ignore[name-defined]
+                ...
 
             def order_rep(dumper, data):
                 return dumper.represent_mapping(

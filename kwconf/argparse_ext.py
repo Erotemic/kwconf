@@ -8,7 +8,17 @@ import argparse
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Sequence, Tuple
+from functools import lru_cache
+from gettext import gettext as _
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    List,
+    Sequence,
+    Tuple,
+    cast,
+)
 
 _FALSY: set[str] = {'0', 'false', 'f', 'no', ''}
 KWCONF_NORICH: bool = os.environ.get('KWCONF_NORICH', '').lower() not in _FALSY
@@ -50,21 +60,27 @@ _RawDescriptionHelpFormatter = argparse.RawDescriptionHelpFormatter
 _ArgumentDefaultsHelpFormatter = argparse.ArgumentDefaultsHelpFormatter
 """
 
-_RawDescriptionHelpFormatter: type[argparse.HelpFormatter]
-_ArgumentDefaultsHelpFormatter: type[argparse.HelpFormatter]
-
-try:
-    if KWCONF_NORICH:
-        raise ImportError
-    import rich_argparse
-except ImportError:
+if TYPE_CHECKING:
+    # The rich variants are drop-in replacements for these, so let the type
+    # checkers reason about the stdlib formatters as real base classes rather
+    # than about a variable that holds one of two classes.
     _RawDescriptionHelpFormatter = argparse.RawDescriptionHelpFormatter
     _ArgumentDefaultsHelpFormatter = argparse.ArgumentDefaultsHelpFormatter
 else:
-    _RawDescriptionHelpFormatter = rich_argparse.RawDescriptionRichHelpFormatter
-    _ArgumentDefaultsHelpFormatter = (
-        rich_argparse.ArgumentDefaultsRichHelpFormatter
-    )
+    try:
+        if KWCONF_NORICH:
+            raise ImportError
+        import rich_argparse
+    except ImportError:
+        _RawDescriptionHelpFormatter = argparse.RawDescriptionHelpFormatter
+        _ArgumentDefaultsHelpFormatter = argparse.ArgumentDefaultsHelpFormatter
+    else:
+        _RawDescriptionHelpFormatter = (
+            rich_argparse.RawDescriptionRichHelpFormatter
+        )
+        _ArgumentDefaultsHelpFormatter = (
+            rich_argparse.ArgumentDefaultsRichHelpFormatter
+        )
 
 
 _EXPLICIT_KEYS_ATTR = '__kwconf_explicit_keys__'
@@ -141,10 +157,12 @@ def parse_known_result(
     else:
         args = [os.fspath(a) if isinstance(a, os.PathLike) else a for a in args]
     _reset_parser_provenance(parser)
+    # Bind the result to its own name: reusing ``namespace`` would widen it to
+    # ``Namespace | None`` for the rest of the function.
     if namespace is None:
-        namespace, unknown_args = parser.parse_known_args(args=args)
+        parsed, unknown_args = parser.parse_known_args(args=args)
     else:
-        namespace, unknown_args = parser.parse_known_args(
+        parsed, unknown_args = parser.parse_known_args(
             args=args,
             namespace=namespace,
         )
@@ -153,7 +171,7 @@ def parse_known_result(
         selected_parser = parser
     else:
         selected_parser = deepest(args) or parser
-    namespace_explicit = getattr(namespace, _EXPLICIT_KEYS_ATTR, None)
+    namespace_explicit = getattr(parsed, _EXPLICIT_KEYS_ATTR, None)
     if namespace_explicit is not None:
         # Plain argparse parsers do not expose a public way to recover the
         # selected child parser. Kwconf actions therefore leave a parse-local
@@ -164,10 +182,10 @@ def parse_known_result(
             selected_parser, '_kwconf_last_explicit_keys', None
         )
         explicit_keys = frozenset(parser_explicit or ())
-    if hasattr(namespace, _EXPLICIT_KEYS_ATTR):
-        delattr(namespace, _EXPLICIT_KEYS_ATTR)
+    if hasattr(parsed, _EXPLICIT_KEYS_ATTR):
+        delattr(parsed, _EXPLICIT_KEYS_ATTR)
     return ParseResult(
-        namespace=namespace,
+        namespace=parsed,
         unknown_args=unknown_args,
         parser=parser,
         selected_parser=selected_parser,
@@ -534,10 +552,10 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
         mark_explicit(parser, namespace, self.dest)
 
 
-class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
-    _RawDescriptionHelpFormatter,  # type: ignore[misc,valid-type]
+class RawDescriptionDefaultsHelpFormatter(
+    _RawDescriptionHelpFormatter,
     _ArgumentDefaultsHelpFormatter,
-):  # type: ignore[misc,valid-type]
+):
     group_name_formatter: type = str  # revert rich-argparse title change
 
     # Set these classvars to prevent rich_argparase from interpreting user data
@@ -653,12 +671,73 @@ class RawDescriptionDefaultsHelpFormatter(  # type: ignore[misc,valid-type]
             return Text(', ').join(parts)
 
 
-class CompatArgumentParser(argparse.ArgumentParser):
-    """Compatibility name retained for callers on supported Python.
-
-    Kwconf now requires Python 3.10+, where ``exit_on_error`` is public.  The
-    old vendored ``parse_known_args`` implementation is intentionally gone.
+@lru_cache(maxsize=None)
+def _stdlib_consumes_separator_before_subcommand() -> bool:
     """
+    Whether the running argparse consumes an end-of-options separator that
+    appears immediately before a subcommand.
+
+    CPython learned to drop that ``--`` in 3.13 (and in later 3.12 patch
+    releases); older supported interpreters hand it to the subparsers action
+    as the command name, which fails with an "invalid choice" error.  Probing
+    the real behavior keeps the backport in :class:`CompatArgumentParser`
+    inert wherever the stdlib already does the right thing.
+    """
+    probe = argparse.ArgumentParser(
+        prog='probe', add_help=False, exit_on_error=False
+    )
+    probe.add_subparsers().add_parser('cmd')
+    try:
+        probe.parse_known_args(['--', 'cmd'])
+    except (argparse.ArgumentError, SystemExit):
+        return False
+    return True
+
+
+class CompatArgumentParser(argparse.ArgumentParser):
+    """Levels argparse behavior across the supported Python versions.
+
+    Kwconf requires Python 3.10+, where ``exit_on_error`` is public, so the
+    old vendored ``parse_known_args`` implementation is intentionally gone.
+    What remains are two stdlib behaviors that only newer interpreters have,
+    backported here so a kwconf parser answers the same way everywhere:
+
+    * ``--`` immediately before a subcommand is consumed by argparse rather
+      than passed to the subparsers action as the command name.
+    * ``parse_args`` raises :class:`argparse.ArgumentError` for unrecognized
+      arguments when ``exit_on_error`` is False, rather than exiting.
+    """
+
+    def parse_args(  # type: ignore[override]
+        self,
+        args: Iterable[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> argparse.Namespace:
+        # Mirrors argparse's own parse_args, but honors exit_on_error for
+        # unrecognized arguments the way newer interpreters do.
+        parsed, extras = self.parse_known_args(args, namespace)
+        assert parsed is not None
+        if extras:
+            msg = _('unrecognized arguments: %s') % ' '.join(extras)
+            if self.exit_on_error:
+                self.error(msg)
+            else:
+                raise argparse.ArgumentError(None, msg)
+        return parsed
+
+    def _get_values(
+        self, action: argparse.Action, arg_strings: List[str]
+    ) -> Any:
+        # By the time argparse resolves values it has already decided which
+        # tokens belong to the subcommand, so this is the one place where the
+        # separator can be dropped without second-guessing that match.
+        if (
+            action.nargs == argparse.PARSER
+            and arg_strings[:1] == ['--']
+            and not _stdlib_consumes_separator_before_subcommand()
+        ):
+            arg_strings = arg_strings[1:]
+        return super()._get_values(action, arg_strings)  # type: ignore
 
 
 def _normalize_fuzzy_option_tokens(
@@ -840,24 +919,26 @@ class ExtendedArgumentParser(CompatArgumentParser):
         return parse_result(self, args=args, namespace=namespace)
 
     # Public parse that applies the "print leaf help on error" policy.
-    def parse_args(
+    # (The ignore is for argparse's overloaded signature, which binds the
+    # return type to the namespace the caller passes in.)
+    def parse_args(  # type: ignore[override]
         self,
-        args: Sequence[str] | None = None,
+        args: Iterable[str] | None = None,
         namespace: argparse.Namespace | None = None,
-    ) -> argparse.Namespace | None:  # type: ignore
-        if args is None:
-            args = sys.argv[1:]
+    ) -> argparse.Namespace:
+        # Materialize the tokens: they are walked a second time below to find
+        # the subcommand whose usage should be shown.
+        argv = sys.argv[1:] if args is None else list(args)
         # If the caller wants default behavior, defer entirely to argparse.
-        if not self.exit_on_error:  # type: ignore[attr-defined,has-type]
-            return super().parse_args(args, namespace=namespace)
+        if not self.exit_on_error:
+            return super().parse_args(argv, namespace=namespace)
 
         # Otherwise, intercept errors to help for the appropriate submodal
-        # Note this will only work in 3.9+
         self.exit_on_error = False
         try:
-            return super().parse_args(args, namespace=namespace)  # type: ignore
+            return super().parse_args(argv, namespace=namespace)
         except argparse.ArgumentError as ex:
-            deepest = self._deepest_subparser_for_argv(args)
+            deepest = self._deepest_subparser_for_argv(argv)
             if deepest is None:
                 deepest = self
             # deepest.print_usage()
@@ -869,7 +950,7 @@ class ExtendedArgumentParser(CompatArgumentParser):
             # policy on later parses (error() raising SystemExit included).
             self.exit_on_error = True
         # This code is unreachable because error() raises SystemExit
-        return super().parse_args(args, namespace=namespace)  # type: ignore
+        return super().parse_args(argv, namespace=namespace)
 
     # Helper: find deepest subparser matched by tokens.
     def _deepest_subparser_for_argv(
@@ -913,7 +994,11 @@ class ExtendedArgumentParser(CompatArgumentParser):
             ):
                 break
             if i < len(tokens) and tokens[i] in sub_action.choices:
-                parser = sub_action.choices[tokens[i]]
+                # A subparsers action maps every choice to a parser; argparse
+                # types the mapping loosely because Action.choices is generic.
+                parser = cast(
+                    argparse.ArgumentParser, sub_action.choices[tokens[i]]
+                )
                 deepest = parser
                 i += 1
             else:

@@ -13,6 +13,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   `MANIFEST.in`). `[tool.uv].exclude-newer` is pinned to a full timestamp so
   `uv run` no longer dirties `uv.lock`. Misc pyproject cleanups (duplicate
   build requirement, stale xcookie version, codespell path).
+* `kwconf/` is clean under both `ty` (0.0.64) and `mypy --check-untyped-defs`.
+  The help-formatter bases are now resolved under `TYPE_CHECKING`, so the
+  optional rich-argparse swap no longer defeats base-class inference, and the
+  remaining suppressions are narrowed to argparse's overloaded `parse_args`
+  and PyYAML's lazy import.
 
 ### Added
 * `Config.cli(..., validate=...)` and `Config.load(..., validate=...)` now
@@ -76,6 +81,15 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* Argparse behavior is now identical on every supported Python. An end-of-options
+  separator in front of a subcommand (``prog -- run --opt=1``) is consumed by the
+  parser instead of being offered to the subparsers action as the command name,
+  and ``parse_args`` raises ``argparse.ArgumentError`` for unrecognized arguments
+  when ``exit_on_error=False`` instead of exiting. CPython only gained both in
+  3.13 (and late 3.12 patch releases); ``CompatArgumentParser`` backports them.
+* ``format_annotation`` no longer renders parameterized generics as their bare
+  origin (``list[int]`` printed as ``list``) on Python 3.10, where
+  ``list[int]`` is itself an instance of ``type``.
 * Audited and simplified the staged SubConfig parser path. Selector choices are
   now applied exactly once, selecting the already-realized class is idempotent,
   and lower-precedence ``data=`` / ``--config`` values are no longer erased by
