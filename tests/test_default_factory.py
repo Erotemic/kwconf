@@ -1,9 +1,9 @@
 # mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 """
 ``default_factory`` is deferred: the factory is never invoked at
-class-definition time. It is materialized lazily on first read of a template's
-``.value`` (and cached there), while each Config instance receives its own
-fresh value via ``clone_default``.
+class-definition time. It is materialized lazily on first read of a class
+template's ``.value`` (and cached there), while Config construction and reset
+invoke the recipe directly for a fresh runtime value.
 """
 
 import copy
@@ -104,3 +104,24 @@ def test_cli_instance_mutation_does_not_corrupt_class_default():
     d1['items'].append('MUT')
     assert D.cli(argv=[])['items'] == ['a']
     assert D.__default__['items'].value == ['a']
+
+
+def test_noncopyable_factory_output_is_supported_and_recreated_on_reset():
+    import threading
+
+    calls = []
+
+    def make_lock():
+        calls.append(1)
+        return threading.Lock()
+
+    class C(kwconf.Config):
+        lock = kwconf.Value(default_factory=make_lock)
+
+    cfg = C()
+    first = cfg.lock
+    assert len(calls) == 1
+
+    cfg.load(argv=False)
+    assert len(calls) == 2
+    assert cfg.lock is not first

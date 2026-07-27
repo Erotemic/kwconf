@@ -84,7 +84,7 @@ def test_subconfig_templates_are_schema_only():
     assert class_template.value is Inner
 
 
-def test_default_factory_materializes_once_per_instance_baseline():
+def test_default_factory_recipe_is_reinvoked_on_reset():
     calls = []
 
     def make_payload():
@@ -98,13 +98,51 @@ def test_default_factory_materializes_once_per_instance_baseline():
     assert calls == [0]
     cfg.payload.append('runtime')
 
-    # Reset from the instance baseline; do not rerun a potentially stateful
-    # factory and do not expose the baseline object itself.
+    # A factory is a recipe, not a materialized reset snapshot. Reset invokes
+    # it again, matching dataclasses.default_factory construction semantics.
     cfg.load(argv=False)
-    assert calls == [0]
+    assert calls == [0, 1]
     assert cfg.payload == []
-    assert cfg.payload is not cfg._default['payload'].value
 
     other = Demo()
-    assert calls == [0, 1]
+    assert calls == [0, 1, 2]
     assert other.payload == []
+
+
+def test_noncopyable_constructor_value_is_accepted():
+    class NonCopyable:
+        def __copy__(self):
+            raise TypeError('cannot copy')
+
+        def __deepcopy__(self, memo):
+            raise TypeError('cannot deepcopy')
+
+    class Demo(kwconf.Config):
+        payload = None
+
+    supplied = NonCopyable()
+    cfg = Demo(payload=supplied)
+    assert cfg.payload is supplied
+
+    # When no independent copy can be made, reset preserves the valid Python
+    # object by identity instead of rejecting it during construction.
+    cfg.load(argv=False)
+    assert cfg.payload is supplied
+
+
+def test_noncopyable_update_default_is_accepted():
+    class NonCopyable:
+        def __copy__(self):
+            raise TypeError('cannot copy')
+
+        def __deepcopy__(self, memo):
+            raise TypeError('cannot deepcopy')
+
+    class Demo(kwconf.Config):
+        payload = None
+
+    supplied = NonCopyable()
+    cfg = Demo()
+    cfg.update_defaults({'payload': supplied})
+    cfg.load(argv=False)
+    assert cfg.payload is supplied

@@ -70,7 +70,6 @@ Note:
 from __future__ import annotations
 
 import argparse as argparse_mod
-import copy
 import inspect
 import itertools as it
 import pprint
@@ -109,7 +108,7 @@ from kwconf.annotations import (
 from kwconf.annotations import (
     value_matches_annotation as _value_matches_annotation,
 )
-from kwconf.util.util_misc import import_ubelt, iterable
+from kwconf.util.util_misc import copy_value, import_ubelt, iterable
 from kwconf.util.util_repr import NiceRepr
 from kwconf.util.util_text import codeblock, indent, paragraph
 from kwconf.util.util_yaml import import_yaml
@@ -284,7 +283,7 @@ def _materialize_default_items(defaults: Mapping[str, Any]) -> Dict[str, Any]:
         if isinstance(value, Value):
             realized[key] = value.clone_default()
         else:
-            realized[key] = copy.deepcopy(value)
+            realized[key] = copy_value(value)
     return realized
 
 
@@ -690,10 +689,12 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if isinstance(value, Value):
             new_template = value.clone_default()
         elif isinstance(template, Value):
-            new_template = copy.deepcopy(template)
-            new_template.value = copy.deepcopy(value)
+            new_template = template.copy()
+            # An explicit baseline replaces the declared factory recipe.
+            new_template.default_factory = None
+            new_template.value = copy_value(value)
         else:
-            new_template = copy.deepcopy(value)
+            new_template = copy_value(value)
         self._default[key] = new_template
         self._alias_map = None
 
@@ -722,9 +723,14 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     _dont_call_post_init=_dont_call_post_init
                 )
             elif isinstance(template, Value):
-                values[key] = copy.deepcopy(template.value)
+                if template.default_factory is not None:
+                    # Treat the factory as the reset recipe, just as dataclass
+                    # construction invokes default_factory for each instance.
+                    values[key] = template.default_factory()
+                else:
+                    values[key] = copy_value(template.value)
             else:
-                values[key] = copy.deepcopy(template)
+                values[key] = copy_value(template)
         self._data = values
 
     @classmethod

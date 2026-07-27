@@ -202,11 +202,17 @@ class MetaModalCLI(type):
         inherited_subconfigs = []
         inherited_commands = set()
         inherited_attrs = set()
+        # Apply local attribute shadowing before command-name deduplication. If
+        # a subclass hides the left-base declaration, a same-named command from
+        # a later base must remain eligible under normal MRO semantics.
+        shadowed_attrs = {k for k in namespace if not k.startswith('_')}
         for base in bases:
             for spec in getattr(base, '__subconfigs__', []):
                 metadata = _copy_registration_spec(spec)
                 command = _registration_command(metadata)
                 attribute_name = metadata.get('_attribute_name')
+                if attribute_name in shadowed_attrs:
+                    continue
                 if (
                     attribute_name is not None
                     and attribute_name in inherited_attrs
@@ -224,13 +230,6 @@ class MetaModalCLI(type):
         # that same attribute, even when the replacement is not itself a
         # command. This follows ordinary Python attribute semantics and gives
         # subclasses a simple way to replace or intentionally hide commands.
-        shadowed_attrs = {k for k in namespace if not k.startswith('_')}
-        inherited_subconfigs = [
-            metadata
-            for metadata in inherited_subconfigs
-            if metadata.get('_attribute_name') not in shadowed_attrs
-        ]
-
         # Discover only supported Config / ModalCLI subclasses implicitly.
         # Other public helper classes remain ordinary class attributes. They
         # can still be registered explicitly through ModalValue, __subconfigs__,

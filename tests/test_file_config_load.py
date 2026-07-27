@@ -211,6 +211,38 @@ def test_missing_config_path_raises_file_not_found():
             C.cli(data=bad, argv=False)
 
 
+def test_inline_json_values_can_look_like_paths():
+    import pytest
+
+    class C(kwconf.Config):
+        path = ''
+
+    cfg = C.cli(data='{"path": "foo/bar"}', argv=False)
+    assert cfg.path == 'foo/bar'
+
+    with pytest.raises(TypeError):
+        C.cli(data='["foo/bar"]', argv=False)
+
+
+def test_inline_yaml_values_can_look_like_paths():
+    mark_requires_yaml()
+
+    class C(kwconf.Config):
+        path = ''
+        url = ''
+        name = ''
+
+    cfg = C.cli(
+        data='path: foo/bar\nurl: https://example.com/api\nname: config.json',
+        argv=False,
+    )
+    assert cfg.asdict() == {
+        'path': 'foo/bar',
+        'url': 'https://example.com/api',
+        'name': 'config.json',
+    }
+
+
 def test_empty_config_file_is_no_overrides(tmp_path):
     mark_requires_yaml()
 

@@ -4,6 +4,7 @@ Misc small helpers vendored to keep kwconf dependency-free at runtime.
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 
@@ -42,6 +43,26 @@ class _NoParamType:
 
 
 NoParam = _NoParamType()
+
+
+def copy_value(value: Any) -> Any:
+    """Copy a Python-boundary value when its protocols permit it.
+
+    Config values are allowed to be arbitrary Python objects. Prefer a deep
+    copy so mutable reset baselines remain independent, fall back to a shallow
+    copy when the object does not support deepcopy, and finally preserve the
+    original object by identity when it is not copyable at all.
+
+    ``default_factory`` outputs do not use this helper: their recipe is invoked
+    afresh instead, matching :mod:`dataclasses`.
+    """
+    try:
+        return copy.deepcopy(value)
+    except Exception:
+        try:
+            return copy.copy(value)
+        except Exception:
+            return value
 
 
 def iterable(obj: Any, strok: bool = False) -> bool:

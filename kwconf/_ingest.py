@@ -9,12 +9,26 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 from collections.abc import Mapping
 from typing import IO, Any, cast
 
 from kwconf.util.util_fileio import looks_like_config_path, open_text_input
 from kwconf.util.util_yaml import import_yaml
+
+
+_YAML_MAPPING_LINE = re.compile(r'(?m)^\s*[^#\s][^:\n]*:\s')
+
+
+def _could_be_inline_yaml_mapping(text: str) -> bool:
+    """Return whether text has syntax worth attempting as inline YAML."""
+    stripped = text.lstrip()
+    return (
+        '\n' in text
+        or stripped.startswith(('{', '['))
+        or _YAML_MAPPING_LINE.search(text) is not None
+    )
 
 
 def coerce_mapping_source(data: Any, mode: str | None = None) -> dict[str, Any]:
@@ -33,11 +47,20 @@ def coerce_mapping_source(data: Any, mode: str | None = None) -> dict[str, Any]:
         return dict(data)
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
         if isinstance(data, str) and not os.path.exists(data):
-            if looks_like_config_path(data):
-                raise FileNotFoundError(f'config file does not exist: {data!r}')
             try:
                 parsed = json.loads(data)
             except (json.JSONDecodeError, TypeError):
+                # Preserve the useful missing-file diagnostic for an
+                # unambiguously bare path without requiring the optional YAML
+                # dependency. Mapping-shaped text must be parsed before the
+                # path heuristic because values commonly contain slashes or
+                # config-looking suffixes.
+                if looks_like_config_path(
+                    data
+                ) and not _could_be_inline_yaml_mapping(data):
+                    raise FileNotFoundError(
+                        f'config file does not exist: {data!r}'
+                    )
                 import io
 
                 yaml = import_yaml('YAML parsing')

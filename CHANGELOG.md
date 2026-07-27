@@ -81,6 +81,22 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   command class is missing a description.
 
 ### Fixed
+* ``Value(default_factory=...)`` now follows dataclass-style recipe semantics:
+  construction and reset invoke the factory directly instead of deep-copying a
+  materialized result. Non-copyable factory outputs such as thread locks are
+  therefore supported. Explicit Python values use best-effort copy isolation
+  and remain valid by identity when they cannot be copied at all.
+* ``@dataconf`` no longer copies user or generated object-protocol dunders such
+  as a dataclass ``__init__`` over ``Config`` internals. Decorating a standard
+  library dataclass now produces a correctly initialized kwconf object while
+  preserving supported kwconf hooks and ordinary helper methods.
+* Inline JSON/YAML mappings are parsed before applying the missing-path
+  diagnostic, so mapping values may contain paths, URLs, or names ending in
+  ``.json`` / ``.yaml`` without being mistaken for filenames.
+* Modal multiple inheritance now applies subclass attribute shadowing before
+  deduplicating command names. Hiding a left-base binding therefore reveals an
+  otherwise equivalent command supplied by a later base instead of dropping
+  the command entirely.
 * Argparse behavior is now identical on every supported Python. An end-of-options
   separator in front of a subcommand (``prog -- run --opt=1``) is consumed by the
   parser instead of being offered to the subparsers action as the command name,

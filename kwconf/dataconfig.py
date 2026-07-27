@@ -125,6 +125,26 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
         '__orig_bases__',
     }
 
+    # Config owns Python's construction, attribute, mapping, representation,
+    # comparison, copying, and pickle protocols. Copying generated dataclass
+    # methods such as ``__init__`` over those implementations creates objects
+    # whose kwconf state was never initialized. Preserve only dunders that are
+    # declarative kwconf hooks; ordinary helpers (including single-underscore
+    # methods) are still copied below.
+    _PRESERVED_DUNDERS = {
+        '__allow_newattr__',
+        '__command__',
+        '__default__',
+        '__description__',
+        '__epilog__',
+        '__fuzzy_hyphens__',
+        '__post_init__',
+        '__prog__',
+        '__special_options__',
+        '__validate__',
+        '__version__',
+    }
+
     namespace: Dict[str, Any] = {
         '__doc__': getattr(cls, '__doc__', None),
         '__qualname__': cls.__qualname__,
@@ -145,6 +165,9 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
         for k, v in vars(klass).items():
             if k in _INTERNAL:
                 continue
+            if k.startswith('__') and k.endswith('__'):
+                if k not in _PRESERVED_DUNDERS:
+                    continue
             # Preserve everything else, including underscore-prefixed hooks
             # and helpers; the metaclass reads the dunders it cares about.
             namespace[k] = v

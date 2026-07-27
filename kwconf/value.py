@@ -5,7 +5,7 @@ import re
 from collections.abc import MutableMapping, Sequence
 from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 
-from kwconf.util.util_misc import NoParam
+from kwconf.util.util_misc import NoParam, copy_value
 from kwconf.util.util_repr import NiceRepr
 
 long_prefix_pat: re.Pattern[str] = re.compile('--[^-].*')
@@ -392,15 +392,14 @@ class _Value(NiceRepr):
         """
         Create a fresh per-instance copy of this value template.
         """
-        import copy
-
         new = self.copy()
         if self.default_factory is not None:
-            # BOUNDARY (design.md §4): factory output is a Python-boundary value
-            # and is stored verbatim, consistent with __init__.
-            new.value = self.default_factory()
+            # Retain the recipe, not a materialized result. Config reset invokes
+            # the factory afresh, matching dataclasses.default_factory and
+            # avoiding an undocumented deepcopy requirement on its output.
+            new._value = _FACTORY_UNSET
         else:
-            new.value = copy.deepcopy(self.value)
+            new.value = copy_value(self.value)
         return new
 
     @property

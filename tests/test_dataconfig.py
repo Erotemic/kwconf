@@ -234,3 +234,31 @@ def test_dataconf_inherits_fields_from_plain_base():
         val: int = 2
 
     assert Child2()['val'] == 2
+
+
+def test_dataconf_does_not_replace_config_init_with_user_init():
+    calls = []
+
+    @kwconf.dataconf
+    class C:
+        x: int = 1
+
+        def __init__(self, x=99):
+            calls.append(x)
+
+    cfg = C(x=3)
+    assert cfg.asdict() == {'x': 3}
+    assert calls == []
+
+
+def test_dataconf_accepts_a_stdlib_dataclass_input():
+    import dataclasses
+
+    @kwconf.dataconf
+    @dataclasses.dataclass
+    class C:
+        x: int = 1
+        label: str = 'demo'
+
+    cfg = C(2, label='changed')
+    assert cfg.asdict() == {'x': 2, 'label': 'changed'}

@@ -671,6 +671,30 @@ def test_modal_command_attribute_override_and_shadow():
     assert Hidden.run is Helper
 
 
+def test_modal_shadowing_reveals_later_base_command():
+    class LeftCommand(kwconf.Config):
+        __command__ = 'run'
+
+    class RightCommand(kwconf.Config):
+        __command__ = 'run'
+
+    class Left(kwconf.ModalCLI):
+        left_binding = LeftCommand
+
+    class Right(kwconf.ModalCLI):
+        right_binding = RightCommand
+
+    class Helper:
+        pass
+
+    class Child(Left, Right):
+        left_binding = Helper
+
+    assert len(Child.__subconfigs__) == 1
+    assert Child.__subconfigs__[0]['cls'] is RightCommand
+    assert Child.__subconfigs__[0]['command'] == 'run'
+
+
 def test_modal_ignores_unrelated_public_helper_classes():
     """Only Config and ModalCLI subclasses are discovered implicitly."""
 
