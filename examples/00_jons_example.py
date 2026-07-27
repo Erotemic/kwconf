@@ -87,10 +87,26 @@ DEMO:
         python examples/00_jons_example.py --tags_yaml_nargs "[1,2,3]" "[4,5,6]"
         python examples/00_jons_example.py --tags_yaml_nargs="[1,2,3]"
 
+        python ~/code/kwconf/examples/00_jons_example.py -vvv
+        RESOLVED CONFIG:
+        verbose : int = 3
+
+        python ~/code/kwconf/examples/00_jons_example.py -vvvvvvv
+        RESOLVED CONFIG:
+        verbose : int = 7
+
+        python ~/code/kwconf/examples/00_jons_example.py -vvvvv --verbose=2
+        RESOLVED CONFIG:
+        verbose : int = 2
+
+        python ~/code/kwconf/examples/00_jons_example.py -vvvvv -v 1
+        RESOLVED CONFIG:
+        verbose : int = 1
 """
 
 import _bootstrap  # noqa: F401
-from _bootstrap import print_resolved_config, print_rule, rich_print
+from _bootstrap import print_resolved_config, print_rule
+
 import kwconf
 
 
@@ -145,6 +161,10 @@ class JonsConfig(kwconf.Config):
     showall = kwconf.Flag(help='print work without doing it')
 
     dry_run = kwconf.Flag(False, help='print work without doing it')
+
+    verbose: int = kwconf.Value(
+        False, isflag='counter', short_alias='v', help='verbosity level'
+    )
 
 
 def main(argv=None):
