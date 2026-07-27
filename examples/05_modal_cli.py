@@ -48,7 +48,6 @@ from _bootstrap import (
 
 import kwconf as kw
 
-
 # Fuzzy hyphens are on by default, so none of these set __fuzzy_hyphens__.
 
 

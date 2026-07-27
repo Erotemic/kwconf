@@ -1,6 +1,7 @@
 from __future__ import annotations
+
 import dataclasses
-from typing import Any, dataclass_transform
+from typing import dataclass_transform
 
 
 # Control 1: stdlib dataclass (ty definitely supports this)

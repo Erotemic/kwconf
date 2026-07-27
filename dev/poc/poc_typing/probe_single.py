@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, TypeVar, dataclass_transform
+from typing import Any, TypeVar, dataclass_transform
 
 T = TypeVar('T')
 
