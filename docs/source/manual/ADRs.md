@@ -14,7 +14,8 @@ short and operational.
 7. [ADR-0007 — Named parsers replace smart parsing](#adr-0007--named-parsers-replace-smart-parsing)
 8. [ADR-0008 — Nested configs are explicit](#adr-0008--nested-configs-are-explicit)
 9. [ADR-0009 — Coercion runs for string-only sources](#adr-0009--coercion-runs-for-string-only-sources)
-10. [ADR-0010 — Runtime validation defaults to warn](#adr-0010--runtime-validation-defaults-to-warn)
+10. [ADR-0010 — Runtime validation is tiered and performance-conscious](#adr-0010--runtime-validation-is-tiered-and-performance-conscious)
+11. [ADR-0011 — Declared fields define the persistence contract](#adr-0011--declared-fields-define-the-persistence-contract)
 
 ---
 
@@ -41,6 +42,9 @@ arguments.
 * Documentation and examples use `Config`.
 * New features target `Config`.
 * `kwconf.DataConfig` is outside the public API.
+* `kwconf.subconfig` publicly exports only `SubConfig`; the module's
+  loading and staged-parser helpers are implementation details even though they
+  remain available through explicit imports.
 * The `cli` / `load` / `argparse` / `dump` lifecycle lives on `Config`.
 
 ## ADR-0003 — Class attributes are the preferred schema style
@@ -124,6 +128,19 @@ Nested configs are declared with `SubConfig`. Dotted keys are update syntax.
 * Dotted overrides are an interface convenience.
 * Serialized config represents the logical nested structure.
 * Selector choices should prefer explicit registries.
+* Dynamic import policy is tri-state: field-level ``None`` inherits the
+  call-level default, while field-level True or False explicitly overrides it.
+* Applications that require a uniform prohibition should pass
+  ``allow_import=False`` and avoid field-level True overrides; explicit
+  registries remain the preferred stable interface.
+* Importable selectors and serialized class identifiers use resolvable
+  ``module.qualname.Class`` syntax, including nested classes.
+* Mapping/file sources retain their original structure until the canonical
+  SubConfig update boundary. Selector realization may expose nested schemas
+  before deferred mappings are applied; ordinary dict leaves are never
+  flattened merely because another field is a SubConfig.
+* Registry choice serialization uses exact class identity, not ``isinstance``,
+  so subclass choices round-trip to the selected implementation.
 
 ## ADR-0009 — Coercion runs for string-only sources
 
@@ -139,16 +156,101 @@ assignment, defaults, and typed YAML/JSON values are used as Python values.
 * `from_yaml` keeps the file format's native types.
 * Parsing is a boundary adapter, not a per-path field model.
 
-## ADR-0010 — Runtime validation defaults to warn
+## ADR-0010 — Runtime validation is tiered and performance-conscious
 
 **Decision**
-Validation checks user-supplied values against annotations after parsing. The
-default policy is `warn`.
+Annotation/value validation checks user-supplied values after parsing and
+defaults to `warn`. Structural source validation is opt-in through
+`cli(validate=...)` / `load(validate=...)`, or through the fully strict class
+policy `__validate__ = 'error'`. The default class `warn` policy intentionally
+does not add a structural traversal to every CLI startup.
 
 **Locks down**
 
-* `warn` accepts the value and emits `UserWarning`.
-* `error` / `True` raises `TypeError`.
-* `False` disables validation.
+* `validate=None` preserves field/class value policy and selects the lean
+  structural path.
+* Explicit `validate='warn'` checks structural input consistency, emits
+  `UserWarning`, and continues with deterministic safe precedence.
+* Explicit `validate='error'` / `True` raises `ConfigValidationError` before
+  applying structurally ambiguous input.
+* Explicit `validate=False` disables runtime validation for values ingested by
+  that call.
+* `__validate__ = 'error'` opts a class into strict structural checks; the
+  default `__validate__ = 'warn'` remains value-only.
+* The lean path is still safe: explicit `path.__class__` wins over scalar
+  selector sugar, so a SubConfig is never replaced by raw selector text.
+* Conflicts are scoped to one source. Normal precedence between defaults,
+  data/files, and argv remains intentional.
 * Field defaults are accepted as declared.
 * Unsupported annotation forms are skipped.
+* Parser-enforced constraints remain hard errors regardless of `validate`.
+* `Config.validate()` is the distinct opt-in static-schema gate for tests/CI;
+  it is never an implicit startup scan.
+
+## ADR-0011 — Declared fields define the persistence contract
+
+**Decision**
+The class declaration defines the configuration, mapping, CLI, validation, and
+serialization contract. Undeclared attributes attached to an instance are
+ordinary transient Python state, not configuration fields.
+
+**Locks down**
+
+* ``cfg.temp = value`` is allowed when ``temp`` is undeclared.
+* The attached value is accessible as a Python attribute but is absent from
+  mapping access, serialization, deserialization, CLI generation, and schema
+  validation.
+* Omitting transient attributes from serialization is intentional and does not
+  produce a warning. Declare a field when persistence or round-trip behavior is
+  required.
+* ``__allow_newattr__ = True`` is not the default attribute policy. It is an
+  experimental opt-in that promotes unknown assignments into dynamic config
+  keys stored in ``_data``.
+* Dynamic keys currently lack declared defaults, annotations, parser metadata,
+  help text, CLI options, and guaranteed symmetric deserialization.
+
+**Open direction**
+If dynamic persisted configuration is kept, formalize ``__allow_newattr__`` (or
+replace it with a more explicit name such as ``__allow_dynamic_fields__``) as a
+round-trip-capable mapping extension mode. Unknown loaded keys should then be
+accepted symmetrically, while schema-derived CLI and static validation remain
+limited to declared fields unless metadata is supplied explicitly.
+
+## ADR-0012 — State and parser ownership have one canonical path
+
+**Decision**
+Configuration state has three non-overlapping ownership layers, and all input
+and parser construction paths share canonical normalization/building helpers.
+Staged SubConfig selection is orchestration around argparse; kwconf does not
+implement an independent argv grammar.
+
+**Locks down**
+
+* Class ``__default__`` entries are schema templates. Instance operations never
+  store runtime values into them or materialize mutable defaults through them.
+* Instance ``_default`` entries are cloned metadata plus the reset baseline for
+  that instance. Constructor and ``default=`` overrides modify only this layer.
+* Instance ``_data`` contains current raw values and realized SubConfig objects.
+  Mutable values never alias the corresponding reset baseline.
+* Flat loading and nested loading use the same mapping/file/inline-text
+  normalization boundary; argv forms use the same argv normalizer.
+* ``Config.argparse``, SubConfig parser expansion, and argparse port generation
+  derive their field calls from canonical parser-building helpers.
+* Multipass selection may rebuild the known selector set, but every pass uses
+  ``argparse.parse_known_args``. Kwconf does not manually decide token/value
+  boundaries.
+* Selector realization is monotone: each bootstrap pass consumes recognized
+  selector tokens, resolved selector paths leave the pending set, and selecting
+  the class already present at a node is a no-op. There is no arbitrary nesting
+  depth limit and no repeated reconstruction of the same selected class.
+* Nested source precedence is defaults < ``data=`` < ``--config`` < explicit
+  argv. Parser realization may inspect those sources early, but it must not
+  reapply a lower-precedence source after argv or erase values when the selected
+  class is unchanged.
+* Kwconf parser actions subclass public ``argparse.Action``. The package does
+  not vendor ``parse_known_args`` or override argparse's private
+  ``_parse_optional`` / ``_get_option_tuples`` engine.
+* Private argparse access is confined to small compatibility adapters for
+  enumerating registered option strings, walking selected subparsers, and
+  importing/exporting parser structure. Those adapters require behavioral
+  tests whenever supported Python versions change.

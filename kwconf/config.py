@@ -66,41 +66,111 @@ Note:
     compatibility with existing code, but new code should prefer typed
     class variables.
 """
+
 from __future__ import annotations
 
-import copy
-import inspect
-import os
-import sys
-import pprint
-import warnings
-import itertools as it
 import argparse as argparse_mod
-from typing import IO, Dict, Iterable, Iterator, List, Optional, Tuple, Type, Union, cast
-from kwconf import _ubelt_repr_extension
-from collections.abc import Mapping as _ABCMapping
-from collections import Counter
-from kwconf.util.util_fileio import open_text_input
-from kwconf.util.util_yaml import import_yaml
-from kwconf.util.util_text import codeblock, paragraph, indent
-from kwconf.util.util_misc import iterable, import_ubelt
-from kwconf.util.util_repr import NiceRepr
-from kwconf.value import _Value as Value, _Flag as Flag
-from kwconf import diagnostics
-from collections.abc import Mapping, Sequence
-from typing import Any
+import inspect
+import itertools as it
+import os
+import pprint
+import sys
+import typing
+import warnings
 from abc import ABCMeta as _ABCMeta
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from collections.abc import Mapping as _ABCMapping
+from typing import (
+    IO,
+    Any,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    cast,
+)
+
+from kwconf import _ubelt_repr_extension, diagnostics
 from kwconf.annotations import (
     choices_from_annotation as _choices_from_annotation,
+)
+from kwconf.annotations import (
     format_annotation as _format_annotation,
+)
+from kwconf.annotations import (
     get_class_namespace_annotations as _get_class_namespace_annotations,
+)
+from kwconf.annotations import (
     runtime_type_from_annotation as _runtime_type_from_annotation,
+)
+from kwconf.annotations import (
     value_matches_annotation as _value_matches_annotation,
 )
+from kwconf.util.util_misc import copy_value, import_ubelt, iterable
+from kwconf.util.util_repr import NiceRepr
+from kwconf.util.util_text import codeblock, indent, paragraph
+from kwconf.util.util_yaml import import_yaml
+from kwconf.value import _Value as Value
+
 # from kwconf.util.util_class import class_or_instancemethod
 
 
-__all__ = ['Config', 'define']
+class ConfigValidationError(TypeError):
+    """Raised when strict runtime validation rejects supplied configuration.
+
+    This includes annotation mismatches and opt-in structural input checks,
+    such as contradictory SubConfig selector spellings. It subclasses
+    :class:`TypeError` so existing ``except TypeError`` handlers keep working,
+    while callers can catch this specific type and render a clean diagnostic.
+    """
+
+
+__all__ = ['Config', 'ConfigValidationError', 'define']
+
+
+ConfigData = (
+    Mapping[str, Any]
+    | str
+    | os.PathLike[str]
+    | IO[Any]
+    | None
+)
+
+
+def _normalize_validation_mode(mode: bool | str | None) -> bool | str | None:
+    """Normalize the public runtime-validation policy."""
+    if mode is True:
+        return 'error'
+    if mode is None or mode is False:
+        return mode
+    if isinstance(mode, str) and mode in {'warn', 'error'}:
+        return mode
+    raise ValueError(
+        f"validate must be None, False, 'warn', 'error', or True; got {mode!r}"
+    )
+
+
+def _structural_validation_mode(
+    cfg: 'Config', override: bool | str | None
+) -> bool | str:
+    """Resolve whether opt-in structural input checks should run.
+
+    The default class policy is ``'warn'`` for inexpensive per-assignment type
+    checks. It intentionally does *not* activate structural source scans. Such
+    scans run when ``validate=`` is explicitly supplied, or when a class opts
+    into the fully strict ``__validate__ = 'error'`` policy.
+    """
+    if override is not None:
+        mode = _normalize_validation_mode(override)
+        return False if mode is None else mode
+    class_mode = _normalize_validation_mode(
+        getattr(cfg, '__validate__', 'warn')
+    )
+    return 'error' if class_mode == 'error' else False
 
 
 def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
@@ -118,19 +188,21 @@ def define(default: Mapping[str, Any] = {}, name: Optional[str] = None) -> type:
     """
     import uuid
     from textwrap import dedent
+
     if name is None:
         hashid = str(uuid.uuid4()).replace('-', '_')
         name = 'Config_{}'.format(hashid)
     vals: Dict[str, Any] = {'default': default}
     code = dedent(
-        '''
+        """
         import kwconf
         class {name}(kwconf.Config):
             __default__ = default
-        '''.strip('\n').format(name=name))
+        """.strip('\n').format(name=name)
+    )
     exec(code, vals)
     cls = vals[name]
-    return cast(Type["Config"], cls)
+    return cast(Type['Config'], cls)
 
 
 def _maybe_apply_annotation_to_value(key, value, annotations):
@@ -154,72 +226,69 @@ def _maybe_apply_annotation_to_value(key, value, annotations):
     runtime_type = _runtime_type_from_annotation(annotation)
     choices = _choices_from_annotation(annotation)
 
-    # Stash the annotation on existing Value templates so post-coerce
-    # validation can consult it later. Done unconditionally (any usable
-    # annotation, not just ones we could derive a runtime type from)
-    # because validation handles unions/Literal natively.
-    if annotation is not None and not isinstance(annotation, str):
-        if isinstance(value, Value):
-            value._annotation = annotation
-        else:
-            # Will get attached after Value-wrapping below if applicable.
-            pass
-
-    if runtime_type is None and choices is None:
-        if annotation is not None and not isinstance(annotation, str) \
-                and not isinstance(value, Value):
-            # Annotation is something we don't infer type/choices from
-            # (e.g. ``int | None``) but we still want to remember it for
-            # validation. Wrap into a Value so we have somewhere to stash.
-            value = Value(value, isflag=isinstance(value, bool))
-            value._annotation = annotation
-        return value
-
-    # Apply choices from Literal[...] when the user hasn't already set them.
-    if choices is not None:
-        if isinstance(value, Value):
-            if not value.parsekw.get('choices'):
-                value = value.copy()
-                value.parsekw = dict(value.parsekw)
-                value.parsekw['choices'] = list(choices)
-        else:
-            value = Value(value, choices=list(choices),
-                          isflag=isinstance(value, bool))
-        if isinstance(value, Value):
-            value._annotation = annotation
-
-    if runtime_type is None:
-        return value
+    # A string annotation could not be resolved; there is nothing usable to
+    # stash (validation handles unions/Literal natively from real objects).
+    has_annotation = annotation is not None and not isinstance(annotation, str)
 
     if isinstance(value, Value):
-        if value.type is None:
-            value = value.copy()
-            value.type = runtime_type
-            value.parsekw = dict(value.parsekw)
-            value.parsekw['type'] = runtime_type
+        if not has_annotation:
+            return value
+        # Value templates are shared with base classes and sibling configs
+        # (subclass __default__ merging reuses the same objects), so never
+        # mutate the original: copy once, then enrich the copy.
+        value = value.copy()
+        value.parsekw = dict(value.parsekw)
         value._annotation = annotation
+        # Explicit metadata on a user-supplied Value wins over
+        # annotation-derived values.
+        if choices is not None and not value.parsekw.get('choices'):
+            value.parsekw['choices'] = list(choices)
+        if runtime_type is not None and value.type is None:
+            value.type = runtime_type
+            value.parsekw['type'] = runtime_type
         return value
-    # Set the annotation-derived runtime type as an attribute rather than
-    # passing ``type=`` to the constructor, so the Value is NOT marked as
-    # "user gave type=" (which would route coercion through the legacy smartcast
-    # path instead of the annotation-gated 'auto' default).
-    new_value = Value(value, isflag=isinstance(value, bool))
-    new_value.type = runtime_type
-    new_value.parsekw = dict(new_value.parsekw)
-    new_value.parsekw['type'] = runtime_type
+
+    if not has_annotation:
+        return value
+
+    # Wrap a plain default into a Value so we have somewhere to stash the
+    # annotation (and any derived choices) for later validation, even when
+    # no runtime type could be inferred (e.g. ``int | None``).
+    if choices is not None:
+        new_value = Value(
+            value, choices=list(choices), isflag=isinstance(value, bool)
+        )
+    else:
+        new_value = Value(value, isflag=isinstance(value, bool))
+    if runtime_type is not None:
+        # Set the annotation-derived runtime type as an attribute rather than
+        # passing ``type=`` to the constructor, so the Value is NOT marked as
+        # "user gave type=" (which would route coercion through the legacy
+        # smartcast path instead of the annotation-gated 'auto' default).
+        new_value.type = runtime_type
+        new_value.parsekw = dict(new_value.parsekw)
+        new_value.parsekw['type'] = runtime_type
     new_value._annotation = annotation
     return new_value
 
 
-def _collect_declared_config_attrs(namespace: Dict[str, Any],
-                                   annotations: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+def _collect_declared_config_attrs(
+    namespace: Dict[str, Any], annotations: Mapping[str, Any] | None = None
+) -> Dict[str, Any]:
     annotations = annotations or {}
     attr_default = {}
     for k, v in namespace.items():
         if k.startswith('_') or k == 'default':
             continue
+        if typing.get_origin(annotations.get(k)) is typing.ClassVar:
+            continue
         if isinstance(v, classmethod) or isinstance(v, staticmethod):
             continue
+        # Descriptors define class/instance behavior; they are not declarative
+        # field defaults unless explicitly wrapped in Value/SubConfig metadata.
+        if hasattr(v, '__get__') and not isinstance(v, Value):
+            if not (inspect.isclass(v) and issubclass(v, Config)):
+                continue
         if callable(v) and not (inspect.isclass(v) and issubclass(v, Config)):
             continue
         attr_default[k] = _maybe_apply_annotation_to_value(k, v, annotations)
@@ -230,57 +299,90 @@ def _materialize_default_items(defaults: Mapping[str, Any]) -> Dict[str, Any]:
     realized = {}
     for key, value in defaults.items():
         if isinstance(value, Value):
-            realized[key] = value.clone_default()
+            realized[key] = value.clone_default(
+                context=f'default for field {key!r}'
+            )
         else:
-            realized[key] = copy.deepcopy(value)
+            realized[key] = copy_value(
+                value, context=f'default for field {key!r}'
+            )
     return realized
 
 
-def _coerce_data_to_dict(data: Any, mode: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Normalize a ``data`` argument (None, dict, Config, file/path/string) into
-    a plain dict ready for Config.load.
+def _coerce_data_to_dict(
+    data: Any, mode: Optional[str] = None
+) -> Dict[str, Any]:
+    """Compatibility wrapper around the shared ingestion boundary."""
+    from kwconf._ingest import coerce_mapping_source
 
-    Supports:
+    return coerce_mapping_source(data, mode=mode)
 
-      * ``None`` -> ``{}``
-      * a :class:`Config` instance -> ``data.asdict()``
-      * a :class:`dict` -> returned as-is
-      * a file path (str / os.PathLike) or readable file -> parsed by
-        ``mode`` (auto-detected from file extension; defaults to yaml).
-      * a raw json or yaml string -> parsed in-memory.
+
+def _validate_class_aliases(
+    class_name: str, defaults: Mapping[str, Any], fuzzy_hyphens: bool
+) -> None:
+    """Reject ambiguous option and mapping names during schema validation.
+
+    Canonical field names and ``Value.alias`` spellings share one long-name
+    lookup namespace. When fuzzy hyphens are enabled, each underscore spelling
+    also claims its generated hyphen spelling. ``Value.short_alias`` spellings
+    share a separate short-option namespace. Any spelling claimed by two fields
+    would otherwise be resolved inconsistently by constructor/data lookup and
+    argparse.
+
+    This check is intentionally opt-in through :meth:`Config.validate` so
+    production CLI startup does not repeatedly scan schemas that projects have
+    already validated in their test suite or CI.
     """
-    if data is None:
-        return {}
-    if isinstance(data, Config):
-        return data.asdict()
-    if isinstance(data, dict):
-        return data
-    if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
-        if isinstance(data, str) and ('\n' in data or not os.path.exists(data)):
-            import json
-            try:
-                return json.loads(data)
-            except Exception:
-                import io
-                yaml = import_yaml('YAML parsing')
-                return yaml.load(io.StringIO(data), Loader=yaml.SafeLoader)
-        if mode is None:
-            if isinstance(data, str) and data.lower().endswith('.json'):
-                mode = 'json'
-            elif isinstance(data, os.PathLike) and os.fspath(data).lower().endswith('.json'):
-                mode = 'json'
-            else:
-                mode = 'yaml'
-        with open_text_input(cast(Union[str, os.PathLike, IO[Any]], data), 'r') as file:
-            if mode == 'yaml':
-                yaml = import_yaml('YAML file loading')
-                return yaml.load(file, Loader=yaml.SafeLoader)
-            if mode == 'json':
-                import json
-                return json.load(file)
-            raise KeyError(mode)
-    raise TypeError(f'Expected path, dict, or Config; got {type(data)!r}')
+    spelling_owner: Dict[str, str] = {}
+    spelling_source: Dict[str, str] = {}
+    short_owner: Dict[str, str] = {}
+
+    for key, value in defaults.items():
+        aliases = getattr(value, 'alias', None)
+        if aliases is None:
+            aliases = []
+        elif isinstance(aliases, str):
+            aliases = [aliases]
+
+        declared_names = [(key, 'canonical field')] + [
+            (alias, 'alias') for alias in aliases
+        ]
+        for declared_name, source_kind in declared_names:
+            accepted_names = [declared_name]
+            if fuzzy_hyphens:
+                fuzzy_name = declared_name.replace('_', '-')
+                if fuzzy_name != declared_name:
+                    accepted_names.append(fuzzy_name)
+
+            for accepted_name in accepted_names:
+                owner = spelling_owner.get(accepted_name)
+                if owner is not None and owner != key:
+                    prior_source = spelling_source[accepted_name]
+                    raise ValueError(
+                        f'Alias collision in {class_name}: spelling '
+                        f'{accepted_name!r} is claimed by fields {owner!r} '
+                        f'({prior_source}) and {key!r} ({source_kind}). '
+                        'Canonical names, aliases, and generated fuzzy-hyphen '
+                        'spellings must be unique.'
+                    )
+                spelling_owner[accepted_name] = key
+                spelling_source[accepted_name] = source_kind
+
+        short_aliases = getattr(value, 'short_alias', None)
+        if short_aliases is None:
+            short_aliases = []
+        elif isinstance(short_aliases, str):
+            short_aliases = [short_aliases]
+        for short_name in short_aliases:
+            owner = short_owner.get(short_name)
+            if owner is not None and owner != key:
+                raise ValueError(
+                    f'Alias collision in {class_name}: short option '
+                    f'{("-" + short_name)!r} is claimed by fields '
+                    f'{owner!r} and {key!r}. Short aliases must be unique.'
+                )
+            short_owner[short_name] = key
 
 
 def _normalize_class_defaults(defaults, annotations=None):
@@ -303,6 +405,7 @@ def _normalize_class_defaults(defaults, annotations=None):
         defaults = {}
     annotations = annotations or {}
     from kwconf.subconfig import SubConfig
+
     for key, value in defaults.items():
         normalized_value: Any
         if isinstance(value, SubConfig):
@@ -333,7 +436,8 @@ def _normalize_class_defaults(defaults, annotations=None):
             normalized_value = SubConfig(value)
         else:
             normalized_value = _maybe_apply_annotation_to_value(
-                key, value, annotations)
+                key, value, annotations
+            )
             if normalized_value is value:
                 if isinstance(value, bool):
                     normalized_value = Value(value, isflag=True)
@@ -362,14 +466,18 @@ class MetaConfig(_ABCMeta):
     """
 
     @staticmethod
-    def __new__(mcls: type,
-                name: str,
-                bases: Tuple[type, ...],
-                namespace: Dict[str, Any],
-                *args: Any,
-                **kwargs: Any) -> type:
+    def __new__(
+        mcls: type,
+        name: str,
+        bases: Tuple[type, ...],
+        namespace: Dict[str, Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> type:
         if diagnostics.DEBUG_META_CONFIG:
-            print(f'MetaConfig.__new__ called: {mcls=} {name=} {bases=} {namespace=} {args=} {kwargs=}')
+            print(
+                f'MetaConfig.__new__ called: {mcls=} {name=} {bases=} {namespace=} {args=} {kwargs=}'
+            )
 
         # Skip class-attr collection on Config itself (the root); all
         # subclasses (user classes) participate.
@@ -380,65 +488,82 @@ class MetaConfig(_ABCMeta):
         annotations = _get_class_namespace_annotations(namespace)
 
         if not is_root_config:
-            attr_default = _collect_declared_config_attrs(namespace, annotations)
+            attr_default = _collect_declared_config_attrs(
+                namespace, annotations
+            )
             if attr_default:
                 for key in attr_default:
                     namespace.pop(key, None)
                 cls_default = namespace.get('__default__', None) or {}
                 namespace['__default__'] = {**attr_default, **cls_default}
 
-        HANDLE_INHERITENCE = 1
-        if HANDLE_INHERITENCE:
-            # Handle inheritance, add in defaults from base classes
-            this_default = namespace.get('__default__', {})
-            if this_default is None:
-                this_default = {}
-            this_default = dict(this_default)
+        # Handle inheritance, add in defaults from base classes
+        this_default = namespace.get('__default__', {})
+        if this_default is None:
+            this_default = {}
+        this_default = dict(this_default)
 
-            inheritence_default: Dict[str, Any] = {}
-            for base in reversed(bases):
-                if hasattr(base, '__default__'):
-                    inheritence_default.update(base.__default__)  # type: ignore
-            inheritence_default.update(this_default)
-            this_default = inheritence_default
+        inheritence_default: Dict[str, Any] = {}
+        for base in reversed(bases):
+            if hasattr(base, '__default__'):
+                inheritence_default.update(base.__default__)  # type: ignore
+        inheritence_default.update(this_default)
+        this_default = inheritence_default
 
-            if not is_root_config:
-                # Reserve "__class__" for nested SubConfig selector metadata.
-                if '__class__' in this_default:
-                    raise ValueError(
-                        'The name "__class__" is reserved for nested Config meta keys'
+        if not is_root_config:
+            # Reserve "__class__" for nested SubConfig selector metadata.
+            if '__class__' in this_default:
+                raise ValueError(
+                    'The name "__class__" is reserved for nested Config meta keys'
+                )
+
+            # Warn on the common ``key = Value(...),`` trailing-comma typo.
+            for k, v in this_default.items():
+                if (
+                    isinstance(v, tuple)
+                    and len(v) == 1
+                    and isinstance(v[0], Value)
+                ):
+                    warnings.warn(
+                        paragraph(
+                            f"""
+                        It looks like you have a trailing comma in your
+                        {name} Config.  The variable {k!r} has a value of
+                        {v!r}, which is a Tuple[Value]. Typically it should be
+                        a Value.
+                        """
+                        ),
+                        UserWarning,
                     )
 
-                # Warn on the common ``key = Value(...),`` trailing-comma typo.
-                for k, v in this_default.items():
-                    if isinstance(v, tuple) and len(v) == 1 and isinstance(v[0], Value):
-                        warnings.warn(paragraph(
-                            f'''
-                            It looks like you have a trailing comma in your
-                            {name} Config.  The variable {k!r} has a value of
-                            {v!r}, which is a Tuple[Value]. Typically it should be
-                            a Value.
-                            '''), UserWarning)
-
-                this_default = _normalize_class_defaults(
-                    this_default, annotations)
-            namespace['__default__'] = this_default
+            this_default = _normalize_class_defaults(this_default, annotations)
+        namespace['__default__'] = this_default
 
         if diagnostics.DEBUG_META_CONFIG:
-            print('FINAL namespace = {}'.format(pprint.pformat(vars(namespace))))
+            print(
+                'FINAL namespace = {}'.format(pprint.pformat(vars(namespace)))
+            )
         cls = super().__new__(mcls, name, bases, namespace, *args, **kwargs)  # type: ignore
 
+        # Schema validation is deliberately opt-in via ``Config.validate``.
+        # Class construction is on every process startup, while a project's
+        # schemas are normally static and can be checked once in tests / CI.
+
         # Modify the __init__ docstring to surface the valid keys to help().
-        if getattr(cls, '__init__', None) is not None and cls.__init__.__doc__ == '__autogenerateme__':
+        if (
+            getattr(cls, '__init__', None) is not None
+            and cls.__init__.__doc__ == '__autogenerateme__'
+        ):
             valid_keys = list(cls.__default__.keys())
             cls.__init__.__doc__ = codeblock(
-                f'''
+                f"""
                 Valid options: {valid_keys}
 
                 Args:
                     *args: positional arguments mapped onto declared fields.
                     **kwargs: keyword arguments for any declared field.
-                ''')
+                """
+            )
         return cls
 
 
@@ -459,11 +584,17 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     methods after construction.
 
     An instance behaves like both a dictionary (``config['key']``) and a
-    namespace (``config.key``). New keys cannot be added by default; opt in
-    with ``__allow_newattr__ = True`` on the class.
+    namespace (``config.key``). Declared fields form the configuration,
+    mapping, CLI, and serialization contract. Assigning an undeclared Python
+    attribute stores ordinary transient instance state; it is intentionally
+    absent from mapping access and serialization. ``__allow_newattr__ = True``
+    is an experimental escape hatch that instead promotes unknown assignments
+    into dynamic configuration keys; those keys do not have declared parser,
+    annotation, default, or CLI metadata.
 
     Key methods:
 
+        * :meth:`validate` - check static schema invariants in tests / CI.
         * :meth:`cli` - construct a CLI-aware instance from argv.
         * :meth:`load` - update the instance from a file, dict, or argv.
         * :meth:`argparse` - build an :class:`argparse.ArgumentParser`.
@@ -489,11 +620,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         >>> config2 = MyConfig(option2='baz')
         >>> assert config2.option2 == 'baz'
     """
+
     # Note: class definitions are allowed to use raw literals; the metaclass
     # normalizes them to Value/SubConfig instances at creation time.
     __default__: Dict[str, Any] = {}
     __description__: Optional[str] = None
     __epilog__: Optional[str] = None
+    __validate__: bool | str = 'warn'
     # __allow_newattr__ = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -501,29 +634,59 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # Internal flag used by the cli/load lifecycle to defer __post_init__.
         _dont_call_post_init = kwargs.pop('_dont_call_post_init', False)
 
+        num_args = len(args)
+        num_fields = len(self.__default__)
+        if num_args > num_fields:
+            field_word = 'argument' if num_fields == 1 else 'arguments'
+            raise TypeError(
+                f'{type(self).__qualname__}() accepts at most {num_fields} '
+                f'positional {field_word}; got {num_args}'
+            )
+
         # Shared per-instance state setup (builds _default, seeds _data,
         # and instantiates SubConfig nodes).
         self._init_state(_dont_call_post_init=_dont_call_post_init)
 
-        argkeys = list(self._default.keys())[0:len(args)]
-        new_values = dict(zip(argkeys, args))
-        kwargs = self._normalize_alias_dict(kwargs)
-        new_values.update(kwargs)
-        unknown_args: Dict[str, Any] = {
-            k: v for k, v in new_values.items() if k not in self._default}
-        if unknown_args:
-            raise ValueError((
-                "Unknown Arguments: {}. Expected arguments are: {}"
-            ).format(unknown_args, list(self._default)))
-        for key, value in new_values.items():
-            template = self._default.get(key)
-            if isinstance(template, Value) and not isinstance(value, Value):
-                new_template = template.copy()
-                new_template.value = value
-                self._default[key] = new_template
+        # Bind only the supplied positional fields, then normalize keyword
+        # aliases in the same pass that checks for duplicate / unknown inputs.
+        # This avoids materializing the complete field-name list or making a
+        # second pass over keyword arguments on the normal constructor path.
+        new_values = dict(zip(it.islice(self._default, num_args), args))
+        unknown_args: Optional[Dict[str, Any]] = None
+        alias_map = None
+        for raw_key, value in kwargs.items():
+            if raw_key in self._default:
+                key = raw_key
             else:
-                self._default[key] = value
+                if alias_map is None:
+                    alias_map = self._build_alias_map()
+                    self._alias_map = alias_map
+                key = alias_map.get(raw_key, raw_key)
+            if key in new_values:
+                raise TypeError(
+                    f'{type(self).__qualname__}() got multiple values '
+                    f'for argument {key!r}'
+                )
+            if key not in self._default:
+                if unknown_args is None:
+                    unknown_args = {}
+                unknown_args[raw_key] = value
+            else:
+                new_values[key] = value
+        if unknown_args is not None:
+            raise ValueError(
+                ('Unknown Arguments: {}. Expected arguments are: {}').format(
+                    unknown_args, list(self._default)
+                )
+            )
+        for key, value in new_values.items():
+            # Constructor values define this instance's reset baseline, but
+            # the baseline and current value must never alias.  Keep metadata
+            # in ``_default`` and runtime values in ``_data``.
+            self._set_default_value(key, value)
             self[key] = value
+        if new_values:
+            self._index_subconfigs()
 
         self._enable_setattr = True
         if not _dont_call_post_init:
@@ -552,20 +715,151 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # by ``__setitem__``, since that funnel also handles default/config
         # writes).
         self._explicit_argv_keys: frozenset = frozenset()
+        # Canonical keys supplied by any user source during the most recent
+        # load() call (data, --config, or explicit argv). Required-field
+        # enforcement relies only on this provenance, never value equality.
+        self._provided_keys: frozenset = frozenset()
         cls_default = getattr(self, '__default__', None)
         if cls_default:
             self._default.update(_materialize_default_items(cls_default))
-        # Seed _data with raw values; wrap_subconfig_defaults may overwrite
-        # entries for SubConfig nodes with realized config instances.
-        self._data = {
-            key: (value.value if isinstance(value, Value) else value)
-            for key, value in self._default.items()
+        self._reset_data_from_defaults(
+            _dont_call_post_init=_dont_call_post_init
+        )
+
+    def _set_default_value(self, key: str, value: Any) -> None:
+        """Replace one instance baseline while preserving field metadata."""
+        template = self._default[key]
+        if isinstance(value, Value):
+            new_template = value.clone_default(
+                context=f'explicit default for field {key!r}'
+            )
+        elif isinstance(template, Value):
+            new_template = template.copy()
+            # An explicit baseline replaces the declared factory recipe.
+            new_template.default_factory = None
+            new_template.value = copy_value(
+                value, context=f'explicit default for field {key!r}'
+            )
+        else:
+            new_template = copy_value(
+                value, context=f'explicit default for field {key!r}'
+            )
+        self._default[key] = new_template
+        self._alias_map = None
+
+    def _index_subconfigs(self) -> None:
+        """Index SubConfig metadata without mutating default templates."""
+        from kwconf.subconfig import SubConfig
+
+        self._subconfig_meta = {
+            key: template
+            for key, template in self._default.items()
+            if isinstance(template, SubConfig)
         }
-        from kwconf.subconfig import wrap_subconfig_defaults
-        wrap_subconfig_defaults(self, _dont_call_post_init=_dont_call_post_init)
+        self._has_subconfigs = bool(self._subconfig_meta)
+
+    def _reset_data_from_defaults(
+        self, *, _dont_call_post_init: bool = False
+    ) -> None:
+        """Reset current values from the independent instance baseline."""
+        from kwconf.subconfig import SubConfig
+
+        self._index_subconfigs()
+        values: Dict[str, Any] = {}
+        for key, template in self._default.items():
+            if isinstance(template, SubConfig):
+                values[key] = template.instantiate(
+                    _dont_call_post_init=_dont_call_post_init
+                )
+            elif isinstance(template, Value):
+                if template.default_factory is not None:
+                    # Treat the factory as the reset recipe, just as dataclass
+                    # construction invokes default_factory for each instance.
+                    values[key] = template.default_factory()
+                else:
+                    values[key] = copy_value(
+                        template.value,
+                        context=f'reset baseline for field {key!r}',
+                    )
+            else:
+                values[key] = copy_value(
+                    template, context=f'reset baseline for field {key!r}'
+                )
+        self._data = values
+
+    def _clone_from_baseline(
+        self, *, _dont_call_post_init: bool = False
+    ) -> 'Config':
+        """Clone this config's reset baseline without copying runtime values.
+
+        A ``SubConfig(instance)`` declaration treats the instance as a baseline
+        template. Concrete baseline values are deeply copied; factory-backed
+        fields invoke their recipes, so non-copyable factory outputs remain
+        supported and no runtime object is shared with the template instance.
+        """
+        clone = type(self).__new__(type(self))
+        clone._data = {}
+        clone._default = _materialize_default_items(self._default)
+        clone._subconfig_meta = {}
+        clone._has_subconfigs = False
+        clone._kwconf_post_init_done = False
+        clone._alias_map = None
+        clone._explicit_argv_keys = frozenset()
+        clone._provided_keys = frozenset()
+        clone._reset_data_from_defaults(
+            _dont_call_post_init=_dont_call_post_init
+        )
+        clone._enable_setattr = True
+        if not _dont_call_post_init:
+            clone.__post_init__()
+            clone._kwconf_post_init_done = True
+        return clone
+
+    def _validate_required_fields(self) -> None:
+        """Require explicit current-load provenance for required fields."""
+        for key, template in self._default.items():
+            if (
+                isinstance(template, Value)
+                and template.required
+                and key not in self._provided_keys
+            ):
+                raise ValueError(f'Required variable {key!r} was not given')
+        for value in self._data.values():
+            if isinstance(value, Config):
+                value._validate_required_fields()
 
     @classmethod
-    def coerce(cls, **kwargs: Any) -> "Config":
+    def validate(cls) -> None:
+        """Validate static schema invariants for this Config class.
+
+        This method is intentionally not called during class construction or
+        normal CLI invocation. Projects should call it from their test suite or
+        CI so schema mistakes are caught without adding repeated startup work to
+        every command invocation.
+
+        Currently this checks that canonical field names, long aliases, short
+        aliases, inherited fields, and generated fuzzy-hyphen spellings form
+        unambiguous lookup namespaces. Additional static schema checks may be
+        added here over time.
+
+        Raises:
+            ValueError:
+                If two fields claim the same accepted spelling.
+
+        Example:
+            >>> import kwconf
+            >>> class MyConfig(kwconf.Config):
+            ...     output_path = kwconf.Value('out.txt', alias=['output'])
+            >>> MyConfig.validate()
+        """
+        _validate_class_aliases(
+            class_name=cls.__name__,
+            defaults=cls.__default__,
+            fuzzy_hyphens=bool(getattr(cls, '__fuzzy_hyphens__', 1)),
+        )
+
+    @classmethod
+    def coerce(cls, **kwargs: Any) -> 'Config':
         """
         Construct a config, coercing string-valued arguments through each
         field's parser (the text-boundary path).
@@ -583,9 +877,19 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> assert cfg['num'] == 42
         """
         defaults = getattr(cls, '__default__', {}) or {}
+        alias_map: Dict[str, str] = {}
+        for canonical, template in defaults.items():
+            aliases = getattr(template, 'alias', None)
+            if aliases:
+                if not iterable(aliases):
+                    aliases = [aliases]
+                for alias in aliases:
+                    alias_map[alias] = canonical
+
         coerced: Dict[str, Any] = {}
         for key, value in kwargs.items():
-            template = defaults.get(key)
+            canonical = alias_map.get(key, key)
+            template = defaults.get(canonical)
             if isinstance(value, str) and isinstance(template, Value):
                 coerced[key] = template.coerce(value)
             else:
@@ -593,13 +897,14 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return cls(**coerced)
 
     @classmethod
-    def from_cli(cls, argv: Sequence[str] | str | bool | None = None,
-                 **kwargs: Any) -> "Config":
+    def from_cli(
+        cls, argv: Sequence[str] | str | bool | None = None, **kwargs: Any
+    ) -> 'Config':
         """Construct from command-line arguments (a named alias for :meth:`cli`)."""
         return cls.cli(argv=argv, **kwargs)
 
     @classmethod
-    def from_yaml(cls, path: Any, **kwargs: Any) -> "Config":
+    def from_yaml(cls, path: Any, **kwargs: Any) -> 'Config':
         """
         Construct from a YAML (or JSON) file path. Values keep the file
         format's own typing -- no extra string coercion is applied (a quoted
@@ -608,7 +913,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return cls.cli(data=path, argv=False, **kwargs)
 
     @classmethod
-    def from_env(cls, prefix: str = '', **kwargs: Any) -> "Config":
+    def from_env(cls, prefix: str = '', **kwargs: Any) -> 'Config':
         """
         Construct from environment variables.
 
@@ -627,12 +932,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> del os.environ['MYAPP_NUM']
         """
         import os
+
         fields = getattr(cls, '__default__', {}) or {}
         collected: Dict[str, Any] = {}
         for env_key, env_val in os.environ.items():
             if prefix and not env_key.startswith(prefix):
                 continue
-            field = env_key[len(prefix):].lower()
+            field = env_key[len(prefix) :].lower()
             if field in fields:
                 collected[field] = env_val
         collected.update(kwargs)
@@ -641,17 +947,18 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     @classmethod
     def cli(
         cls,
-        data: Mapping[str, Any] | str | None = None,
+        data: ConfigData = None,
         default: Mapping[str, Any] | None = None,
         argv: Sequence[str] | str | bool | None = None,
         strict: bool = True,
-        autocomplete: bool | str = "auto",
+        autocomplete: bool | str = 'auto',
         special_options: bool | None = None,
         verbose: bool | str = False,
         allow_import: bool = True,
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
+        validate: bool | str | None = None,
     ) -> Config:
         """
         Create a command-line aware config instance.
@@ -677,6 +984,16 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 if True use ``parse_args`` otherwise use ``parse_known_args``.
                 Defaults to True.
 
+            validate (bool | str | None):
+                Per-invocation runtime-validation override. ``None`` preserves
+                field/class value-validation policy and keeps structural input
+                scans off unless ``__validate__ = 'error'``. ``False`` disables
+                validation for values ingested by this call. ``'warn'`` enables
+                structural checks and warns while applying deterministic safe
+                precedence. ``'error'`` / ``True`` raises
+                :class:`ConfigValidationError`. Parser-enforced constraints
+                such as ``Literal`` choices remain hard errors regardless.
+
             autocomplete (bool | str):
                 if True try to enable argcomplete.
 
@@ -694,9 +1011,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 user-defined config via standard keys: verbose, quiet, silent.
 
             allow_import (bool):
-                If True, allow module path selectors like
-                ``pkg.mod.ClassName``
-                for SubConfig selection. Defaults to True.
+                Default policy for importable selectors such as
+                ``pkg.mod.Container.ClassName``. Individual ``SubConfig``
+                fields may explicitly enable or disable imports; fields with
+                ``allow_import=None`` inherit this value. Defaults to True.
 
             allow_subconfig_overrides (bool):
                 If True, enable multipass CLI parsing to allow SubConfig
@@ -737,11 +1055,19 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # (otherwise it would fire on the empty instance and again post-load).
         self = cls(_dont_call_post_init=True)
         next_stacklevel = None if stacklevel is None else stacklevel + 1
-        self.load(data, argv=argv, default=default, strict=strict,
-                  autocomplete=autocomplete, special_options=special_options,
-                  allow_import=allow_import,
-                  allow_subconfig_overrides=allow_subconfig_overrides,
-                  localns=localns, stacklevel=next_stacklevel)
+        self.load(
+            data,
+            argv=argv,
+            default=default,
+            strict=strict,
+            validate=validate,
+            autocomplete=autocomplete,
+            special_options=special_options,
+            allow_import=allow_import,
+            allow_subconfig_overrides=allow_subconfig_overrides,
+            localns=localns,
+            stacklevel=next_stacklevel,
+        )
 
         if isinstance(verbose, str) and verbose == 'auto':
             verbose = self.get('verbose', verbose)
@@ -761,7 +1087,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return self
 
     @classmethod
-    def demo(cls) -> "Config":
+    def demo(cls) -> 'Config':
         """
         Create an example config class for test cases
 
@@ -782,18 +1108,23 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> print(ub.urepr(self, nl=1))
         """
         import kwconf
+
         class DemoConfig(kwconf.Config):
             """
             This was generated by kwconf.Config.demo
             """
+
             __default__ = {
                 'option1': kwconf.Value('bar', help='an option'),
-                'option2': kwconf.Value((1, 2, 3), tuple, help='another option'),
+                'option2': kwconf.Value(
+                    (1, 2, 3), tuple, help='another option'
+                ),
                 'option3': None,
                 'option4': 'foo',
                 'discrete': kwconf.Value(None, choices=['a', 'b', 'c']),
                 'apath': kwconf.Value(None, type=str, help='a path'),
             }
+
         self = DemoConfig()
         return self
 
@@ -812,17 +1143,24 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> self = Config.demo()
             >>> self.__json__()
             >>> self['option1'] = {1, 2, 3}
+            >>> self['option2'] = {1: 'one', 'two': 2}
+            >>> import json
+            >>> json.dumps(self.__json__())
             >>> self['option2'] = {(1, 2): 'fds'}
-            >>> self.__json__()
+            >>> import pytest
+            >>> with pytest.raises(TypeError):
+            >>>     self.__json__()
         """
         numpy: Any
         try:
-            import numpy
+            import numpy as _numpy
         except ImportError:
-            numpy = None  # type: ignore
+            numpy = None
+        else:
+            numpy = _numpy
         data = self.asdict()
 
-        BUILTIN_SCALAR_TYPES = (str, int, float, complex)
+        BUILTIN_SCALAR_TYPES = (str, int, float)
         BUILTIN_VECTOR_TYPES = (set, frozenset, list, tuple)
 
         # The walker method should be more efficient.
@@ -838,13 +1176,25 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             elif numpy is not None and isinstance(item, numpy.ndarray):
                 walker[path] = item.tolist()
             elif isinstance(item, dict):
-                walker[path] = dict(sorted(item.items()))
+                # Preserve insertion order. Sorting is not JSON semantics and
+                # fails for otherwise valid mixed scalar keys such as 1 and
+                # "one" on Python 3.
+                ...
             else:
                 if hasattr(item, '__json__'):
-                    return item.__json__()
+                    walker[path] = item.__json__()
                 else:
                     raise TypeError(
-                        'Unknown JSON serialization for type {!r}'.format(type(item)))
+                        'Unknown JSON serialization for type {!r}'.format(
+                            type(item)
+                        )
+                    )
+
+        # Validate the complete transformed object. In particular, JSON has no
+        # representation for complex numbers or tuple-valued mapping keys.
+        import json
+
+        json.dumps(data)
         return data
 
     def __nice__(self) -> str:
@@ -856,6 +1206,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     def asdict(self) -> Dict[str, Any]:
         if getattr(self, '_has_subconfigs', False):
             from kwconf.subconfig import config_to_nested_dict
+
             return config_to_nested_dict(self, include_class=False)
         return dict(self.items())
 
@@ -899,27 +1250,23 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             self[k] = v
 
     def __delitem__(self, key: str) -> None:
-        raise TypeError(
-            'cannot delete items from a kwconf.Config'
-        )
+        raise TypeError('cannot delete items from a kwconf.Config')
 
     def pop(self, *args: Any, **kwargs: Any) -> Any:
-        raise TypeError(
-            'pop is not supported on kwconf.Config'
-        )
+        raise TypeError('pop is not supported on kwconf.Config')
 
     def popitem(self) -> Any:
-        raise TypeError(
-            'popitem is not supported on kwconf.Config'
-        )
+        raise TypeError('popitem is not supported on kwconf.Config')
 
     def clear(self) -> None:
-        raise TypeError(
-            'clear is not supported on kwconf.Config'
-        )
+        raise TypeError('clear is not supported on kwconf.Config')
 
     def __getitem__(self, key: str) -> Any:
-        if isinstance(key, str) and '.' in key and getattr(self, '_has_subconfigs', False):
+        if (
+            isinstance(key, str)
+            and '.' in key
+            and getattr(self, '_has_subconfigs', False)
+        ):
             parts = key.split('.')
             node: Any = self
             for part in parts:
@@ -948,25 +1295,41 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     def __setitem__(self, key: str, value: Any) -> None:
         self._setitem(key, value)
 
-    def _setitem(self, key: str, value: Any, validate: bool = True) -> None:
+    def _setitem(
+        self,
+        key: str,
+        value: Any,
+        validate: bool = True,
+        validation_mode: bool | str | None = None,
+    ) -> None:
         """
         Core assignment. ``validate=False`` stores a *trusted* value (the
         field's own default during the argv merge) without running annotation
         validation -- defaults are the author's baseline, checked statically,
         not runtime-supplied (design.md §4).
         """
-        if isinstance(key, str) and '.' in key and getattr(self, '_has_subconfigs', False):
+        if (
+            isinstance(key, str)
+            and '.' in key
+            and getattr(self, '_has_subconfigs', False)
+        ):
             parts = key.split('.')
             parent_key, leaf = parts[:-1], parts[-1]
             from kwconf.subconfig import _ensure_parent_node
+
             parent = _ensure_parent_node(self, parent_key)
-            parent._setitem(leaf, value, validate=validate)
+            parent._setitem(
+                leaf,
+                value,
+                validate=validate,
+                validation_mode=validation_mode,
+            )
             return
         if key not in self._data:
             key = self._normalize_alias_key(key)
             if key not in self._data:
                 if not getattr(self, '__allow_newattr__', False):
-                    raise Exception(
+                    raise KeyError(
                         'Cannot add keys to kwconf.Config objects unless '
                         'self.__allow_newattr__ is True'
                     )
@@ -982,7 +1345,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 # from_cli/from_env parse explicitly). So store the value as-is.
                 coerced = value
                 if validate:
-                    self._validate_assignment(key, coerced, template)
+                    self._validate_assignment(
+                        key, coerced, template, mode=validation_mode
+                    )
                 self._data[key] = coerced
             else:
                 # If we don't have an underlying Value object simply set the
@@ -990,25 +1355,43 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 self._data[key] = value
 
     def _validate_assignment(
-        self, key: str, value: Any, template: "Value"
+        self,
+        key: str,
+        value: Any,
+        template: 'Value',
+        mode: bool | str | None = None,
     ) -> None:
         """
         Run optional annotation-based validation on an assignment.
 
-        Mode is resolved from ``template.validate`` first, falling back to
-        the class-level ``__validate__`` attribute (default ``'warn'``).
+        An explicit ``cli(validate=...)`` / ``load(validate=...)`` mode has
+        highest precedence. Without one, mode is resolved from
+        ``template.validate`` first, falling back to the class-level
+        ``__validate__`` attribute (default ``'warn'``).
 
         Modes:
           * ``'warn'`` (default) -- emit a ``UserWarning`` on mismatch.
           * ``False`` -- no validation.
-          * ``'error'`` / ``True`` -- raise ``TypeError`` on mismatch.
+          * ``'error'`` / ``True`` -- raise :class:`ConfigValidationError`
+            (a ``TypeError`` subclass) on mismatch.
 
-        This is the single place kwconf reports annotation mismatches; the
-        ``coerce``/``auto`` parsers no longer warn on a value-level no-match
-        (they best-effort and keep the string), so there is one voice. It
-        runs on user-supplied values (constructor/data/assignment and parsed
-        argv/env), but NOT on the field's own trusted default (design.md §4),
-        so a WYSIWYG default like ``Value('512')`` never warns about itself.
+        This is the single place kwconf's *value-level* validation reports
+        annotation mismatches; the ``coerce``/``auto`` parsers no longer warn
+        on a value-level no-match (they best-effort and keep the string), so
+        there is one voice for this layer. It runs on user-supplied values
+        (constructor/data/assignment and parsed argv/env), but NOT on the
+        field's own trusted default (design.md §4), so a WYSIWYG default like
+        ``Value('512')`` never warns about itself.
+
+        Scope: ``validate`` governs this Python/programmatic-boundary layer.
+        It does NOT soften the argument parser: an annotation the parser can
+        enforce directly (notably ``Literal`` -> argparse ``choices=``) is
+        still hard-rejected on the ``argv``/``env`` boundary with a
+        ``SystemExit`` and usage message, even in ``'warn'`` mode. So for a
+        ``Literal`` field, a bad value fails hard on the CLI regardless of
+        ``validate``, while ``'warn'`` only warns on the programmatic path;
+        ``'error'`` makes the programmatic path hard too (both boundaries
+        reject, each with the exception type appropriate to its caller).
 
         Validation is skipped when the template has no associated
         annotation (e.g. fields declared without a class-level type hint).
@@ -1016,9 +1399,11 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         annotation = getattr(template, '_annotation', None)
         if annotation is None:
             return
-        mode = template.validate
         if mode is None:
-            mode = getattr(self, '__validate__', 'warn')
+            mode = template.validate
+            if mode is None:
+                mode = getattr(self, '__validate__', 'warn')
+        mode = _normalize_validation_mode(mode)
         if not mode:
             return
         if _value_matches_annotation(value, annotation):
@@ -1030,7 +1415,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if mode == 'warn':
             warnings.warn(msg, UserWarning, stacklevel=3)
         else:
-            raise TypeError(msg)
+            raise ConfigValidationError(msg)
 
     def keys(self):
         return self._data.keys()
@@ -1042,27 +1427,17 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Args:
             default (dict): new defaults
         """
-        import copy
         default = dict(self._normalize_alias_dict(default))
-
-        # The user might pass raw values in which case we should keep the
-        # metadata from the existing wrapped Values and just update the .value
-        # attribute.
-        for k, v in default.items():
-            old_default = self._default[k]
-            if isinstance(old_default, Value) and not isinstance(v, Value):
-                new_default = copy.deepcopy(old_default)
-                new_default.value = v
-                default[k] = new_default
-
-        self._default.update(default)
-        self._alias_map = None
-        from kwconf.subconfig import wrap_subconfig_defaults
-        wrap_subconfig_defaults(self, _dont_call_post_init=True)
+        for key, value in default.items():
+            if key not in self._default:
+                raise KeyError(key)
+            self._set_default_value(key, value)
+        if default:
+            self._index_subconfigs()
 
     def load(
         self,
-        data: Mapping[str, Any] | str | None = None,
+        data: ConfigData = None,
         argv: bool | Sequence[str] | str = False,
         mode: str | None = None,
         default: Mapping[str, Any] | None = None,
@@ -1074,6 +1449,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         allow_subconfig_overrides: bool = True,
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
+        _reset: bool = True,
+        validate: bool | str | None = None,
     ) -> Config:
         """
         Updates the configuration from a given data source.
@@ -1105,6 +1482,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 if True an error will be raised if the command line
                 contains unknown arguments.
 
+            validate (bool | str | None):
+                Per-load runtime-validation override. The policy matches
+                :meth:`cli`: ``None`` preserves field/class value validation;
+                ``False`` disables it for this load; ``'warn'`` enables
+                structural diagnostics; and ``'error'`` / ``True`` raises
+                :class:`ConfigValidationError` on value or structural failures.
+
             autocomplete (bool):
                 if True, attempts to use the autocomplete package if it is
                 available if reading from sys.argv. Defaults to False.
@@ -1117,9 +1501,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 ``special_options=True`` explicitly.
 
             allow_import (bool):
-                If True, allow module path selectors like
-                ``pkg.mod.ClassName``
-                for SubConfig selection. Defaults to True.
+                Default policy for importable selectors such as
+                ``pkg.mod.Container.ClassName``. Individual ``SubConfig``
+                fields may explicitly enable or disable imports; fields with
+                ``allow_import=None`` inherit this value. Defaults to True.
 
             allow_subconfig_overrides (bool):
                 If True, enable multipass CLI parsing to allow SubConfig
@@ -1171,8 +1556,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> assert 'arg2' not in config2
         """
         if diagnostics.DEBUG_CONFIG:
-            print(f'[kwconf.config.Config] Call {self.__class__.__name__}.load',
-                  f'argv={argv}, strict={strict}, special_options={special_options}')
+            print(
+                f'[kwconf.config.Config] Call {self.__class__.__name__}.load',
+                f'argv={argv}, strict={strict}, special_options={special_options}',
+            )
+
+        validate = _normalize_validation_mode(validate)
+        structural_validation = _structural_validation_mode(self, validate)
 
         if special_options is None:
             special_options = getattr(self, '__special_options__', False)
@@ -1180,46 +1570,57 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if default:
             self.update_defaults(default)
 
-        _default = copy.deepcopy(self._default)
         user_config = _coerce_data_to_dict(data, mode=mode)
 
-        # check for unknown values
-        indirect_keys = set(user_config) - set(_default)
-        if indirect_keys:
-            # Check if unknown keys are aliases
-            unknown_keys = []
-            _alias_map = self._build_alias_map()
-            for a in indirect_keys:
-                if a in _alias_map:
-                    k = _alias_map[a]
-                    user_config[k] = user_config.pop(a)  # type: ignore
-                else:
-                    # Ignore any unknown dunder keys or allow dotted keys when
-                    # subconfigs are enabled (they may be nested updates).
-                    if a.startswith('.') or a.startswith('__') and a.endswith('__'):
-                        user_config.pop(a, None)
-                    elif getattr(self, '_has_subconfigs', False) and '.' in a:
-                        continue
-                    else:
-                        unknown_keys.append(a)
-            if unknown_keys:
-                if strict:
-                    if diagnostics.DEBUG_CONFIG:
-                        print(f'[kwconf.config.Config] Error: data={data}')
-
-                    raise KeyError(f'Unknown data options {unknown_keys}')
-                else:
-                    for k in unknown_keys:
-                        user_config.pop(k, None)
-
         from kwconf import subconfig as _subcfg_mod
+
+        has_subconfigs = getattr(self, '_has_subconfigs', False)
+        if not has_subconfigs:
+            # Normalize in source order and reject canonical/alias duplicates.
+            # The previous set-based pass made the winner hash-seed dependent.
+            user_config = self._normalize_alias_dict(user_config)
+
+        # Check unknown values deterministically without destroying aliases or
+        # nested mapping shape before the SubConfig boundary sees them.
+        unknown_keys = []
+        alias_map = self._build_alias_map()
+        for raw_key in list(user_config):
+            if raw_key in self._default or raw_key in alias_map:
+                continue
+            if raw_key.startswith('.') or (
+                raw_key.startswith('__') and raw_key.endswith('__')
+            ):
+                user_config.pop(raw_key, None)
+            elif has_subconfigs and '.' in raw_key:
+                continue
+            else:
+                unknown_keys.append(raw_key)
+        if unknown_keys:
+            if strict:
+                if diagnostics.DEBUG_CONFIG:
+                    print(f'[kwconf.config.Config] Error: data={data}')
+                raise KeyError(f'Unknown data options {unknown_keys}')
+            for key in unknown_keys:
+                user_config.pop(key, None)
+
         localns = _subcfg_mod.resolve_localns(localns, stacklevel)  # type: ignore
-        self._data = {key: value.value for key, value in _default.items()}
+        if _reset:
+            self._reset_data_from_defaults(
+                _dont_call_post_init=_dont_call_post_init
+            )
+        # Provenance is scoped to this load call. Clear both snapshots even
+        # when argv=False so reusing a Config cannot satisfy required fields
+        # with stale history from a prior parse.
+        _subcfg_mod.distribute_explicit_argv_keys(self, set())
+        _subcfg_mod.distribute_provided_keys(self, set())
+        provided_keys: set[str] = set()
         pending_updates = None
-        if getattr(self, '_has_subconfigs', False):
-            _subcfg_mod.ensure_subconfigs_instantiated(self, _dont_call_post_init=_dont_call_post_init)
+        if has_subconfigs:
             if argv:
-                pending_updates = _subcfg_mod.coerce_data_updates(user_config)
+                # Preserve the original mapping shape until the canonical
+                # SubConfig update boundary. Pre-flattening here discards the
+                # provenance needed to diagnose nested-vs-dotted conflicts.
+                pending_updates = user_config
             else:
                 _subcfg_mod.apply_dot_updates(
                     self,
@@ -1227,16 +1628,22 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     allow_import=allow_import,
                     localns=localns,
                     stacklevel=None,
+                    validation_mode=validate,
+                    structural_validation=structural_validation,
+                    provided_keys=provided_keys,
                 )
         else:
-            self.update(user_config)
-
-        if isinstance(argv, str):
-            # allow specification using the actual command line arg string
-            import shlex
-            argv = shlex.split(os.path.expandvars(argv))
+            if validate is None:
+                self.update(user_config)
+            else:
+                for key, value in user_config.items():
+                    self._setitem(key, value, validation_mode=validate)
+            provided_keys.update(user_config)
 
         if argv or iterable(argv):
+            from kwconf._ingest import coerce_argv
+
+            argv = coerce_argv(argv, expand_vars=True)
             next_stacklevel = None if stacklevel is None else stacklevel + 1
             read_argv_kwargs: Dict[str, Any] = {
                 'special_options': special_options,
@@ -1248,21 +1655,17 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 'pending_updates': pending_updates,
                 'localns': localns,
                 'stacklevel': next_stacklevel,
+                'validation_mode': validate,
+                'structural_validation': structural_validation,
             }
-            if iterable(argv):
-                read_argv_kwargs['argv'] = argv
-            self._read_argv(**read_argv_kwargs)
+            read_argv_kwargs['argv'] = argv
+            provided_keys.update(self._read_argv(**read_argv_kwargs))
+
+        _subcfg_mod.distribute_provided_keys(self, provided_keys)
 
         if not _dont_call_post_init:
-            if 1:
-                # Check that all required variables are not the same as defaults
-                # Probably a way to make this check nicer
-                for k, v in self._default.items():
-                    if isinstance(v, Value):
-                        if v.required:
-                            if self[k] == v.value:
-                                raise Exception('Required variable {!r} still has default value'.format(k))
-            if getattr(self, '_has_subconfigs', False):
+            self._validate_required_fields()
+            if has_subconfigs:
                 _subcfg_mod.finalize_post_init(self)
             else:
                 self.__post_init__()
@@ -1286,7 +1689,17 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         if getattr(self, '_alias_map', None) is None:
             self._alias_map = self._build_alias_map()
-        norm = {self._alias_map.get(k, k): v for k, v in data.items()}  # type: ignore
+        norm: dict[str, Any] = {}
+        source: dict[str, str] = {}
+        for raw_key, value in data.items():
+            key = self._alias_map.get(raw_key, raw_key)  # type: ignore
+            if key in norm:
+                raise TypeError(
+                    f'Multiple input keys {source[key]!r} and {raw_key!r} '
+                    f'target configuration field {key!r}'
+                )
+            norm[key] = value
+            source[key] = raw_key
         return norm
 
     def _build_alias_map(self):
@@ -1300,9 +1713,20 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     _alias_map[a] = k
         return _alias_map
 
-    def _read_argv(self, argv=None, special_options=None, strict=False, autocomplete=False,
-                   allow_import=True, allow_subconfig_overrides=True, pending_updates=None,
-                   localns=None, stacklevel=0):
+    def _read_argv(
+        self,
+        argv=None,
+        special_options=None,
+        strict=False,
+        autocomplete=False,
+        allow_import=True,
+        allow_subconfig_overrides=True,
+        pending_updates=None,
+        localns=None,
+        stacklevel=0,
+        validation_mode=None,
+        structural_validation=False,
+    ):
         """
         Example:
             >>> import kwconf
@@ -1419,17 +1843,22 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         if special_options is None:
             special_options = getattr(self, '__special_options__', False)
 
-        if isinstance(argv, str):
-            import shlex
-            argv = shlex.split(argv)
+        if argv is not None:
+            from kwconf._ingest import coerce_argv
+
+            argv = coerce_argv(argv)
+
+        provided_keys: set[str] = set()
 
         # TODO: warn about any unused flags
-        parser = self.argparse(special_options=special_options)
         has_subconfigs = getattr(self, '_has_subconfigs', False)
         if has_subconfigs:
-            # Subconfig argv parsing is staged: realize selector overrides first,
-            # then rebuild a parser for the realized tree before parsing values.
+            # Start from a bare root parser. The multipass helper realizes the
+            # selected tree and extends this exact parser once; pre-populating it
+            # with the default variant would create duplicate/stale arguments.
             from kwconf import subconfig as _subcfg_mod
+
+            parser = self._new_argparse_parser()
             localns = _subcfg_mod.resolve_localns(localns, stacklevel)
             parser, argv = _subcfg_mod.expand_multipass_parser(
                 self,
@@ -1441,7 +1870,12 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 pending_updates=pending_updates,
                 localns=localns,
                 stacklevel=None,
+                validation_mode=validation_mode,
+                structural_validation=structural_validation,
+                provided_keys=provided_keys,
             )
+        else:
+            parser = self.argparse(special_options=special_options)
 
         if autocomplete:
             try:
@@ -1454,6 +1888,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         try:
             from kwconf import argparse_ext
+
             if strict:
                 parse_result = argparse_ext.parse_result(parser, argv)
             else:
@@ -1465,9 +1900,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             # error and not a user error, give the debugger some information
             # about the kwconf object.
             from kwconf.util import util_exception
+
             # TODO: figure out argv that triggers a value error so we can add a test
             note = codeblock(
-                f'''
+                f"""
                 Error while attempting to parse arguments in _read_argv
 
                 Context:
@@ -1476,7 +1912,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     strict = {strict!r}
                     autocomplete = {autocomplete!r}
                     self = {self!r}
-                ''')
+                """
+            )
             print(note)
             ex = util_exception.add_exception_note(ex, note)
             raise ex
@@ -1488,24 +1925,20 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             special_ns = {}
 
         if has_subconfigs:
-            # Subconfig selectors need special handling, but regular values
-            # can use the standard Config setitem logic.
+            # Selector options were already applied while realizing the parser
+            # schema. The final parse only needs to remove them from the leaf
+            # value update set; applying them again would reconstruct the same
+            # SubConfig and erase lower-precedence data/config values.
             from kwconf import subconfig as _subcfg_mod
+
             subconfig_paths = set(_subcfg_mod.find_subconfig_paths(self))
             if explicit_keys:
                 selector_keys = {
-                    k for k in explicit_keys
+                    k
+                    for k in explicit_keys
                     if k.endswith('.__class__') or k in subconfig_paths
                 }
                 if selector_keys:
-                    selector_updates = {k: ns[k] for k in selector_keys if k in ns}
-                    _subcfg_mod.apply_dot_updates(
-                        self,
-                        selector_updates,
-                        allow_import=allow_import,
-                        localns=localns,
-                        stacklevel=None,
-                    )
                     for key in selector_keys:
                         ns.pop(key, None)
                     explicit_keys = explicit_keys - selector_keys
@@ -1513,49 +1946,31 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 for key in subconfig_paths:
                     ns.pop(key, None)
                 explicit_keys = {
-                    key for key in explicit_keys
-                    if key not in subconfig_paths
+                    key for key in explicit_keys if key not in subconfig_paths
                 }
-        # First load argparse defaults in first
-        _not_given = set(ns.keys()) - explicit_keys
-        # print('_not_given = {!r}'.format(_not_given))
-        # print('parser._explicitly_given = {!r}'.format(parser._explicitly_given))
-        for key in _not_given:
-            if key not in self.__default__:
-                # Skip dotted selector keys or unknown argparse entries.
-                continue
-            # NOTE: this implementation is messy and needs refactor.
-            # Currently the .__default__ .default, ._default, and ._data
-            # attributes can all be Value objects, but this gets messy when the
-            # "default" constructor argument is used. We should refactor so
-            # _data and _default only store the raw current values,
-            # post-casting.
-            default_value = self.__default__[key].value
-            # BOUNDARY (design.md §4): for keys not supplied on argv, use the
-            # kwconf default verbatim rather than ``ns[key]``. argparse coerces
-            # *string* defaults through the action's ``type=`` (e.g. a default
-            # of ``'512'`` would come back as ``512``); the Python-boundary
-            # default must stay WYSIWYG.
-            if self._data.get(key, default_value) != default_value:
-                # Preserve any data/default overrides already applied before
-                # argparse defaults are merged in.
-                continue
-            # Trusted default (not runtime-supplied): skip validation so a
-            # WYSIWYG default never warns about itself.
-            self._setitem(key, default_value, validate=False)
-
-        # Then load config file defaults
+        # Then load config file defaults. Merge (not reset): a full load()
+        # would first restore every key to its default, wiping data= values
+        # for keys the file never mentions.
         if special_options:
             config_fpath = special_ns['config']
-            if config_fpath is not None:
-                self.load(config_fpath, argv=False,
-                          _dont_call_post_init=True)
+            if config_fpath is not None and not has_subconfigs:
+                # Nested configs apply --config during parser realization so
+                # selector-dependent arguments exist before the final parse.
+                # Flat configs still load the file here.
+                self.load(
+                    config_fpath,
+                    argv=False,
+                    _dont_call_post_init=True,
+                    _reset=False,
+                    validate=(False if has_subconfigs else validation_mode),
+                )
+                provided_keys.update(self._provided_keys)
 
         # Finally load explicit CLI values. The parser action has already
         # coerced the raw token; we just need to store it.
         for key in explicit_keys:
             if key not in special_ns:
-                self[key] = ns[key]
+                self._setitem(key, ns[key], validation_mode=validation_mode)
 
         # Record argv provenance once values (and any subconfig class swaps)
         # are finalized. Use the raw ParseResult set so the snapshot faithfully
@@ -1564,22 +1979,23 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # Only the special-options destinations (config/dump/dumps) are
         # dropped, since those are CLI plumbing rather than config fields.
         from kwconf import subconfig as _subcfg_mod
+
         recorded_keys = {
-            key for key in parse_result.explicit_keys
+            key
+            for key in parse_result.explicit_keys
             if key not in special_ns_keys
         }
         _subcfg_mod.distribute_explicit_argv_keys(self, recorded_keys)
+        provided_keys.update(recorded_keys)
 
         if special_options:
             dump_fpath = special_ns['dump']
             do_dumps = special_ns['dumps']
             if dump_fpath or do_dumps:
                 if dump_fpath:
-                    # Infer config format from the extension
+                    # Infer config format from the extension (yaml default).
                     if dump_fpath.lower().endswith('.json'):
                         mode = 'json'
-                    elif dump_fpath.lower().endswith('.yaml'):
-                        mode = 'yaml'
                     else:
                         mode = 'yaml'
                     text = self.dumps(mode=mode)
@@ -1591,14 +2007,18 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     text = self.dumps(mode='yaml')
                     print(text)
 
-                sys.exit(1)
-        return self
+                # A successful dump is a success: exit 0 so shell pipelines
+                # like ``tool --dumps > config.yaml`` do not report failure.
+                sys.exit(0)
+        return provided_keys
 
     def __post_init__(self) -> None:
-        """ overloadable function called after each load """
+        """overloadable function called after each load"""
         ...
 
-    def dump(self, stream: Optional[IO[str]] = None, mode: Optional[str] = None):
+    def dump(
+        self, stream: Optional[IO[str]] = None, mode: Optional[str] = None
+    ):
         """
         Write configuration file to a file or stream
 
@@ -1610,17 +2030,30 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             mode = 'yaml'
         if getattr(self, '_has_subconfigs', False):
             from kwconf.subconfig import config_to_nested_dict
+
             payload = config_to_nested_dict(self, include_class=True)
         else:
             payload = dict(self.items())
         if mode == 'yaml':
             yaml = import_yaml("dump(mode='yaml')")
+
+            # Use a local Dumper subclass; registering the representer on the
+            # shared yaml.SafeDumper would change the behavior of every other
+            # safe_dump call in the process. (The ignore is because PyYAML is
+            # imported lazily, so the base is a local name to a checker.)
+            class _OrderedDumper(yaml.SafeDumper):  # type: ignore[name-defined]
+                ...
+
             def order_rep(dumper, data):
-                return dumper.represent_mapping('tag:yaml.org,2002:map', data.items(), flow_style=False)
-            yaml.add_representer(dict, order_rep, Dumper=yaml.SafeDumper)
-            yaml.safe_dump(payload, stream)  # type: ignore
+                return dumper.represent_mapping(
+                    'tag:yaml.org,2002:map', data.items(), flow_style=False
+                )
+
+            _OrderedDumper.add_representer(dict, order_rep)
+            yaml.dump(payload, stream, Dumper=_OrderedDumper)  # type: ignore
         elif mode == 'json':
             import json
+
             json.dump(payload, stream, indent=4)  # type: ignore
         else:
             raise KeyError(mode)
@@ -1636,6 +2069,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             str - the configuration as a string
         """
         import io
+
         stream = io.StringIO()
         self.dump(stream=stream, mode=mode)
         return stream.getvalue()
@@ -1671,7 +2105,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # The user can opt into adding new keys on the fly:
         can_setattr = getattr(self, '__allow_newattr__', False)
         # Internal: after object initialization allow setattr on existing keys.
-        can_setattr |= (getattr(self, '_enable_setattr', False) and key in self)
+        can_setattr |= getattr(self, '_enable_setattr', False) and key in self
         if can_setattr:
             try:
                 self[key] = value
@@ -1681,9 +2115,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             self.__dict__[key] = value
 
     @classmethod
-    def parse_args(cls,
-                   args: Optional[List[str]] = None,
-                   namespace: Optional[Any] = None) -> "Config":
+    def parse_args(
+        cls, args: Optional[List[str]] = None, namespace: Optional[Any] = None
+    ) -> 'Config':
         """
         Mimics :meth:`argparse.ArgumentParser.parse_args`.
         """
@@ -1692,9 +2126,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return cls.cli(argv=args, strict=True)
 
     @classmethod
-    def parse_known_args(cls,
-                         args: Sequence[str] | None = None,
-                         namespace: Any = None) -> "Config":
+    def parse_known_args(
+        cls, args: Sequence[str] | None = None, namespace: Any = None
+    ) -> 'Config':
         """
         Mimics :meth:`argparse.ArgumentParser.parse_known_args`.
         """
@@ -1718,16 +2152,22 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         and the argument table.
 
         Resolved in order: the class attribute ``__description__`` if set,
-        otherwise the class docstring, otherwise a generic kwconf-versioned
-        fallback. The result is run through :func:`ubelt.codeblock` so that
-        triple-quoted indented strings render cleanly.
+        otherwise the class docstring, otherwise a diagnostic
+        ``no description for <module>.<qualname>`` fallback. The result is run
+        through :func:`ubelt.codeblock` so that triple-quoted indented strings
+        render cleanly.
         """
         description = getattr(self, '__description__', None)
         if description is None:
             description = self.__class__.__doc__
         if description is None:
-            import kwconf
-            description = f'argparse CLI generated by kwconf {kwconf.__version__}'
+            # Diagnostic fallback: name the class that is missing a description
+            # by its fully-qualified ``module.qualname`` so the author can see
+            # exactly where it comes from. Deterministic (no version string).
+            cls = self.__class__
+            description = (
+                f'no description for {cls.__module__}.{cls.__qualname__}'
+            )
         if description is not None:
             description = codeblock(description)
         return description
@@ -1771,6 +2211,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         Generate the kwargs for making a new argparse.ArgumentParser
         """
         from kwconf import argparse_ext
+
         parserkw = dict(
             prog=self._prog,
             description=self._description,
@@ -1809,11 +2250,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return text
 
     @classmethod
-    def _write_code(self,
-                    entries: Iterable[tuple[str, Mapping[str, Any]]],
-                    name: str = 'MyConfig',
-                    style: str = 'config',
-                    description: Optional[str] = None) -> str:
+    def _write_code(
+        self,
+        entries: Iterable[tuple[str, Mapping[str, Any]]],
+        name: str = 'MyConfig',
+        style: str = 'config',
+        description: Optional[str] = None,
+    ) -> str:
 
         if style == 'config':
             pad = ' ' * 4
@@ -1821,7 +2264,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             pad = ' ' * 8
 
         if style == 'orig':
-            raise Exception('no longer supported')
+            raise NotImplementedError("style='orig' is no longer supported")
         elif style == 'config':
             recon_str = [
                 'import kwconf',
@@ -1834,20 +2277,30 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         else:
             raise KeyError(style)
 
-        for (key, value_kw) in entries:
+        for key, value_kw in entries:
             _value_kw = dict(value_kw)
 
-            default = _value_kw.pop('default')
-            value_args = [
-                repr(default),
-            ]
-            value_args.extend(['{}={}'.format(k, repr(v)) for k, v in _value_kw.items() if v is not None])
+            value_args = []
+            if 'default' in _value_kw:
+                default = _value_kw.pop('default')
+                value_args.append(repr(default))
+            value_args.extend(
+                [
+                    '{}={}'.format(k, repr(v))
+                    for k, v in _value_kw.items()
+                    if v is not None
+                ]
+            )
             val_body = ', '.join(value_args)
 
             if style == 'orig':
-                recon_str.append("{}'{}': kwconf.Value({}),".format(pad, key, val_body))
+                recon_str.append(
+                    "{}'{}': kwconf.Value({}),".format(pad, key, val_body)
+                )
             elif style == 'config':
-                recon_str.append("{}{} = kwconf.Value({})".format(pad, key, val_body))
+                recon_str.append(
+                    '{}{} = kwconf.Value({})'.format(pad, key, val_body)
+                )
             else:
                 raise KeyError(style)
 
@@ -1858,14 +2311,6 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         else:
             raise KeyError(style)
         text = '\n'.join(recon_str)
-        if 0:
-            try:
-                import black
-                text = black.format_str(
-                    text, mode=black.Mode(string_normalization=True)
-                )
-            except Exception:
-                pass
         return text
 
     @classmethod
@@ -1905,7 +2350,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             ...
             class click_main(kwconf.Config):
                 ...
-                argparse CLI generated by kwconf ...
+                no description for builtins.click_main
                 ...
                 dataset = kwconf.Value(None, required=True, help='input dataset')
                 deployed = kwconf.Value(None, required=True, help='weights file')
@@ -1913,6 +2358,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 key2 = kwconf.Value('456', help='another key')
         """
         import click
+
         ctx = click.Context(click.Command(''))
         info_dict = click_main.to_info_dict(ctx)  # NOQA
         default = {}
@@ -1923,7 +2369,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             default[param['name']] = Value(
                 param['default'],
                 required=param['required'],
-                isflag=param['is_flag'], help=param['help'])
+                isflag=param['is_flag'],
+                help=param['help'],
+            )
         if name is None:
             name = info_dict['name'].replace('-', '_')
         config_cls = define(default, name)
@@ -1931,10 +2379,12 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return instance.port_to_config(style=style)
 
     @classmethod
-    def port_from_argparse(cls,
-                           parser: "argparse_mod.ArgumentParser",
-                           name: str = 'MyConfig',
-                           style: str = 'config') -> str:
+    def port_from_argparse(
+        cls,
+        parser: 'argparse_mod.ArgumentParser',
+        name: str = 'MyConfig',
+        style: str = 'config',
+    ) -> str:
         """
         Generate the corresponding kwconf code from an existing argparse
         instance.
@@ -2126,7 +2576,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 # kwconf takes care of help for us
                 continue
             value = Value._from_action(
-                action, actionid_to_groupkey, actionid_to_mgroupkey, pos_counter)
+                action, actionid_to_groupkey, actionid_to_mgroupkey, pos_counter
+            )
             if for_text:
                 # Use for the text reconstruction of the argparser, this is
                 # very hacky.
@@ -2136,10 +2587,12 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 entries.append((key, value))
         return entries
 
-    def port_to_argparse(self,
-                         fuzzy_hyphens: bool = False,
-                         flag_value_mode: bool = False,
-                         kwconf_primatives: bool = False) -> str:
+    def port_to_argparse(
+        self,
+        fuzzy_hyphens: bool = False,
+        flag_value_mode: bool = False,
+        kwconf_primatives: bool = False,
+    ) -> str:
         """
         Attempt to make code for a nearly-equivalent argparse object.
 
@@ -2249,25 +2702,32 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         lines = []
         if kwconf_primatives:
-            lines.append(codeblock(
-                '''
+            lines.append(
+                codeblock(
+                    """
                 import functools
                 import typing  # noqa: F401  (used by emitted annotations)
                 from kwconf import argparse_ext
                 from kwconf import coerce as _kwconf_coerce
-                '''))
-        lines.append(codeblock(
-            '''
+                """
+                )
+            )
+        lines.append(
+            codeblock(
+                """
             import argparse
             parser = argparse.ArgumentParser(
             {constructor_body}
                 formatter_class=argparse.RawDescriptionHelpFormatter,
             )
-            ''').format(
+            """
+            ).format(
                 constructor_body=constructor_body,
-            ))
+            )
+        )
 
         from kwconf import value as value_mod
+
         need_ported_bool_action = False
         need_ported_counter_action = False
         for key, _value in self._data.items():
@@ -2281,7 +2741,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     _value = value_mod._Value(_value)
 
             invocations = value_mod._value_add_argument_kw(
-                value, _value, self, key, fuzzy_hyphens=fuzzy_hyphens)
+                value, _value, self, key, fuzzy_hyphens=fuzzy_hyphens
+            )
             has_key_value_variant = 'key_value' in invocations
             for arg_type, t in invocations.items():
                 meth, args, kwargs = t
@@ -2295,22 +2756,36 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     # positional argument is omitted.
                     kwargs['default'] = value_mod.CodeRepr('argparse.SUPPRESS')
                 action = kwargs.get('action')
-                action_name = (getattr(action, '__name__', '')
-                               if not isinstance(action, str) else '')
+                action_name = (
+                    getattr(action, '__name__', '')
+                    if not isinstance(action, str)
+                    else ''
+                )
                 is_flag_action = action_name in (
-                    'BooleanFlagOrKeyValAction', 'CounterOrKeyValAction')
+                    'BooleanFlagOrKeyValAction',
+                    'CounterOrKeyValAction',
+                )
                 if not isinstance(action, str):
                     if kwconf_primatives and is_flag_action:
                         # Use the real argparse_ext actions (1-to-1; depends on kwconf).
                         kwargs['action'] = value_mod.CodeRepr(
-                            f'argparse_ext.{action_name}')
-                    elif flag_value_mode and action_name == 'BooleanFlagOrKeyValAction':
+                            f'argparse_ext.{action_name}'
+                        )
+                    elif (
+                        flag_value_mode
+                        and action_name == 'BooleanFlagOrKeyValAction'
+                    ):
                         kwargs['action'] = value_mod.CodeRepr(
-                            '_PortedBooleanFlagOrKeyValAction')
+                            '_PortedBooleanFlagOrKeyValAction'
+                        )
                         need_ported_bool_action = True
-                    elif flag_value_mode and action_name == 'CounterOrKeyValAction':
+                    elif (
+                        flag_value_mode
+                        and action_name == 'CounterOrKeyValAction'
+                    ):
                         kwargs['action'] = value_mod.CodeRepr(
-                            '_PortedCounterOrKeyValAction')
+                            '_PortedCounterOrKeyValAction'
+                        )
                         need_ported_counter_action = True
                         need_ported_bool_action = True
                     else:
@@ -2322,24 +2797,33 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     base_ann = ann if ann is not None else kwargs.get('type')
                     if kwargs.get('nargs', None) is not None:
                         from kwconf import coerce as _cm
+
                         base_ann = _cm.element_annotation(base_ann)
                     kwargs['type'] = value_mod.CodeRepr(
                         'functools.partial(_kwconf_coerce.auto, '
-                        f'annotation={_annotation_to_code(base_ann)})')
+                        f'annotation={_annotation_to_code(base_ann)})'
+                    )
                 elif kwargs.get('type', None) is not None:
                     kwargs['type'] = value_mod.CodeRepr(kwargs['type'].__name__)
                 to_pop = {k for k, v in kwargs.items() if v is None}
                 kwargs = {k: v for k, v in kwargs.items() if k not in to_pop}
-                args_body = ub.urepr(args, explicit=1, nobr=1, trailsep=0).strip().strip(',')  # type: ignore
-                kwargs_body = ub.urepr(kwargs, explicit=1, nobr=1, trailsep=0, nl=0).strip(',')  # type: ignore
+                args_body = (
+                    ub.urepr(args, explicit=1, nobr=1, trailsep=0)
+                    .strip()
+                    .strip(',')
+                )  # type: ignore
+                kwargs_body = ub.urepr(
+                    kwargs, explicit=1, nobr=1, trailsep=0, nl=0
+                ).strip(',')  # type: ignore
                 if args_body and kwargs_body:
                     args_body += ', '
                 lines.append(f'parser.{meth}({args_body}{kwargs_body})')
 
         ported_action_blocks = []
         if need_ported_bool_action:
-            ported_action_blocks.append(codeblock(
-                '''
+            ported_action_blocks.append(
+                codeblock(
+                    """
                 def _ported_smartcast(value):
                     if not isinstance(value, str):
                         return value
@@ -2390,11 +2874,14 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                             if key_is_negative:
                                 value = not value
                         setattr(namespace, self.dest, value)
-                '''))
+                """
+                )
+            )
 
         if need_ported_counter_action:
-            ported_action_blocks.append(codeblock(
-                '''
+            ported_action_blocks.append(
+                codeblock(
+                    """
                 class _PortedCounterOrKeyValAction(_PortedBooleanFlagOrKeyValAction):
                     def __call__(self, parser, namespace, values, option_string=None):
                         if option_string is None:
@@ -2412,7 +2899,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                             if key_is_negative:
                                 value = not value
                         setattr(namespace, self.dest, value)
-                '''))
+                """
+                )
+            )
         if ported_action_blocks:
             lines[1:1] = ported_action_blocks
 
@@ -2433,10 +2922,103 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         return argparse_mod.Namespace(**dict(self))
 
-    def argparse(self,
-                 parser: Optional[argparse_mod.ArgumentParser] = None,
-                 special_options: bool = False,
-                 allow_subconfig_overrides: bool = False) -> argparse_mod.ArgumentParser:
+    def _new_argparse_parser(self) -> argparse_mod.ArgumentParser:
+        """Create the canonical parser shell for this config."""
+        from kwconf import argparse_ext
+
+        return argparse_ext.ExtendedArgumentParser(**self._parserkw())
+
+    def _argument_key_order(self) -> list[str]:
+        """Return declaration order with explicit positions first."""
+        positions = {
+            key: template.position
+            for key, template in self._default.items()
+            if isinstance(template, Value) and template.position is not None
+        }
+        duplicates = [
+            position
+            for position, count in Counter(positions.values()).items()
+            if count > 1
+        ]
+        if duplicates:
+            conflicts = {
+                position: sorted(
+                    key for key, value in positions.items() if value == position
+                )
+                for position in duplicates
+            }
+            raise ValueError(
+                f'Multiple fields declare the same CLI position: {conflicts}'
+            )
+        if not positions:
+            return list(self._data)
+        ordered = sorted(positions, key=positions.__getitem__)
+        seen = set(ordered)
+        ordered.extend(key for key in self._data if key not in seen)
+        return ordered
+
+    def _add_special_options(self, parser: argparse_mod.ArgumentParser) -> None:
+        """Add kwconf's opt-in config/dump control options."""
+        from kwconf import argparse_ext
+
+        special_group = parser.add_argument_group('kwconf options')
+        special_group.add_argument(
+            '--config',
+            default=None,
+            help=codeblock(
+                """
+                special kwconf option that accepts the path to an on-disk
+                configuration file and loads it into this {!r} object.
+                """
+            ).format(self.__class__.__name__),
+        )
+        special_group.add_argument(
+            '--dump',
+            default=None,
+            help='If specified, dump this config to disk.',
+        )
+        special_group.add_argument(
+            '--dumps',
+            action=argparse_ext.BooleanFlagOrKeyValAction,
+            help='If specified, dump this config to stdout.',
+        )
+
+    def _populate_argparse_parser(
+        self,
+        parser: argparse_mod.ArgumentParser,
+        *,
+        special_options: bool = False,
+        fuzzy_hyphens: Optional[int] = None,
+    ) -> argparse_mod.ArgumentParser:
+        """Populate a parser from the current values and instance schema."""
+        own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
+        effective_fuzzy = (
+            own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
+        )
+        setattr(parser, '_kwconf_fuzzy_hyphens', bool(effective_fuzzy))
+
+        from kwconf import value as value_mod
+
+        for key in self._argument_key_order():
+            value_mod._value_add_argument_to_parser(
+                self._data[key],
+                self._default[key],
+                self,
+                parser,
+                key,
+                fuzzy_hyphens=effective_fuzzy,
+            )
+        if special_options:
+            self._add_special_options(parser)
+        return parser
+
+    def argparse(
+        self,
+        parser: Optional[argparse_mod.ArgumentParser] = None,
+        special_options: bool = False,
+        allow_subconfig_overrides: bool = False,
+        fuzzy_hyphens: Optional[int] = None,
+    ) -> argparse_mod.ArgumentParser:
         """
         construct or update an argparse.ArgumentParser CLI parser
 
@@ -2597,81 +3179,29 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> self._read_argv(argv=['--arg5'])
             >>> self._read_argv(argv=[])
         """
-        from kwconf import argparse_ext
         if getattr(self, '_has_subconfigs', False):
             if allow_subconfig_overrides:
                 raise RuntimeError(
                     'SubConfig selection overrides require multipass parsing; use cli()'
                 )
             from kwconf import subconfig as _subcfg_mod
-            flat_helper = _subcfg_mod.flat_config_from_tree(self, include_class_options=False)
-            parser = flat_helper.argparse(parser=parser, special_options=special_options)
+
+            flat_helper = _subcfg_mod.flat_config_from_tree(
+                self, include_class_options=False
+            )
+            parser = flat_helper.argparse(
+                parser=parser, special_options=special_options
+            )
             _subcfg_mod.add_forbidden_selector_args(parser, self)
             return parser
 
         if parser is None:
-            parserkw = self._parserkw()
-            # parser = argparse.ArgumentParser(**parserkw)
-            parser = argparse_ext.ExtendedArgumentParser(**parserkw)
-
-        # Use custom action used to mark which values were explicitly set on
-        # the commandline
-        parser._explicitly_given = set()  # type: ignore
-
-        _positions = {k: v.position for k, v in self._default.items()
-                      if v.position is not None}
-        if _positions:
-            dup_positions = [p for p, n in Counter(_positions.values()).items()
-                             if n > 1]
-            if dup_positions:
-                # Build a {position: [keys...]} report so the error names the
-                # offending fields rather than just saying a clash exists.
-                conflicts = {
-                    pos: sorted(k for k, p in _positions.items() if p == pos)
-                    for pos in dup_positions
-                }
-                raise ValueError(
-                    f'Multiple fields declare the same CLI position: {conflicts}')
-            # NOTE: _keyorder is currently computed but unused downstream (the
-            # build loop iterates self._data); kept ubelt-free, pending review.
-            _keyorder = sorted(_positions, key=_positions.__getitem__)
-            _seen = set(_keyorder)
-            _keyorder = _keyorder + [k for k in self._default if k not in _seen]
-        else:
-            _keyorder = list(self._default.keys())
-
-        FUZZY_HYPHENS = getattr(self, '__fuzzy_hyphens__', 1)
-
-        # Need to clean this up, metadata probably isn't necessary.
-        for key, value in self._data.items():
-            # Use the metadata in the Value class to enhance argparse
-            _value = self._default[key]
-            from kwconf import value as value_mod
-            value_mod._value_add_argument_to_parser(
-                value, _value, self, parser, key, fuzzy_hyphens=FUZZY_HYPHENS)
-
-        if special_options:
-            special_group = parser.add_argument_group(
-                'kwconf options')
-            special_group.add_argument('--config', default=None, help=codeblock(
-                '''
-                special kwconf option that accepts the path to a on-disk
-                configuration file, and loads that into this {!r} object.
-                ''').format(self.__class__.__name__))
-
-            special_group.add_argument('--dump', default=None, help=codeblock(
-                '''
-                If specified, dump this config to disk.
-                ''').format(self.__class__.__name__))
-
-            special_group.add_argument(
-                '--dumps', action=argparse_ext.BooleanFlagOrKeyValAction,
-                help=codeblock(
-                    '''
-                    If specified, dump this config stdout
-                    ''').format(self.__class__.__name__))
-
-        return parser
+            parser = self._new_argparse_parser()
+        return self._populate_argparse_parser(
+            parser,
+            special_options=special_options,
+            fuzzy_hyphens=fuzzy_hyphens,
+        )
 
 
 __notes__ = """

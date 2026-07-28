@@ -10,6 +10,7 @@ The helpers are intentionally best-effort: unresolved forward references and
 annotation forms that kwconf does not understand are preserved or treated as
 unknown instead of causing class creation to fail.
 """
+
 from __future__ import annotations
 
 import sys
@@ -94,7 +95,9 @@ def resolve_annotation(
             return eval(annotation, globalns, localns)
         except Exception:
             return annotation
-    if hasattr(annotation, '__forward_arg__') and hasattr(annotation, 'evaluate'):
+    if hasattr(annotation, '__forward_arg__') and hasattr(
+        annotation, 'evaluate'
+    ):
         globalns, localns = annotation_eval_context(namespace)
         try:
             return annotation.evaluate(globals=globalns, locals=localns)
@@ -126,7 +129,9 @@ def resolve_annotations(
     }
 
 
-def get_class_namespace_annotations(namespace: Mapping[str, Any]) -> dict[str, Any]:
+def get_class_namespace_annotations(
+    namespace: Mapping[str, Any],
+) -> dict[str, Any]:
     """
     Return class-body annotations during metaclass construction.
 
@@ -160,11 +165,13 @@ def get_class_namespace_annotations(namespace: Mapping[str, Any]) -> dict[str, A
         return {}
     try:
         annotations = annotationlib.call_annotate_function(
-            annotate, annotationlib.Format.FORWARDREF)
+            annotate, annotationlib.Format.FORWARDREF
+        )
     except Exception:
         try:
             annotations = annotationlib.call_annotate_function(
-                annotate, annotationlib.Format.STRING)
+                annotate, annotationlib.Format.STRING
+            )
         except Exception:
             return {}
     return resolve_annotations(annotations, namespace)
@@ -201,7 +208,9 @@ def runtime_type_from_annotation(annotation: Any) -> type | None:
             return only_type
         return None
     if origin in {Union, types.UnionType}:
-        args = [arg for arg in typing.get_args(annotation) if arg is not NoneType]
+        args = [
+            arg for arg in typing.get_args(annotation) if arg is not NoneType
+        ]
         for arg in args:
             runtime_type = runtime_type_from_annotation(arg)
             if runtime_type is not None:
@@ -218,11 +227,19 @@ def choices_from_annotation(annotation: Any) -> tuple | None:
     """
     Return choices implied by ``Literal`` annotations, including Optional wrappers.
 
+    A union of literals combines every member's choices. A union containing
+    any non-literal member (``Literal['a'] | str``) admits arbitrary values,
+    so it implies no choices at all.
+
     Examples:
         >>> choices_from_annotation(typing.Literal['small', 'large'])
         ('small', 'large')
         >>> choices_from_annotation(typing.Optional[typing.Literal[1, 2]])
         (1, 2)
+        >>> choices_from_annotation(typing.Literal['a'] | typing.Literal['b'])
+        ('a', 'b')
+        >>> choices_from_annotation(typing.Literal['a', 'b'] | str) is None
+        True
         >>> choices_from_annotation(str) is None
         True
         >>> choices_from_annotation('ForwardRef') is None
@@ -234,12 +251,18 @@ def choices_from_annotation(annotation: Any) -> tuple | None:
     if origin is typing.Literal:
         return typing.get_args(annotation)
     if origin in {Union, types.UnionType}:
+        combined: list = []
         for arg in typing.get_args(annotation):
             if arg is NoneType:
                 continue
             ch = choices_from_annotation(arg)
-            if ch is not None:
-                return ch
+            if ch is None:
+                # A non-literal member admits arbitrary values; restricting
+                # the CLI to the literal siblings would reject valid input.
+                return None
+            combined.extend(c for c in ch if c not in combined)
+        if combined:
+            return tuple(combined)
     return None
 
 
@@ -257,6 +280,12 @@ def value_matches_annotation(value: Any, annotation: Any) -> bool:
         >>> value_matches_annotation(3, int)
         True
         >>> value_matches_annotation('3', int)
+        False
+        >>> value_matches_annotation(1, float)  # PEP 484 numeric tower
+        True
+        >>> value_matches_annotation(1, complex)
+        True
+        >>> value_matches_annotation(1.0, int)
         False
         >>> value_matches_annotation(None, NoneType)
         True
@@ -294,7 +323,10 @@ def value_matches_annotation(value: Any, annotation: Any) -> bool:
         return value is None
     origin = typing.get_origin(annotation)
     if origin is typing.Literal:
-        return value in typing.get_args(annotation)
+        return any(
+            type(value) is type(candidate) and value == candidate
+            for candidate in typing.get_args(annotation)
+        )
     if origin in {Union, types.UnionType}:
         return any(
             value_matches_annotation(value, arg)
@@ -330,6 +362,15 @@ def value_matches_annotation(value: Any, annotation: Any) -> bool:
         except TypeError:
             return True
     if isinstance(annotation, type):
+        # PEP 484 numeric tower: an int is acceptable where float/complex is
+        # annotated, and a float where complex is annotated (but bool is a
+        # deliberate int subclass we still let match int). Note that a plain
+        # isinstance already accepts bool for int; the tower only adds the
+        # wider-target directions.
+        if annotation is float and isinstance(value, int):
+            return True
+        if annotation is complex and isinstance(value, (int, float)):
+            return True
         return isinstance(value, annotation)
     return True
 
@@ -346,7 +387,43 @@ def format_annotation(annotation: Any) -> str:
         'Custom'
         >>> format_annotation('ForwardRef')
         'ForwardRef'
+        >>> format_annotation(int | None)
+        'int | None'
+        >>> format_annotation(list[int])
+        'list[int]'
+        >>> format_annotation(typing.Optional[str])
+        'str | None'
     """
+    if annotation is NoneType or annotation is None:
+        return 'None'
+    if annotation is Ellipsis:
+        return '...'
+    # Parameterized generics (list[int]) and unions (int | None) have a
+    # __name__ that names only the origin ('list', 'Union'), which is
+    # useless in a mismatch message. Only trust __name__ for plain classes,
+    # i.e. those without an origin -- note that ``list[int]`` is itself an
+    # instance of ``type`` before Python 3.11, so the origin is what
+    # distinguishes the two cases on every supported version.
+    origin = typing.get_origin(annotation)
+    if origin is None and isinstance(annotation, type):
+        return cast(str, annotation.__name__)
+    if origin in {Union, types.UnionType}:
+        return ' | '.join(
+            format_annotation(arg) for arg in typing.get_args(annotation)
+        )
+    if origin is not None:
+        args = typing.get_args(annotation)
+        origin_name = getattr(origin, '__name__', str(origin))
+        if origin is typing.Literal:
+            origin_name = 'Literal'
+        if args:
+            inner = ', '.join(format_annotation(a) for a in args)
+            return f'{origin_name}[{inner}]'
+        return origin_name
+    if annotation is NoneType:
+        return 'None'
+    if annotation is Ellipsis:
+        return '...'
     if hasattr(annotation, '__name__'):
         return cast(str, annotation.__name__)
     return str(annotation)

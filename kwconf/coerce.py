@@ -42,6 +42,7 @@ design doc):
 This is the default coercion path: ``Value.coerce()`` and ``Config.coerce()``
 route here, and the deprecated ``type=`` kwarg is mapped onto it.
 """
+
 from __future__ import annotations
 
 import types
@@ -49,8 +50,13 @@ import typing
 import warnings
 from typing import Any, Callable
 
-__all__ = ['auto', 'coerce', 'register_parser', 'CannotCoerce',
-           'element_annotation']
+__all__ = [
+    'auto',
+    'coerce',
+    'register_parser',
+    'CannotCoerce',
+    'element_annotation',
+]
 
 NoneType = type(None)
 
@@ -117,8 +123,15 @@ def _candidate_types(annotation: Any) -> list[type]:
         member_types = {type(arg) for arg in typing.get_args(annotation)}
         return [t for t in _PRECEDENCE if t in member_types]
     if origin in {typing.Union, types.UnionType}:
-        members = set(typing.get_args(annotation))
-        ordered = [t for t in _PRECEDENCE if t in members]
+        member_types = set()
+        for arg in typing.get_args(annotation):
+            if typing.get_origin(arg) is typing.Literal:
+                # Literal members contribute their value types, so e.g.
+                # Literal['a'] | Literal['b'] parses like str.
+                member_types.update(type(v) for v in typing.get_args(arg))
+            else:
+                member_types.add(arg)
+        ordered = [t for t in _PRECEDENCE if t in member_types]
         if not ordered:
             # e.g. ``Path | None`` with no scalar members we understand
             raise CannotCoerce(annotation)
@@ -143,6 +156,9 @@ def element_annotation(annotation: Any) -> Any:
     converter to each token individually, so we coerce each token as the
     container's element type.
 
+    ``Optional``/``Union`` wrappers around a container are unwrapped first, so
+    ``list[int] | None`` behaves like ``list[int]``.
+
     Examples:
         >>> from kwconf.coerce import element_annotation
         >>> element_annotation(list[int])
@@ -153,7 +169,10 @@ def element_annotation(annotation: Any) -> Any:
         <class 'int'>
         >>> element_annotation(list) is typing.Any   # bare container -> Any element
         True
+        >>> element_annotation(list[int] | None)     # Optional container unwrapped
+        <class 'int'>
     """
+    annotation = _unwrap_optional_container(annotation)
     origin = typing.get_origin(annotation)
     if origin in {list, set, frozenset}:
         args = typing.get_args(annotation)
@@ -168,7 +187,34 @@ def element_annotation(annotation: Any) -> Any:
     return annotation
 
 
-def auto(token: str, annotation: Any = Any) -> Any:
+def _unwrap_optional_container(annotation: Any) -> Any:
+    """
+    If ``annotation`` is a union whose only non-``None`` member is a container
+    (or a bare container type), return that container; otherwise return the
+    annotation unchanged. Keeps ``element_annotation`` and container detection
+    working through ``Optional[list[T]]`` / ``list[T] | None``.
+    """
+    origin = typing.get_origin(annotation)
+    if origin not in {typing.Union, types.UnionType}:
+        return annotation
+    non_none = [
+        arg for arg in typing.get_args(annotation) if arg is not NoneType
+    ]
+    if len(non_none) != 1:
+        return annotation
+    (inner,) = non_none
+    inner_origin = typing.get_origin(inner)
+    if inner_origin in {list, set, frozenset, tuple} or inner in {
+        list,
+        set,
+        frozenset,
+        tuple,
+    }:
+        return inner
+    return annotation
+
+
+def auto(token: Any, annotation: Any = Any) -> Any:
     """
     The default ``'auto'`` parser. Parse a CLI/env string token, gated by
     ``annotation``.
@@ -204,7 +250,7 @@ def auto(token: str, annotation: Any = Any) -> Any:
     except CannotCoerce:
         warnings.warn(
             f'auto parser cannot build {annotation!r} from the single token '
-            f'{token!r}; use parser=\'csv\'/\'yaml\' or nargs. Keeping string.',
+            f"{token!r}; use parser='csv'/'yaml' or nargs. Keeping string.",
             stacklevel=2,
         )
         return token
@@ -224,6 +270,7 @@ def auto(token: str, annotation: Any = Any) -> Any:
 
 def _parse_yaml(token: str) -> Any:
     from kwconf.util.util_yaml import import_yaml
+
     yaml = import_yaml("parser='yaml'")
     return yaml.safe_load(token)
 
@@ -338,4 +385,6 @@ def coerce(value: Any, annotation: Any = Any, spec: Any = 'auto') -> Any:
         if _is_annotation_aware(parser):
             return parser(value, annotation)
         return parser(value)
-    raise TypeError(f'coerce spec must be a callable or str, got {type(spec)!r}')
+    raise TypeError(
+        f'coerce spec must be a callable or str, got {type(spec)!r}'
+    )

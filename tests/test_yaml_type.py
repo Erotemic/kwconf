@@ -7,6 +7,7 @@ boundary: argv, or the explicit ``Config.coerce(...)`` constructor. The plain
 ``Config(...)`` constructor trusts the user and does NOT coerce -- strings are
 kept verbatim (see dev/planning/design.md §4).
 """
+
 import typing
 
 import pytest
@@ -24,7 +25,7 @@ def test_yaml_type_parses_list_from_kwargs():
     import kwconf
 
     class C(kwconf.Config):
-        items: typing.Any = kwconf.Value(None, type="yaml")
+        items: typing.Any = kwconf.Value(None, type='yaml')
 
     # Plain constructor keeps the raw string (text boundary not crossed).
     assert C(items='[1, 2, 3]')['items'] == '[1, 2, 3]'
@@ -37,7 +38,7 @@ def test_yaml_type_parses_list_from_cli():
     import kwconf
 
     class C(kwconf.Config):
-        items: typing.Any = kwconf.Value(None, type="yaml")
+        items: typing.Any = kwconf.Value(None, type='yaml')
 
     cfg = C.cli(argv=['--items=[1,2,3]'])
     assert cfg['items'] == [1, 2, 3]
@@ -48,7 +49,7 @@ def test_yaml_type_parses_dict_from_cli():
     import kwconf
 
     class C(kwconf.Config):
-        opts: typing.Any = kwconf.Value(None, type="yaml")
+        opts: typing.Any = kwconf.Value(None, type='yaml')
 
     cfg = C.cli(argv=['--opts={a: 1, b: 2}'])
     assert cfg['opts'] == {'a': 1, 'b': 2}
@@ -59,7 +60,7 @@ def test_yaml_type_parses_scalars():
     import kwconf
 
     class C(kwconf.Config):
-        x: typing.Any = kwconf.Value(None, type="yaml")
+        x: typing.Any = kwconf.Value(None, type='yaml')
 
     # The plain constructor trusts the user: strings are kept verbatim.
     assert C(x='1')['x'] == '1'
@@ -78,7 +79,7 @@ def test_yaml_type_passthrough_non_string():
     import kwconf
 
     class C(kwconf.Config):
-        x: typing.Any = kwconf.Value(None, type="yaml")
+        x: typing.Any = kwconf.Value(None, type='yaml')
 
     cfg = C(x=[1, 2, 3])
     assert cfg['x'] == [1, 2, 3]

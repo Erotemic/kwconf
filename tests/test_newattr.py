@@ -4,15 +4,16 @@ def test_newattr():
     Test allowed and disallowed cases.
     """
 
-    import kwconf
     import pytest
-    class TestNewattrCLI(kwconf.Config):
-        ...
+
+    import kwconf
+
+    class TestNewattrCLI(kwconf.Config): ...
 
     config = TestNewattrCLI()
 
     # By default new attributes are not allowed via the dictionary interface
-    with pytest.raises(Exception):
+    with pytest.raises(KeyError):
         config['newattr1'] = 123
 
     # Quirk: they are allowed via setattr, but they do not become part of the
@@ -22,7 +23,8 @@ def test_newattr():
     assert 'newattr2' not in config
     assert config.newattr2 == 456, (
         'even though it is not in the config, you can still access it '
-        'to cary info around')
+        'to cary info around'
+    )
     print(f'config={config}')
     print(f'config.__dict__={config.__dict__}')
 

@@ -25,10 +25,13 @@ class DecoratedConfig:
     workers: int = kw.Value(2, short_alias=['j'])
 
 
-DynamicConfig = kw.define({
-    'alpha': kw.Value(1, type=int),
-    'name': 'generated',
-}, name='DynamicConfig')
+DynamicConfig = kw.define(
+    {
+        'alpha': kw.Value(1, type=int),
+        'name': 'generated',
+    },
+    name='DynamicConfig',
+)
 
 
 def main(argv=None):

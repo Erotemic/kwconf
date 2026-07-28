@@ -32,26 +32,47 @@ Ignore:
     mkinit ~/code/kwconf/kwconf/__init__.py --nomods --relative -w
 """
 
-__version__ = '0.10.0'
+__version__ = '0.10.1'
 
 __submodules__ = {
-    'modal': None,
-    'config': None,
-    'value': None,
-    'cli': None,
-    'dataconfig': None,
-    'annotations': None,
+    'modal': ['ModalCLI', 'ModalValue'],
+    'config': ['Config', 'ConfigValidationError', 'define'],
+    'value': ['Value', 'Flag'],
+    'dataconfig': ['dataconf'],
+    'subconfig': ['SubConfig'],
+    'coerce': ['register_parser'],
 }
 
 from . import diagnostics  # NOQA
-from .modal import (ModalCLI, ModalValue)
-from .config import (Config, define,)
-# Value / Flag are factory FUNCTIONS defined in kwconf.value (typed to
-# return the field value type T). _Value / _Flag are the runtime wrapper
-# classes, re-exported as ValueClass / FlagClass for isinstance / subclassing.
-from .value import (Value, Flag, _Value as ValueClass, _Flag as FlagClass)
-from .dataconfig import (dataconf,)
-from .subconfig import (SubConfig,)
+from .modal import ModalCLI, ModalValue
+from .config import (
+    Config,
+    ConfigValidationError,
+    define,
+)
 
-__all__ = ['Config', 'Value', 'Flag',
-           'dataconf', 'define', 'ModalCLI', 'ModalValue', 'SubConfig']
+# Value / Flag are factory FUNCTIONS defined in kwconf.value (typed to
+# return the field value type T).
+from .value import Value, Flag
+from .dataconfig import (
+    dataconf,
+)
+from .subconfig import (
+    SubConfig,
+)
+from .coerce import (
+    register_parser,
+)
+
+__all__ = [
+    'Config',
+    'ConfigValidationError',
+    'Value',
+    'Flag',
+    'dataconf',
+    'define',
+    'ModalCLI',
+    'ModalValue',
+    'SubConfig',
+    'register_parser',
+]

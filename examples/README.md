@@ -31,7 +31,11 @@ python examples/03_config_files.py --config examples/data/report.yaml --limit=3 
 - `04_nested_configs.py` - nested config trees with `kwconf.SubConfig`, dotted
   CLI overrides, selector choices, and YAML round trips.
 - `05_modal_cli.py` - subcommand CLIs with `kwconf.ModalCLI` and
-  `kwconf.ModalValue`, including aliases and nested modal dispatch.
+  `kwconf.ModalValue`, including aliases and nested modal dispatch. Headlines
+  **fuzzy hyphens** (hyphen / underscore spellings interchangeable) at every
+  level - root commands, aliases, submodal commands, nested commands, and leaf
+  flags - with a per-object opt-out. Run with no arguments to execute a
+  self-check that proves each spelling resolves identically.
 - `06_large_scale_app.py` - a research-pipeline-shaped example that combines
   nested dataset / model / optimizer / trainer configs with a modal app.
 - `07_decorator_and_dynamic.py` - compatibility helpers: `@kwconf.dataconf`

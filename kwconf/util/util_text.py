@@ -4,6 +4,7 @@ Small text helpers vendored to keep kwconf dependency-free at runtime.
 These reproduce the behavior of the equivalent ``ubelt`` functions (which
 kwconf used to depend on); the test suite asserts they stay byte-compatible.
 """
+
 from __future__ import annotations
 
 import textwrap

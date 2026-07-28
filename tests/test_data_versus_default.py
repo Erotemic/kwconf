@@ -4,8 +4,10 @@ The difference between data and default is that default will update the
 defaults and persist between multiple load operations whereas data will
 only set the immediate values and not persist over multiple loads.
 """
-import kwconf
+
 import pytest
+
+import kwconf
 
 
 def generate_dataconfig_instance_variants():
@@ -29,7 +31,9 @@ def generate_dataconfig_instance_variants():
     yield config, 'typed-config'
 
 
-@pytest.mark.parametrize('config, test_name', generate_dataconfig_instance_variants())
+@pytest.mark.parametrize(
+    'config, test_name', list(generate_dataconfig_instance_variants())
+)
 def test_data_vs_default(config, test_name):
     assert config['num'] == 1
 

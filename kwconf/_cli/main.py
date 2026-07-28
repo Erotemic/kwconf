@@ -8,6 +8,7 @@ class KwconfModal(kwconf.ModalCLI):
     """
     Top level modal CLI for kwconf helpers
     """
+
     __version__ = __version__
     from kwconf._cli.template import TemplateCLI as template
 

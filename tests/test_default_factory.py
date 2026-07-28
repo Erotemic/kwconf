@@ -1,11 +1,13 @@
 # mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 """
 ``default_factory`` is deferred: the factory is never invoked at
-class-definition time. It is materialized lazily on first read of a template's
-``.value`` (and cached there), while each Config instance receives its own
-fresh value via ``clone_default``.
+class-definition time. It is materialized lazily on first read of a class
+template's ``.value`` (and cached there), while Config construction and reset
+invoke the recipe directly for a fresh runtime value.
 """
+
 import copy
+
 import kwconf
 
 
@@ -72,3 +74,54 @@ def test_factory_field_round_trips_through_cli():
 
     assert C.cli(argv=[])['tags'] == []
     assert C.cli(argv=['--tags', 'a', 'b'])['tags'] == ['a', 'b']
+
+
+def test_cli_instances_do_not_share_factory_default():
+    """
+    The argv-defaults merge must store per-instance defaults, not the class
+    template's (cached) factory output.
+    """
+    import kwconf
+
+    class C(kwconf.Config):
+        tags: list = kwconf.Value(default_factory=list)
+
+    c1 = C.cli(argv=[])
+    c2 = C.cli(argv=[])
+    assert c1['tags'] is not c2['tags']
+    c1['tags'].append('x')
+    assert c2['tags'] == []
+    assert C.cli(argv=[])['tags'] == []
+
+
+def test_cli_instance_mutation_does_not_corrupt_class_default():
+    import kwconf
+
+    class D(kwconf.Config):
+        items = kwconf.Value(['a'])
+
+    d1 = D.cli(argv=[])
+    d1['items'].append('MUT')
+    assert D.cli(argv=[])['items'] == ['a']
+    assert D.__default__['items'].value == ['a']
+
+
+def test_noncopyable_factory_output_is_supported_and_recreated_on_reset():
+    import threading
+
+    calls = []
+
+    def make_lock():
+        calls.append(1)
+        return threading.Lock()
+
+    class C(kwconf.Config):
+        lock = kwconf.Value(default_factory=make_lock)
+
+    cfg = C()
+    first = cfg.lock
+    assert len(calls) == 1
+
+    cfg.load(argv=False)
+    assert len(calls) == 2
+    assert cfg.lock is not first

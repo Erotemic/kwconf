@@ -21,6 +21,7 @@ ambiguous for structured tokens (``--k [1,2,3] [4,5,6]`` -> flatten or group?).
 For a flat list use csv or nargs; for a polymorphic ``list|dict`` use yaml
 WITHOUT nargs.
 """
+
 import shlex
 
 import pytest
@@ -86,7 +87,10 @@ def test_yaml_nargs_scalar_tokens_work_today():
 
 def test_yaml_nargs_collects_structured_tokens():
     pytest.importorskip('yaml')
-    assert _cli(YamlNargs, "--key '[1,2,3]' '[4,5,6]'") == [[1, 2, 3], [4, 5, 6]]
+    assert _cli(YamlNargs, "--key '[1,2,3]' '[4,5,6]'") == [
+        [1, 2, 3],
+        [4, 5, 6],
+    ]
 
 
 def test_yaml_nargs_collects_dict_tokens():
@@ -104,12 +108,12 @@ def test_yaml_nargs_single_structured_token_wraps():
 # yaml WITHOUT nargs : the right way to get a polymorphic list|dict (works now)
 # --------------------------------------------------------------------------
 class YamlPoly(kwconf.Config):
-    key: list | dict | int = kwconf.Value(None, parser='yaml')
+    key: list | dict | int | None = kwconf.Value(None, parser='yaml')
 
 
 def test_yaml_no_nargs_list():
     pytest.importorskip('yaml')
-    assert _cli(YamlPoly, "--key=[1,2,3]") == [1, 2, 3]
+    assert _cli(YamlPoly, '--key=[1,2,3]') == [1, 2, 3]
 
 
 def test_yaml_no_nargs_dict():
@@ -119,4 +123,4 @@ def test_yaml_no_nargs_dict():
 
 def test_yaml_no_nargs_scalar():
     pytest.importorskip('yaml')
-    assert _cli(YamlPoly, "--key=5") == 5
+    assert _cli(YamlPoly, '--key=5') == 5

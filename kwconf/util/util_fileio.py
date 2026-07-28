@@ -3,12 +3,38 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from os.path import exists
-from typing import IO, Any, Iterator, Union
+from typing import IO, Any, Iterator, Union, cast
+
+_CONFIG_FILE_SUFFIXES = ('.yaml', '.yml', '.json')
+
+
+def looks_like_config_path(text: str) -> bool:
+    """
+    Heuristic: does ``text`` look like a filesystem path to a config file
+    rather than raw inline YAML/JSON content?
+
+    True when it is single-line and either ends with a known config suffix
+    (``.yaml`` / ``.yml`` / ``.json``) or contains a path separator. Used to
+    turn a mistyped ``--config typo.yaml`` into a clear ``FileNotFoundError``
+    instead of silently parsing the path string as YAML content.
+    """
+    if '\n' in text:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if lowered.endswith(_CONFIG_FILE_SUFFIXES):
+        return True
+    return os.sep in stripped or (
+        os.altsep is not None and os.altsep in stripped
+    )
 
 
 @contextmanager
-def open_text_input(path_or_file: Union[str, os.PathLike, IO[Any]],
-                    mode: str = 'r') -> Iterator[IO[Any]]:
+def open_text_input(
+    path_or_file: Union[str, os.PathLike[str], IO[Any]], mode: str = 'r'
+) -> Iterator[IO[Any]]:
     """
     Yield a readable file object from either a path or an already-open file.
 
@@ -26,9 +52,14 @@ def open_text_input(path_or_file: Union[str, os.PathLike, IO[Any]],
     if 'r' not in mode:
         raise ValueError('file must be readable')
     if isinstance(path_or_file, (str, os.PathLike)):
-        fspath = os.fspath(path_or_file)
+        # The cast keeps the path branch textual: a file object could also
+        # satisfy os.PathLike structurally, which leaves the checkers unable
+        # to pick between fspath's str and bytes overloads.
+        fspath = os.fspath(cast('str | os.PathLike[str]', path_or_file))
         if not exists(fspath):
-            raise ValueError('Path {} does not exist'.format(fspath))
+            raise FileNotFoundError(
+                f'config file does not exist: {fspath!r}'
+            )
         with open(fspath, mode) as file:
             yield file
     elif hasattr(path_or_file, 'readable'):

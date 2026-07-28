@@ -6,7 +6,9 @@ This records the canonical (possibly dotted) destinations that were explicitly
 supplied on the command line for the most recent parse. It is intentionally
 argv-scoped: it is *not* a general "was this key set by any source" flag.
 """
+
 import copy
+
 import kwconf
 
 
@@ -64,7 +66,9 @@ def test_subconfig_class_swap_lands_on_final_instance():
 
     class App(kwconf.Config):
         __default__ = {
-            'engine': kwconf.SubConfig(Fast, choices={'fast': Fast, 'slow': Slow})
+            'engine': kwconf.SubConfig(
+                Fast, choices={'fast': Fast, 'slow': Slow}
+            )
         }
 
     cfg = App.cli(argv=['--engine.__class__=slow', '--engine.speed=7'])
@@ -74,7 +78,9 @@ def test_subconfig_class_swap_lands_on_final_instance():
     child = cfg._data['engine']
     assert cfg['engine'] is child
     assert child._explicit_argv_keys == frozenset({'__class__', 'speed'})
-    assert cfg._explicit_argv_keys == frozenset({'engine.__class__', 'engine.speed'})
+    assert cfg._explicit_argv_keys == frozenset(
+        {'engine.__class__', 'engine.speed'}
+    )
 
 
 def test_deepcopy_carries_provenance():
@@ -101,3 +107,13 @@ def test_setitem_does_not_populate_provenance():
     cfg = Flat.cli(argv=['--a=99'])
     cfg['b'] = 123
     assert cfg._explicit_argv_keys == frozenset({'a'})
+
+
+def test_reused_nested_config_clears_child_provenance():
+    cfg = Outer()
+    cfg._read_argv(['--inner.x=5'])
+    assert cfg._data['inner']._explicit_argv_keys == frozenset({'x'})
+
+    cfg._read_argv(['--a=99'])
+    assert cfg._explicit_argv_keys == frozenset({'a'})
+    assert cfg._data['inner']._explicit_argv_keys == frozenset()

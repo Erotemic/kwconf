@@ -151,9 +151,9 @@ For parsers that should consult the field annotation, register with
 Validation
 ----------
 
-Validation checks user-supplied values against annotations after parsing. The
-default policy is ``'warn'``. Set ``__validate__ = 'error'`` for stricter CLIs
-or ``False`` to disable validation.
+Value validation checks user-supplied values against annotations after
+parsing. The class default is ``'warn'``. Set ``__validate__ = 'error'`` for a
+strict application or ``False`` to disable value checks.
 
 .. code-block:: python
 
@@ -163,5 +163,27 @@ or ``False`` to disable validation.
 
 
     C.cli(argv=['--count=3'])
+
+For a per-invocation policy, pass ``validate=`` to :meth:`Config.cli` or
+:meth:`Config.load`:
+
+.. code-block:: python
+
+    C.cli(argv=False, data=payload, validate=False)    # lean path
+    C.cli(argv=False, data=payload, validate='warn')   # diagnose and continue
+    C.cli(argv=False, data=payload, validate='error')  # diagnose and raise
+
+The distinction is intentional. The default ``validate=None`` preserves the
+existing class/field annotation policy but does not perform an additional
+structural scan of each input source. Explicit ``'warn'`` or ``'error'`` also
+checks structural ambiguities such as providing both ``inner`` and
+``inner.__class__`` for the same SubConfig. ``__validate__ = 'error'`` opts a
+class into those strict structural checks without repeating the argument at
+each call. The baseline loader remains safe without the scan: the explicit
+``.__class__`` selector wins and a SubConfig node is never replaced by raw
+selector text.
+
+This runtime policy is separate from ``MyConfig.validate()``, the opt-in static
+schema check intended for tests and CI.
 
 See :doc:`core_contract` for the full validation contract.

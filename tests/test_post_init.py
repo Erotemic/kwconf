@@ -1,11 +1,13 @@
 # mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 
+
 def test_post_init_not_called_twice():
     """
     xdoctest ~/code/kwconf/tests/test_post_init.py test_post_init_not_called_twice
     """
-    import kwconf
     import ubelt as ub
+
+    import kwconf
 
     default = {
         'option1': kwconf.Value((1, 2, 3), type=tuple, alias='a'),
@@ -14,17 +16,17 @@ def test_post_init_not_called_twice():
     }
 
     def postinit(self):
-        print('Call PostInit For: self = {}, id={}'.format(ub.urepr(self, nl=1), id(self)))
+        print(
+            'Call PostInit For: self = {}, id={}'.format(
+                ub.urepr(self, nl=1), id(self)
+            )
+        )
         # import traceback
         # import sys
         # traceback.print_stack(file=sys.stdout)
         if not hasattr(self, '_post_init_count'):
-            self._post_init_count  = 0
+            self._post_init_count = 0
         self._post_init_count += 1
-
-    class MyConfig(kwconf.Config):
-        __default__ = default
-        __post_init__ = postinit
 
     class MyConfig(kwconf.Config):
         __default__ = default

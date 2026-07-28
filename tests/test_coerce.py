@@ -1,9 +1,11 @@
 """Tests for the additive ``kwconf.coerce`` module (the 'auto' parser)."""
+
 from typing import Any, Optional, Union
 
 import pytest
 
-from kwconf.coerce import auto, coerce, register_parser, CannotCoerce
+from kwconf.coerce import CannotCoerce, auto, coerce, register_parser
+from kwconf.value import _Value
 
 
 def _is(value: Any, expect_type: type) -> bool:
@@ -48,6 +50,7 @@ class TestAutoAnnotationGated:
 
     def test_literal_infers_member_type(self):
         from typing import Literal
+
         assert auto('a', Literal['a', 'b']) == 'a'
         assert auto('2', Literal[1, 2, 3]) == 2
 
@@ -57,6 +60,7 @@ class TestAutoFallback:
         # No value-level warning: the Config validation layer is the single
         # voice for mismatches. auto best-efforts and keeps the string.
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter('error')
             got = auto('foo', Optional[int])
@@ -137,37 +141,32 @@ class TestValueCoerceKwarg:
     kwconf.coerce; omitting it preserves the legacy type=/smartcast path."""
 
     def test_legacy_path_unchanged_when_coerce_unset(self):
-        from kwconf import Value
-        v = Value(None, type=float)
+        v = _Value(None, type=float)
         v.update('3.3')
         assert v.value == 3.3
 
     def test_coerce_callable(self):
-        from kwconf import Value
-        v = Value(None, parser=str)
+        v = _Value(None, parser=str)
         v.update('123')
-        assert v.value == '123'   # explicit str escape hatch keeps the string
+        assert v.value == '123'  # explicit str escape hatch keeps the string
 
     def test_coerce_csv(self):
-        from kwconf import Value
-        v = Value(None, parser='csv')
+        v = _Value(None, parser='csv')
         v.update('1,2,3')
         assert v.value == [1, 2, 3]
 
     def test_coerce_auto_gated_by_annotation(self):
-        from kwconf import Value
-        v = Value(None, parser='auto')
-        v._annotation = str           # mimic a `: str` class annotation
+        v = _Value(None, parser='auto')
+        v._annotation = str  # mimic a `: str` class annotation
         v.update('123')
         assert v.value == '123'
-        v2 = Value(None, parser='auto')
-        v2.update('123')              # no annotation -> full inference
+        v2 = _Value(None, parser='auto')
+        v2.update('123')  # no annotation -> full inference
         assert v2.value == 123
 
     def test_non_string_passthrough(self):
-        from kwconf import Value
-        v = Value(None, parser='csv')
-        v.update([1, 2])              # already a list; not re-parsed
+        v = _Value(None, parser='csv')
+        v.update([1, 2])  # already a list; not re-parsed
         assert v.value == [1, 2]
 
 
@@ -191,7 +190,9 @@ class TestConfigCoerceConstructor:
 
 def test_coerce_and_type_are_mutually_exclusive():
     import pytest
+
     from kwconf import Value
+
     with pytest.raises(ValueError, match='either .parser.* or the deprecated'):
         Value(None, type=int, parser='auto')
 
@@ -210,8 +211,8 @@ class TestAutoIsDefaultParser:
             x: Union[str, int, None] = kwconf.Value(None)
 
         for C in (Bare, Wrapped):
-            assert C.coerce(x='123')['x'] == 123      # int member of the union
-            assert C.coerce(x='foo')['x'] == 'foo'    # str catch-all
+            assert C.coerce(x='123')['x'] == 123  # int member of the union
+            assert C.coerce(x='foo')['x'] == 'foo'  # str catch-all
             assert C.coerce(x='None')['x'] is None
 
     def test_str_annotation_pins_to_string(self):
@@ -224,6 +225,39 @@ class TestAutoIsDefaultParser:
 
     def test_explicit_deprecated_type_uses_legacy_path(self):
         import kwconf
-        v = kwconf.Value(None, type=int)
+
+        v = _Value(None, type=int)
         v.update('5')
         assert v.value == 5
+
+
+class TestOptionalContainerCoercion:
+    def test_element_annotation_unwraps_optional(self):
+        import typing
+
+        from kwconf.coerce import element_annotation
+
+        assert element_annotation(list[int] | None) is int
+        assert element_annotation(typing.Optional[list[int]]) is int
+        assert element_annotation(typing.Optional[list[str]]) is str
+        # Not a single-container union -> unchanged.
+        assert element_annotation(int | str) == int | str
+
+    def test_csv_parser_honors_optional_container(self):
+        from kwconf.coerce import _parse_csv
+
+        assert _parse_csv('1,2,3', list[int] | None) == [1, 2, 3]
+        assert _parse_csv('1,2,3', list[str] | None) == ['1', '2', '3']
+
+    def test_nargs_field_optional_container_coerces_elements(self):
+        import warnings
+
+        import kwconf
+
+        class C(kwconf.Config):
+            nums: 'list[int] | None' = kwconf.Value(None, nargs='*')
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            cfg = C.cli(argv=['--nums', '1', '2', '3'])
+        assert cfg['nums'] == [1, 2, 3]

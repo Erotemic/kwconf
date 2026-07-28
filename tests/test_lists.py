@@ -21,6 +21,8 @@ def test_comma_strings_stay_strings():
         plain_text: str = ''
         untyped = kw.Value('default')
 
-    cfg = ExampleConfig.cli(argv=['--plain_text=spam,eggs', '--untyped=foo,bar'])
+    cfg = ExampleConfig.cli(
+        argv=['--plain_text=spam,eggs', '--untyped=foo,bar']
+    )
     assert cfg.plain_text == 'spam,eggs'
     assert cfg.untyped == 'foo,bar'

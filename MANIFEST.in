@@ -1,0 +1,7 @@
+# The sdist ships the test suite; include the shared fixtures it needs to run.
+include tests/conftest.py
+# User-facing project docs that belong in the source distribution.
+include CHANGELOG.md
+include README.rst
+include LICENSE
+include requirements/*.txt

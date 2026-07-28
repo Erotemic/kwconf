@@ -118,7 +118,9 @@ def _type_name(value):
     if isinstance(value, list):
         if not value:
             return 'list'
-        child_types = sorted({json.dumps(_type_name(item), sort_keys=True) for item in value})
+        child_types = sorted(
+            {json.dumps(_type_name(item), sort_keys=True) for item in value}
+        )
         if len(child_types) == 1:
             child = json.loads(child_types[0])
         else:
@@ -202,11 +204,13 @@ def print_resolved_config(config, label='RESOLVED CONFIG', explicit_only=False):
     for name, value in _iter_config_fields(config):
         if explicit_only and name not in explicit_keys:
             continue
-        _styled_line([
-            (name, 'bold cyan'),
-            (' : ', 'white'),
-            (_field_type_name(value), 'bold magenta'),
-            (' = ', 'white'),
-            (_value_text(value), 'yellow'),
-        ])
+        _styled_line(
+            [
+                (name, 'bold cyan'),
+                (' : ', 'white'),
+                (_field_type_name(value), 'bold magenta'),
+                (' = ', 'white'),
+                (_value_text(value), 'yellow'),
+            ]
+        )
     return config

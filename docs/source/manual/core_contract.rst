@@ -60,6 +60,83 @@ validation:
 ``__default__`` remains available for migration and dynamic construction.
 Prefer class attributes for new code.
 
+Constructor calls use Python-like binding rules. Positional values bind in
+field declaration order; extra positional values and any field supplied more
+than once (including through an alias) raise ``TypeError`` instead of silently
+discarding or replacing input.
+
+Declared fields and transient attributes
+----------------------------------------
+
+The class declaration is the configuration contract. Only declared fields
+participate in mapping access, validation, CLI generation, serialization, and
+deserialization.
+
+An undeclared attribute attached to an instance is ordinary transient Python
+state:
+
+.. code-block:: python
+
+    cfg = TrainConfig()
+    cfg.runtime_cache = object()
+
+    assert cfg.runtime_cache is not None
+    assert 'runtime_cache' not in cfg
+    assert 'runtime_cache' not in cfg.asdict()
+
+This is intentional. ``kwconf`` does not reject the assignment or warn during
+serialization. Use a declared field when a value must persist or round-trip.
+Private names are not required for temporary state, although they can still be
+useful by convention.
+
+``__allow_newattr__ = True`` is a separate, experimental escape hatch. It
+promotes unknown item or attribute assignments into ``_data``, so they become
+mapping keys and may be emitted by serializers. Dynamic keys have no declared
+default, annotation, parser, help text, CLI option, or SubConfig metadata, and
+the current API does not promise symmetric deserialization of them. Do not use
+this flag for persisted configuration yet.
+
+A possible future direction is to formalize this opt-in as a dynamic-field
+mode: unknown loaded keys would round-trip symmetrically, while remaining
+outside schema-generated CLI and static validation unless explicit metadata is
+provided. That direction is intentionally separate from ordinary attached
+attributes, which remain transient object state.
+
+State ownership
+---------------
+
+The class schema, instance reset baseline, and current values are separate:
+
+``Class.__default__``
+    Schema templates. These carry ``Value`` / ``SubConfig`` metadata and are
+    never mutated or materialized by normal instance operations.
+
+``cfg._default``
+    An instance-owned clone of the schema plus that instance's reset defaults.
+    Constructor values and ``default=`` overrides update this layer without
+    changing the class.
+
+``cfg._data``
+    Current raw values and realized nested Config objects. Mutable values are
+    independent from the reset baseline, so changing current state cannot
+    corrupt a later reset or another instance.
+
+These are internal attributes, but the ownership rule is a compatibility
+invariant. Public code should use mapping/attribute access and ``load`` rather
+than editing them directly.
+
+Input and parser ownership
+--------------------------
+
+Mapping objects, files, streams, and inline YAML/JSON share one ingestion
+boundary. Flat configs and nested ``SubConfig`` trees therefore agree on source
+classification, path errors, empty documents, and mapping-type requirements.
+
+Parser construction also has one canonical route for field ordering, aliases,
+flags, coercion, groups, and special options. ``port_to_argparse`` consumes the
+same argument specification as the live parser rather than maintaining a
+second interpretation of ``Value`` metadata.
+
 CLI contract
 ------------
 
@@ -110,8 +187,10 @@ See :doc:`coercion_and_cli` for parser details.
 Validation contract
 -------------------
 
-Runtime validation checks user-supplied values against annotations after
-parsing. The default policy is ``'warn'``. Tune it per class or per field:
+Runtime validation has two deliberately different cost tiers.
+
+Value validation checks user-supplied values against annotations after
+parsing. Its class default is ``'warn'``. Tune it per class or per field:
 
 .. code-block:: python
 
@@ -122,6 +201,40 @@ parsing. The default policy is ``'warn'``. Tune it per class or per field:
 Validation runs on constructor values, data/file values, assignment, parsed
 argv values, and parsed env values. Field defaults are accepted as declared.
 Unsupported annotation forms are skipped.
+
+``Config.cli`` and ``Config.load`` also accept a per-ingestion ``validate=``
+override. It has highest precedence for values ingested by that call, ahead of
+field and class policy:
+
+.. code-block:: python
+
+    C.cli(data=payload, argv=False, validate=False)
+    C.cli(data=payload, argv=False, validate='warn')
+    C.cli(data=payload, argv=False, validate='error')
+
+``None`` is the default. It preserves field/class value validation and avoids
+an additional structural traversal. Explicit ``'warn'`` or ``'error'`` enables
+structural source checks; ``True`` is an alias for ``'error'``. A class with
+``__validate__ = 'error'`` also enables strict structural checks by default.
+The class default ``'warn'`` intentionally remains value-only so ordinary CLI
+startup stays lean.
+
+Structural validation currently detects contradictory SubConfig selector
+spellings within one source, such as both ``inner`` and
+``inner.__class__``. Warning mode reports the ambiguity and continues with
+safe deterministic precedence; error mode raises
+``ConfigValidationError`` before mutation. Overrides from separate sources are
+not conflicts: later argv may intentionally override earlier ``data=`` or a
+config file.
+
+Safety does not depend on enabling the diagnostic scan. On the lean path an
+explicit ``path.__class__`` selector wins over scalar ``path`` sugar, and raw
+selector text is never stored in place of a declared SubConfig.
+
+``Config.validate()`` is a separate, side-effect-free static schema gate for
+tests/CI. It is not called implicitly by class construction or CLI startup.
+Parser-enforced constraints such as ``Literal`` choices also remain hard
+errors regardless of runtime validation mode.
 
 Nested configs
 --------------
@@ -143,7 +256,10 @@ keys:
     assert cfg.inner.depth == 3
 
 Variant nodes use ``choices`` for explicit selectors. Dynamic import selectors
-are controlled by ``allow_import``.
+use a tri-state policy: the call-level ``allow_import`` value is the default,
+``SubConfig(..., allow_import=None)`` inherits it, and a field-level True or
+False explicitly overrides it. Importable selectors use
+``module.qualname.Class`` or ``module:qualname.Class`` syntax.
 
 Modal CLIs
 ----------

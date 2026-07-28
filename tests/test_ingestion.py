@@ -1,4 +1,5 @@
 """Tests for the named ingestion constructors: from_cli / from_env / from_yaml."""
+
 import kwconf
 
 
@@ -24,20 +25,22 @@ def test_from_env_parses_string_values(monkeypatch):
     monkeypatch.setenv('MYAPP_NAME', 'hello')
     monkeypatch.setenv('OTHER_NUM', 'ignored')
     cfg = Cfg.from_env(prefix='MYAPP_')
-    assert cfg['num'] == 7          # coerced via the field's int parser
+    assert cfg['num'] == 7  # coerced via the field's int parser
     assert cfg['name'] == 'hello'
 
 
 def test_from_env_kwargs_override(monkeypatch):
     monkeypatch.setenv('MYAPP_NUM', '7')
     cfg = Cfg.from_env(prefix='MYAPP_', num=99)
-    assert cfg['num'] == 99         # real Python value, passed through
+    assert cfg['num'] == 99  # real Python value, passed through
 
 
 def test_from_yaml(tmp_path):
     import pytest
+
     pytest.importorskip('yaml')
     import yaml
+
     p = tmp_path / 'cfg.yaml'
     p.write_text(yaml.safe_dump({'num': 5, 'name': 'fromfile'}))
     cfg = Cfg.from_yaml(str(p))
@@ -46,6 +49,7 @@ def test_from_yaml(tmp_path):
 
 def test_from_yaml_respects_file_typing(tmp_path):
     import pytest
+
     pytest.importorskip('yaml')
     p = tmp_path / 'cfg.yaml'
     # A quoted scalar stays a string -- the file format's own typing wins.
@@ -57,6 +61,7 @@ def test_from_yaml_respects_file_typing(tmp_path):
 def test_from_cli_union_field_is_auto_gated():
     """CLI parsing of a union-annotated field now honors the union (consistent
     with Config.coerce), instead of using only the first runtime type."""
+
     class C(kwconf.Config):
         x: 'str | int | None' = None
 
@@ -74,14 +79,30 @@ def test_from_cli_str_annotation_pins_string():
 
 def test_from_cli_nargs_coerces_elements():
     """nargs fields coerce each token as the container's element type."""
+
     class C(kwconf.Config):
-        nums: 'list[int]' = kwconf.Value(None, nargs='+')
+        nums: 'list[int] | None' = kwconf.Value(None, nargs='+')
 
     assert C.from_cli(argv=['--nums', '1', '2', '3'])['nums'] == [1, 2, 3]
 
 
 def test_from_cli_nargs_bare_list_keeps_strings():
     class C(kwconf.Config):
-        words: list = kwconf.Value(None, nargs='+')
+        words: list | None = kwconf.Value(None, nargs='+')
 
     assert C.from_cli(argv=['--words', 'a', 'b'])['words'] == ['a', 'b']
+
+
+def test_load_does_not_mutate_caller_data_dict():
+    """
+    load()/cli(data=...) rename alias keys and drop unknown keys internally;
+    the caller's dict must not see those edits.
+    """
+
+    class Cfg2(kwconf.Config):
+        __default__ = {'opt': kwconf.Value(1, alias=['o'])}
+
+    mydata = {'o': 5, 'junk': 9}
+    cfg = Cfg2.cli(data=mydata, argv=False, strict=False)
+    assert cfg['opt'] == 5
+    assert mydata == {'o': 5, 'junk': 9}

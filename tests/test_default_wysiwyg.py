@@ -4,29 +4,33 @@ The default passed to ``kwconf.Value`` is a Python-boundary value and is stored
 verbatim (WYSIWYG). It is NOT run through the coerce/auto parser. Coercion only
 happens at the text boundary (argv/env/``Config.coerce``). See design.md §4.
 """
+
+import typing
+
 import kwconf
+from kwconf.value import _Value
 
 
 def test_string_default_is_not_coerced():
-    v = kwconf.Value('512')
+    v = _Value('512')
     assert v.value == '512'
     assert isinstance(v.value, str)
 
 
 def test_string_default_with_parser_is_not_coerced():
     # Even an explicit parser must not touch the trusted default.
-    v = kwconf.Value('512', parser='yaml')
+    v = _Value('512', parser='yaml')
     assert v.value == '512'
     assert isinstance(v.value, str)
 
 
 def test_non_string_default_passes_through():
-    assert kwconf.Value(512).value == 512
-    assert kwconf.Value(None).value is None
+    assert _Value(512).value == 512
+    assert _Value(None).value is None
 
 
 def test_default_factory_output_is_verbatim():
-    v = kwconf.Value(default_factory=lambda: '512')
+    v = _Value(default_factory=lambda: '512')
     assert v.value == '512'
     assert isinstance(v.value, str)
 
@@ -46,7 +50,7 @@ def test_default_wysiwyg_on_config():
 def test_text_boundary_still_coerces():
     # The default is WYSIWYG, but argv tokens are still parsed.
     class C(kwconf.Config):
-        some_int: int = kwconf.Value('512')
+        some_int: int = typing.cast(int, kwconf.Value('512'))
 
     # Default path: verbatim string.
     assert C()['some_int'] == '512'
@@ -62,7 +66,9 @@ def test_cli_with_no_argv_preserves_verbatim_default():
     class C(kwconf.Config):
         int_or_str: int | str = kwconf.Value('512')
         str_or_null: str | None = kwconf.Value(None)
-        yaml_default: list = kwconf.Value('512', parser='yaml')
+        yaml_default: list = typing.cast(
+            list, kwconf.Value('512', parser='yaml')
+        )
 
     cfg = C.cli(argv=[])
     assert cfg['int_or_str'] == '512' and isinstance(cfg['int_or_str'], str)

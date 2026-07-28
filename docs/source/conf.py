@@ -111,9 +111,7 @@ Notes:
 # sys.path.insert(0, os.path.abspath('.'))
 
 # -- Project information -----------------------------------------------------
-from os.path import exists
-from os.path import dirname
-from os.path import join
+from os.path import dirname, exists, join
 
 
 def parse_version(fpath):
@@ -132,7 +130,8 @@ def parse_version(fpath):
         def visit_Assign(self, node):
             for target in node.targets:
                 if getattr(target, 'id', None) == '__version__':
-                    self.version = node.value.s
+                    # ast.Constant.value (the .s alias was removed in 3.14)
+                    self.version = node.value.value
 
     visitor = VersionVisitor()
     visitor.visit(pt)

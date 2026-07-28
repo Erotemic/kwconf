@@ -51,6 +51,32 @@ master `kwconf_primatives` switch exists; granular ones are future work).
   ergonomics. Positional `Value(10)` stays. **[LOCKED]**
 - Static typing (primary checker: **ty**; also mypy/pyright) is a *bonus we lean
   into where it's free*, never a constraint that warps the API. **[LOCKED]**
+- **State ownership is strict:** class ``__default__`` values are frozen schema
+  templates, instance ``_default`` values are independent reset baselines, and
+  ``_data`` contains only current raw/runtime values. Loading and parser
+  construction each have one canonical implementation path. **[LOCKED
+  2026-07-10]**
+- **Reset recipes and snapshots are distinct.** ``default_factory`` is retained
+  as a recipe and invoked for every construction/reset; its output is never
+  copied. Concrete declared defaults and constructor/``update_defaults``
+  overrides are reset snapshots and must support ``copy.deepcopy`` so
+  ``_default`` and ``_data`` never alias. ``SubConfig(instance)`` clones the
+  instance's reset baseline, not its live runtime mutations. **[LOCKED
+  2026-07-27]**
+- **Required means supplied by the current ingestion.** Required enforcement is
+  based on canonical provenance from the current ``data=`` / ``--config`` /
+  argv merge, recursively distributed through SubConfigs. It never compares a
+  runtime value to a default and never reuses provenance from an older load.
+  **[LOCKED 2026-07-27]**
+- **Argparse owns argv grammar in every pass.** Dynamic SubConfig selection may
+  orchestrate multiple ``parse_known_args`` stages, but kwconf does not vendor
+  or override argparse's private parse engine. Remaining private access is
+  isolated introspection, not token parsing. **[LOCKED 2026-07-10]**
+- **Declared fields are the persistence contract.** Undeclared attributes may
+  be attached as transient Python state and intentionally do not participate in
+  mapping access, CLI generation, validation, serialization, or
+  deserialization. No warning is needed when serializers omit them. **[LOCKED
+  2026-07-10]**
 
 ## 2. The `Value` API
 
@@ -72,8 +98,10 @@ master `kwconf_primatives` switch exists; granular ones are future work).
   passes `(token, annotation)`. **[LOCKED]**
 - **`default` is positional-allowed.** `Value(10)`, `Value((256, 256))`,
   `Value('soft2')` all valid. No keyword requirement. **[LOCKED]**
-- `default_factory=` (keyword) for mutable defaults. `required=True` with no
-  default → required field. **[LOCKED]**
+- `default_factory=` (keyword) for mutable or non-copyable defaults. It is a
+  zero-argument reset recipe, not a lazily materialized concrete baseline.
+  `required=True` with no default → required field. **[LOCKED, clarified
+  2026-07-27]**
 - **`annotations=` kwarg** lets dict-style / `__default__` configs declare a
   field's type when there is no real PEP 526 annotation. **Error if
   `annotations=` is given AND a real annotation exists** for that field (the
@@ -138,15 +166,41 @@ Drop the "smart" name — anything "smart" in a name tends to be a footgun.
   runtime *also* coerced it, the checker and runtime would disagree on the same
   line. Complementary guarantees: Python boundary = statically checked + no
   runtime coercion; argv boundary = no static info + runtime parse. **[LOCKED]**
-- **Validation is the single mismatch voice, default `'warn'`.** Controlled by
-  `__validate__` (class) / `Value(validate=)` (field): checks a value against
-  the annotation and warns (default), raises `TypeError` (`'error'`/`True`), or
-  is off (`False`). It runs on *user-supplied* values (constructor / `data=` /
+- **Validation is the single *value-level* mismatch voice, default `'warn'`.**
+  Controlled by `__validate__` (class) / `Value(validate=)` (field): checks a
+  value against the annotation and warns (default), raises
+  `ConfigValidationError` (a `TypeError` subclass; `'error'`/`True`), or is off
+  (`False`). It runs on *user-supplied* values (constructor / `data=` /
   assignment, and parsed argv/env), but **not** on a field's own trusted default
   — a WYSIWYG `Value('512')` never warns about itself. Combined with parsers no
-  longer warning on value-level no-match, mismatches are reported exactly once,
-  uniformly across `auto`/`csv`/`yaml`/custom. **[REVISED 2026-06; default
-  flipped off → 'warn']**
+  longer warning on value-level no-match, value-level mismatches are reported
+  exactly once, uniformly across `auto`/`csv`/`yaml`/custom. **[REVISED 2026-06;
+  default flipped off → 'warn']**
+    - **Scope — `validate` governs this boundary, not the parser.** It is not
+      the *only* enforcer: an annotation the argument parser can enforce
+      directly (notably `Literal` → argparse `choices=`) is hard-rejected on the
+      `argv`/`env` boundary with a `SystemExit` + usage message *regardless of
+      `validate`*, including in `'warn'` mode. So a bad `Literal` fails hard on
+      the CLI always; `'warn'` only softens the programmatic path, and
+      `'error'` makes the programmatic path hard too. The two boundaries
+      deliberately raise different types — `SystemExit` (CLI: usage message +
+      exit code) vs `ConfigValidationError` (programmatic: catchable) — because
+      each suits its caller; a CLI's top-level handler lets `SystemExit` exit
+      and catches `ConfigValidationError` to print a clean line, and both land
+      on the same exit code.
+- **Structural input validation is opt-in; safe precedence is not.**
+  `Config.cli(..., validate=...)` / `load(..., validate=...)` provide the
+  per-ingestion policy. `None` preserves field/class value validation but does
+  not add a structural traversal; explicit `'warn'` or `'error'` checks
+  contradictory spellings inside one source, and `False` disables runtime
+  validation for that ingestion. A class-level `__validate__ = 'error'` opts
+  into strict structural checks automatically, while the default class
+  `'warn'` remains value-only. This split is deliberate startup-cost policy,
+  not missing validation. The lean path must nevertheless remain safe and
+  deterministic: explicit `path.__class__` wins over scalar selector sugar,
+  so a declared SubConfig is never replaced with raw selector text. Static
+  schema checks remain the separate opt-in `Config.validate()` CI gate.
+  **[LOCKED 2026-07-10]**
 
 ## 5. Static typing strategy
 
@@ -234,6 +288,14 @@ the typing spec so it works now or eventually. Separate transient checker gaps
    path; add argv/env adapters + `Config.coerce`).
 5. **[OPEN]** Revisit whether `: bool` should auto-imply flag behavior before
    public release.
+6. **[OPEN]** Decide the future of `__allow_newattr__`. Today it promotes
+   unknown assignments into `_data`, so they serialize, but dynamic keys have
+   no declared parser/type/default/CLI metadata and are not guaranteed to load
+   back symmetrically. Preferred direction if retained: formalize an explicitly
+   named dynamic-field mode with symmetric mapping/file round trips, while
+   keeping schema-derived CLI and static validation limited to declared fields.
+   Otherwise deprecate the flag rather than conflating it with ordinary
+   transient attributes.
 
 ## 7. Migration from scriptconfig
 

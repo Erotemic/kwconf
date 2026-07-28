@@ -6,6 +6,7 @@ These tests focus on stable structural properties of the generated source
 code (key calls, argument order) rather than full-text matches that would
 break for incidental changes (description, version banners, etc).
 """
+
 import argparse
 
 import kwconf
@@ -20,8 +21,11 @@ def test_port_kwconf_from_argparse():
     parser = argparse.ArgumentParser()
     parser.add_argument('--flag1', action='count')
     parser.add_argument('--flag2', action='store_true')
-    parser.add_argument('--flag3', action='count',
-                        help='specified looooooooooooooooooooooonggg help ')
+    parser.add_argument(
+        '--flag3',
+        action='count',
+        help='specified looooooooooooooooooooooonggg help ',
+    )
     parser.add_argument('--flag4', action='store_true', help='specified help')
 
     text = kwconf.Config.port_from_argparse(parser)
@@ -53,10 +57,12 @@ def test_port_argparse_from_kwconf():
     # is registered with the expected metadata.
     assert 'import argparse' in argparse_text
     assert 'parser = argparse.ArgumentParser(' in argparse_text
-    assert "formatter_class=argparse.RawDescriptionHelpFormatter," in argparse_text
+    assert (
+        'formatter_class=argparse.RawDescriptionHelpFormatter,' in argparse_text
+    )
     assert "parser.add_argument('--param1'" in argparse_text
     assert "help='help text'" in argparse_text
-    assert "type=str" in argparse_text
+    assert 'type=str' in argparse_text
 
 
 def test_port_argparse_from_kwconf_with_unwrapped_values():
@@ -97,7 +103,8 @@ def test_port_argparse_with_optin_fancy_features():
         my_option = kwconf.Value('default')
 
     argparse_text = MyConfig().port_to_argparse(
-        fuzzy_hyphens=True, flag_value_mode=True)
+        fuzzy_hyphens=True, flag_value_mode=True
+    )
     assert 'from kwconf' not in argparse_text
     assert '--my-option' in argparse_text
     assert '_PortedBooleanFlagOrKeyValAction' in argparse_text

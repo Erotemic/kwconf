@@ -3,11 +3,12 @@ hand-rolled dataclass_transform metaclass?
 
 Expected (per PEP 681): line 27 and line 28 should both error.
 """
+
 from __future__ import annotations
 
 from typing import Any, TypeVar, dataclass_transform, overload
 
-T = TypeVar("T")
+T = TypeVar('T')
 
 
 @overload
@@ -25,12 +26,12 @@ class Meta(type):
 
 
 class Config(metaclass=Meta):
-    def __init__(self, **kwargs: Any) -> None: ...   # permissive runtime base
+    def __init__(self, **kwargs: Any) -> None: ...  # permissive runtime base
 
 
 class C(Config):
     x: int = Value(default=1)
 
 
-C(x="bad")        # EXPECT error: str is not assignable to int
-C(nope=1)         # EXPECT error: unknown keyword argument
+C(x='bad')  # EXPECT error: str is not assignable to int
+C(nope=1)  # EXPECT error: unknown keyword argument

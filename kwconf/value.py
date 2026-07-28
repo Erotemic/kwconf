@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import re
 import pprint
-from typing import Any, Callable, cast, Optional, TypeVar, Union, overload
-
+import re
 from collections.abc import MutableMapping, Sequence
+from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 
-from kwconf.util.util_misc import NoParam
+from kwconf.util.util_misc import NoParam, copy_value
 from kwconf.util.util_repr import NiceRepr
-
 
 long_prefix_pat: re.Pattern[str] = re.compile('--[^-].*')
 short_prefix_pat: re.Pattern[str] = re.compile('-[^-].*')
@@ -26,9 +24,10 @@ class _FactoryUnset:
     copy/deepcopy-safe singleton and is falsy so attribute-introspection code
     (e.g. ``_to_value_kw``) skips it.
     """
-    _instance: "Optional[_FactoryUnset]" = None
 
-    def __new__(cls) -> "_FactoryUnset":
+    _instance: 'Optional[_FactoryUnset]' = None
+
+    def __new__(cls) -> '_FactoryUnset':
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -39,10 +38,10 @@ class _FactoryUnset:
     def __bool__(self) -> bool:
         return False
 
-    def __copy__(self) -> "_FactoryUnset":
+    def __copy__(self) -> '_FactoryUnset':
         return self
 
-    def __deepcopy__(self, memo: Any) -> "_FactoryUnset":
+    def __deepcopy__(self, memo: Any) -> '_FactoryUnset':
         return self
 
     def __reduce__(self) -> Any:
@@ -59,6 +58,7 @@ def normalize_option_str(s: str) -> str:
 def _yaml_safe_load(value: str) -> Any:
     """Parse a string as YAML, used as the callable for ``type='yaml'``."""
     from kwconf.util.util_yaml import import_yaml
+
     yaml = import_yaml("type='yaml'")
     return yaml.safe_load(value)
 
@@ -69,7 +69,9 @@ def _yaml_safe_load(value: str) -> Any:
 _NAMED_TYPE_PARSERS: dict[str, Callable[[str], Any]] = {
     'yaml': _yaml_safe_load,
 }
-_NAMED_TYPE_PARSER_SET: set[Callable[[str], Any]] = set(_NAMED_TYPE_PARSERS.values())
+_NAMED_TYPE_PARSER_SET: set[Callable[[str], Any]] = set(
+    _NAMED_TYPE_PARSERS.values()
+)
 
 
 def _resolve_named_type(type_: Any) -> Any:
@@ -173,7 +175,14 @@ class _Value(NiceRepr):
         validate (bool | str | None):
             Opt into post-coerce annotation validation for this field. ``None``
             inherits the owning class's ``__validate__``; ``'warn'`` warns on a
-            mismatch; ``'error'`` / ``True`` raises; ``False`` disables it.
+            mismatch; ``'error'`` / ``True`` raises :class:`ConfigValidationError`;
+            ``False`` disables it. An explicit ``Config.cli(validate=...)`` or
+            ``Config.load(validate=...)`` policy overrides both field and class
+            policy for values ingested by that call. This governs the
+            programmatic boundary only;
+            a ``Literal`` is still hard-rejected on ``argv``/``env`` by the
+            parser (argparse ``choices=``) regardless of ``validate``. See
+            :meth:`Config._validate_assignment`.
 
     CommandLine:
         xdoctest -m kwconf.value _Value
@@ -188,32 +197,37 @@ class _Value(NiceRepr):
         self.value = 3.3
     """
 
-    def __init__(self,
-                 default: Any = NoParam,
-                 type: Any = None,
-                 help: Optional[str] = None,
-                 choices: Sequence[Any] | None = None,
-                 position: Optional[int] = None,
-                 isflag: Union[bool, str] = False,
-                 nargs: Optional[Any] = None,
-                 alias: Sequence[str] | None = None,
-                 required: bool = False,
-                 short_alias: Sequence[str] | None = None,
-                 group: Optional[str] = None,
-                 mutex_group: Optional[str] = None,
-                 tags: Optional[Any] = None,
-                 *,
-                 default_factory: Callable[[], Any] | None = None,
-                 parser: Any = None,
-                 validate: Optional[Union[bool, str]] = None) -> None:
+    def __init__(
+        self,
+        default: Any = NoParam,
+        type: Any = None,
+        help: Optional[str] = None,
+        choices: Sequence[Any] | None = None,
+        position: Optional[int] = None,
+        isflag: Union[bool, str] = False,
+        nargs: Optional[Any] = None,
+        alias: Sequence[str] | None = None,
+        required: bool = False,
+        short_alias: Sequence[str] | None = None,
+        group: Optional[str] = None,
+        mutex_group: Optional[str] = None,
+        tags: Optional[Any] = None,
+        *,
+        default_factory: Callable[[], Any] | None = None,
+        parser: Any = None,
+        validate: Optional[Union[bool, str]] = None,
+    ) -> None:
 
         if default_factory is not None and default is not NoParam:
-            raise ValueError('Error: default_factory is mutually exclusive with default')
+            raise ValueError(
+                'Error: default_factory is mutually exclusive with default'
+            )
 
         if parser is not None and type is not None:
             raise ValueError(
                 'Value: pass either `parser` (preferred) or the deprecated '
-                '`type`, not both.')
+                '`type`, not both.'
+            )
 
         # Whether the user explicitly passed ``type=`` (deprecated). The
         # metaclass also populates ``self.type`` from a field annotation, so we
@@ -291,11 +305,17 @@ class _Value(NiceRepr):
         """
         if self.short_alias is not None:
             short_alias: Sequence[str] = self.short_alias
-            _short_alias: list[str] = cast(list[str], [short_alias] if isinstance(short_alias, str) else short_alias)
+            _short_alias: list[str] = cast(
+                list[str],
+                [short_alias] if isinstance(short_alias, str) else short_alias,
+            )
             for v in _short_alias:
                 if v.startswith('-'):
                     import warnings
-                    warnings.warn('Do not prefix short aliases with a -, it is implicit')
+
+                    warnings.warn(
+                        'Do not prefix short aliases with a -, it is implicit'
+                    )
 
     def __nice__(self) -> str:
         # return '{!r}: {!r}'.format(self.type, self.value)
@@ -321,7 +341,7 @@ class _Value(NiceRepr):
     def value(self, val: Any) -> None:
         self._value = val
 
-    def update(self, value: Any) -> "_Value":
+    def update(self, value: Any) -> '_Value':
         self.value = self.coerce(value)
         return self
 
@@ -342,11 +362,13 @@ class _Value(NiceRepr):
         """
         if isinstance(value, str):
             from kwconf import coerce as _coerce_mod
+
             if self._parser_spec is not None:
                 # Explicit parser= spec. 'auto' is gated by the field
                 # annotation; named/callable specs ignore it.
-                return _coerce_mod.coerce(value, annotation=self._annotation,
-                                          spec=self._parser_spec)
+                return _coerce_mod.coerce(
+                    value, annotation=self._annotation, spec=self._parser_spec
+                )
             if self._user_gave_type:
                 # Deprecated explicit type= path, mapped onto kwconf.coerce
                 # (smartcast has been retired). Named parsers (e.g. 'yaml') and
@@ -361,22 +383,25 @@ class _Value(NiceRepr):
             return _coerce_mod.auto(value, self._annotation)
         return value
 
-    def copy(self) -> "_Value":
+    def copy(self) -> '_Value':
         import copy
+
         return copy.copy(self)
 
-    def clone_default(self) -> "_Value":
+    def clone_default(
+        self, *, context: str = 'configuration default'
+    ) -> '_Value':
         """
         Create a fresh per-instance copy of this value template.
         """
-        import copy
         new = self.copy()
         if self.default_factory is not None:
-            # BOUNDARY (design.md §4): factory output is a Python-boundary value
-            # and is stored verbatim, consistent with __init__.
-            new.value = self.default_factory()
+            # Retain the recipe, not a materialized result. Config reset invokes
+            # the factory afresh, matching dataclasses.default_factory and
+            # avoiding an undocumented deepcopy requirement on its output.
+            new._value = _FACTORY_UNSET
         else:
-            new.value = copy.deepcopy(self.value)
+            new.value = copy_value(self.value, context=context)
         return new
 
     @property
@@ -392,15 +417,21 @@ class _Value(NiceRepr):
         value = self
         orig_help = cast(Optional[str], self.parsekw['help'])
         orig_type = cast(Optional[Union[str, type]], self.parsekw['type'])
-        value_kw: MutableMapping[str, Any] = {k: v for k, v in self.__dict__.items() if v}
-        # The value is stored under the private ``_value`` attribute (it is a
-        # lazily-materialized property); expose it under ``value`` so the
-        # ordering/pop logic below treats it as before.
-        if '_value' in value_kw:
-            value_kw['value'] = value_kw.pop('_value')
-        value_kw.pop('parsekw')
+        value_kw: MutableMapping[str, Any] = {
+            k: v
+            for k, v in self.__dict__.items()
+            # Private attributes (_annotation, _parser_spec, _value, ...) are
+            # runtime metadata. The concrete default or factory recipe is
+            # exposed explicitly below.
+            if v and not k.startswith('_') and k != 'default_factory'
+        }
+        value_kw.pop('parsekw', None)
         value_kw.update(value.parsekw)
-        value_kw['help'] = CodeRepr(repr(orig_help))
+        if orig_help is None:
+            # Do not emit a redundant help=None kwarg.
+            value_kw.pop('help', None)
+        else:
+            value_kw['help'] = CodeRepr(repr(orig_help))
         value_kw['nargs'] = CodeRepr(repr(value.parsekw['nargs']))
         if orig_type is not None:
             if isinstance(orig_type, str):
@@ -410,9 +441,20 @@ class _Value(NiceRepr):
 
         # Move the "known" keys to the front (keeping their existing relative
         # order), then any extra keys after -- matching the prior udict dance.
-        _order_keys = {'value', 'nargs', 'type', 'isflag', 'position', 'required',
-                       'choices', 'alias', 'short_alias', 'group', 'mutex_group',
-                       'help'}
+        _order_keys = {
+            'value',
+            'nargs',
+            'type',
+            'isflag',
+            'position',
+            'required',
+            'choices',
+            'alias',
+            'short_alias',
+            'group',
+            'mutex_group',
+            'help',
+        }
         order = {k: v for k, v in value_kw.items() if k in _order_keys}
         rest = {k: v for k, v in value_kw.items() if k not in _order_keys}
         value_kw = {**order, **rest}
@@ -421,13 +463,19 @@ class _Value(NiceRepr):
 
         # help stays a plain repr string literal (set above) so emitted code is
         # dependency-free; we no longer wrap it in a ``ub.paragraph(...)`` call.
-        value_kw['default'] = value.value
+        if value.default_factory is not None:
+            value_kw['default_factory'] = _callable_code_repr(
+                value.default_factory
+            )
+        else:
+            value_kw['default'] = value.value
         value_kw.pop('value', None)
         return value_kw
 
     @classmethod
-    def _from_action(cls, action, actionid_to_groupkey, actionid_to_mgroupkey,
-                     pos_counter):
+    def _from_action(
+        cls, action, actionid_to_groupkey, actionid_to_mgroupkey, pos_counter
+    ):
         """
         Used in port_argparse
 
@@ -441,23 +489,24 @@ class _Value(NiceRepr):
             value = _Value._from_action(action, {}, {}, 0)
         """
         import argparse
+
         key = action.dest
 
         long_option_strings = [
-            s for s in action.option_strings
-            if long_prefix_pat.match(s)
+            s for s in action.option_strings if long_prefix_pat.match(s)
         ]
         short_option_strings = [
-            s for s in action.option_strings
-            if short_prefix_pat.match(s)
+            s for s in action.option_strings if short_prefix_pat.match(s)
         ]
 
-        alias_seen = list(dict.fromkeys(
-            normalize_option_str(s) for s in long_option_strings))
+        alias_seen = list(
+            dict.fromkeys(normalize_option_str(s) for s in long_option_strings)
+        )
         alias: list[str] = [a for a in alias_seen if a != key]
 
-        short_alias_seen = list(dict.fromkeys(
-            normalize_option_str(s) for s in short_option_strings))
+        short_alias_seen = list(
+            dict.fromkeys(normalize_option_str(s) for s in short_option_strings)
+        )
         short_alias: list[str] = [a for a in short_alias_seen if a != key]
 
         real_value_kw = {
@@ -482,7 +531,9 @@ class _Value(NiceRepr):
         if action_id in actionid_to_groupkey:
             real_value_kw['group'] = repr(actionid_to_groupkey[action_id])
         if action_id in actionid_to_mgroupkey:
-            real_value_kw['mutex_group'] = repr(actionid_to_mgroupkey[action_id])
+            real_value_kw['mutex_group'] = repr(
+                actionid_to_mgroupkey[action_id]
+            )
         if len(action.option_strings) == 0:
             real_value_kw['position'] = next(pos_counter)
         value = _Value(**real_value_kw)  # type: ignore
@@ -493,6 +544,7 @@ class _Flag(_Value):
     """
     Exactly the same as a Value except isflag default to True
     """
+
     def __init__(self, default: Any = False, **kwargs: Any) -> None:
         isflag = kwargs.get('isflag', True)
         assert isflag, 'Cannot disable isflag on a Flag value'
@@ -638,7 +690,11 @@ def Value(
         validate (bool | str | None):
             Opt into post-coerce annotation validation. ``None`` inherits the
             class ``__validate__``; ``'warn'`` warns; ``'error'`` / ``True``
-            raises; ``False`` disables.
+            raises :class:`ConfigValidationError`; ``False`` disables. An
+            explicit ``Config.cli(validate=...)`` / ``load(validate=...)``
+            policy takes precedence for that ingestion. Governs the
+            programmatic boundary only; a ``Literal`` is still hard-rejected
+            on ``argv``/``env`` by the parser regardless of ``validate``.
 
     Returns:
         T: typed as the field value type (a ``_Value`` wrapper at runtime).
@@ -652,10 +708,21 @@ def Value(
         >>> assert Cfg(epochs=3)['epochs'] == 3
     """
     return _Value(
-        default, type=type, help=help, choices=choices, position=position,
-        isflag=isflag, nargs=nargs, alias=alias, required=required,
-        short_alias=short_alias, group=group, mutex_group=mutex_group,
-        tags=tags, default_factory=default_factory, parser=parser,
+        default,
+        type=type,
+        help=help,
+        choices=choices,
+        position=position,
+        isflag=isflag,
+        nargs=nargs,
+        alias=alias,
+        required=required,
+        short_alias=short_alias,
+        group=group,
+        mutex_group=mutex_group,
+        tags=tags,
+        default_factory=default_factory,
+        parser=parser,
         validate=validate,
     )
 
@@ -679,194 +746,60 @@ def Flag(
     (supports both ``--flag`` and ``--flag=value`` on the CLI). Typed to return
     ``bool``. See :func:`Value` for the shared keyword arguments.
     """
-    return cast(bool, _Flag(
-        default, help=help, alias=alias, short_alias=short_alias, group=group,
-        mutex_group=mutex_group, required=required, position=position,
-        tags=tags, parser=parser, validate=validate,
-    ))
+    return cast(
+        bool,
+        _Flag(
+            default,
+            help=help,
+            alias=alias,
+            short_alias=short_alias,
+            group=group,
+            mutex_group=mutex_group,
+            required=required,
+            position=position,
+            tags=tags,
+            parser=parser,
+            validate=validate,
+        ),
+    )
 
 
-def _value_add_argument_to_parser(value: Any, _value: Optional[_Value], self: Any, parser: Any, key: str, fuzzy_hyphens: int | bool = False) -> None:
+def _value_argument_invocations(
+    value: Any,
+    template: Optional[_Value],
+    key: str,
+    fuzzy_hyphens: int | bool = False,
+    portable: bool = False,
+) -> dict[str, tuple[str, tuple[str, ...], dict[str, Any]]]:
+    """Build the canonical argparse calls for one field.
+
+    Both live parser construction and ``port_to_argparse`` consume this single
+    representation, preventing their coercion / flag / alias semantics from
+    drifting.
     """
-    POC for a new simplified way for a value to add itself as an argument to a
-    parser.
-
-    Args:
-        value (Any): the unwrapped default value
-        _value (Value): the value metadata
-        self (Config): the parent kwconf object
-        parser (ArgumentParser): the parser to add to
-        key (str) : the name or destination
-        fuzzy_hyphens (bool | int): enable fuzzy hyphens or not
-    """
-    # import argparse
     from kwconf import argparse_ext
 
-    # value: Any | Value
-    name: str = key
-    argkw: dict[str, Any] = {}
-    argkw['help'] = ''
+    name = key
+    argkw: dict[str, Any] = {'help': ''}
     positional: Optional[int] = None
     isflag: bool | str = False
-    required: bool = False
+    required = False
+    if template is not None:
+        argkw.update(template.parsekw)
+        required = template.required
+        isflag = template.isflag
+        positional = template.position
 
-    group_lut: dict[str, Any] = getattr(parser, '_sc_group_lut', {})
-    mutex_group_lut: dict[str, Any] = getattr(parser, '_sc_mutex_group_lut', {})
-    parser._sc_mutex_group_lut = mutex_group_lut
-    parser._sc_group_lut = group_lut
-
-    parent: Any = parser
-    if _value is not None:
-        # Use the metadata in the Value class to enhance argparse
-        # _value = _metadata[name]
-        argkw.update(_value.parsekw)
-        required = _value.required
-        value = _value.value
-        isflag = _value.isflag
-        positional = _value.position
-
-        # If the args are flagged as belonging to a group, resepct that.
-        if _value.group is not None:
-            if _value.group not in group_lut:
-                groupkw: dict[str, Any] = {}
-                if isinstance(_value.group, str):
-                    groupkw['title'] = _value.group
-                group_lut[_value.group] = parent.add_argument_group(**groupkw)
-            parent = group_lut[_value.group]
-
-        if _value.mutex_group is not None:
-            if _value.mutex_group not in mutex_group_lut:
-                mutex_group_lut[_value.mutex_group] = parent.add_mutually_exclusive_group()
-            parent = mutex_group_lut[_value.mutex_group]
-
-    if not argkw['help']:
-        # argkw['help'] = '<undocumented>'
-        argkw['help'] = ''
-
+    argkw['help'] = argkw.get('help') or ''
     argkw['default'] = value
-    argkw['action'] = _maker_smart_parse_action(self)
+    argkw['action'] = _maker_smart_parse_action(template)
 
-    if not isflag:
-        # Route CLI conversion through the field's coerce() (the annotation-
-        # gated 'auto' parser / deprecated type= / coerce=), so CLI parsing
-        # matches Config.coerce() and honors unions. With no argparse ``type``
-        # set, the ParseAction installs a _smart_type that calls
-        # template.coerce() for scalars and per-element coercion for nargs
-        # fields. Flag fields keep their own (argparse_ext) handling.
+    if not isflag and not portable:
+        # ParseAction routes conversion through Value.coerce, so argparse's
+        # independent type converter must not run as a second parser.
         argkw.pop('type', None)
 
-    if positional:
-        parent.add_argument(name, **argkw)
-
-    argkw['dest'] = name
-
-    option_strings: list[str] = _resolve_alias(name, _value, fuzzy_hyphens)
-
-    if isflag:
-        # Can we support both flag and setitem methods of cli
-        # parsing?
-        # argkw.pop('type', None)
-        argkw.pop('choices', None)
-        argkw.pop('action', None)
-        argkw.pop('nargs', None)
-        argkw['dest'] = name
-
-        if isflag == 'counter':
-            argkw['action'] = argparse_ext.CounterOrKeyValAction
-        else:
-            argkw['action'] = argparse_ext.BooleanFlagOrKeyValAction
-
-    if argkw.get('nargs', None) is not None and argkw.get('type', None) in {list, tuple, set, frozenset}:
-        # argparse applies ``type`` to each token, so collection types here
-        # would split strings into characters instead of preserving argv items.
-        argkw.pop('type', None)
-
-    if isinstance(argkw.get('type', None), str):
-        # Named-type sentinels (e.g. 'yaml') should have been resolved to
-        # callables in ``Value.__init__``. Anything still a string here is
-        # either an unsupported sentinel or a value built via a code path
-        # that bypasses the resolver.
-        raise TypeError(
-            f'Value type must be a callable or None at parser-build time, '
-            f'got the string {argkw["type"]!r}. Named-type sentinels are '
-            f'resolved in Value.__init__; if you reached this branch the '
-            f'string was set after construction.'
-        )
-
-    try:
-        parent.add_argument(*option_strings, required=required, **argkw)
-    except Exception:
-        print('ERROR: Failed to add argument (in _value_add_argument_to_parser / Config.argparse)')
-        print('argkw = {}'.format(pprint.pformat(argkw)))
-        print('required = {}'.format(pprint.pformat(required)))
-        print('option_strings = {}'.format(pprint.pformat(option_strings)))
-        raise
-
-
-def _value_add_argument_kw(value: Any, _value: Optional[_Value], self: Any, key: str, fuzzy_hyphens: int = 0) -> dict[str, tuple]:
-    """
-    TODO: resolve with :func:`_value_add_argument_to_parser`. This just creates
-    one or more kwargs for add_argument. (Depending on how many variants of the
-    argument we want).
-
-    Args:
-        value (Any): the unwrapped default value
-        _value (Value): the value metadata
-
-    Returns:
-        Dict[str, Tuple[str, Tuple, Dict]]:
-            special keys to the method name, args, kwargs invocations.
-    """
-    # import argparse
-    from kwconf import argparse_ext
-
-    # value: Any | Value
-    name: str = key
-    argkw: dict[str, Any] = {}
-    argkw['help'] = ''
-    positional: Optional[int] = None
-    isflag: bool | str = False
-    required: bool = False
-
-    # group_lut = getattr(parser, '_sc_group_lut', {})
-    # mutex_group_lut = getattr(parser, '_sc_mutex_group_lut', {})
-    # parser._sc_mutex_group_lut = mutex_group_lut
-    # parser._sc_group_lut = group_lut
-
-    invocations: dict[str, tuple] = {}
-
-    # parent = parser
-    if _value is not None:
-        # Use the metadata in the Value class to enhance argparse
-        # _value = _metadata[name]
-        argkw.update(_value.parsekw)
-        required = _value.required
-        value = _value.value
-        isflag = _value.isflag
-        positional = _value.position
-
-        # TODO: handle groups
-        # If the args are flagged as belonging to a group, resepct that.
-        # if _value.group is not None:
-        #     if _value.group not in group_lut:
-        #         groupkw = {}
-        #         if isinstance(_value.group, str):
-        #             groupkw['title'] = _value.group
-        #         group_lut[_value.group] = parent.add_argument_group(**groupkw)
-        #     parent = group_lut[_value.group]
-
-        # if _value.mutex_group is not None:
-        #     if _value.mutex_group not in mutex_group_lut:
-        #         mutex_group_lut[_value.mutex_group] = parent.add_mutually_exclusive_group()
-        #     parent = mutex_group_lut[_value.mutex_group]
-
-    if not argkw['help']:
-        # argkw['help'] = '<undocumented>'
-        argkw['help'] = ''
-
-    argkw['default'] = value
-    argkw['action'] = _maker_smart_parse_action(self)
-
+    invocations: dict[str, tuple[str, tuple[str, ...], dict[str, Any]]] = {}
     if positional:
         invocations['positional'] = (
             'add_argument',
@@ -874,39 +807,106 @@ def _value_add_argument_kw(value: Any, _value: Optional[_Value], self: Any, key:
             argkw.copy(),
         )
 
-    argkw['dest'] = name
-
-    option_strings: list[str] = _resolve_alias(name, _value, fuzzy_hyphens)
+    option_kw = argkw.copy()
+    option_kw['dest'] = name
+    option_strings = tuple(_resolve_alias(name, template, fuzzy_hyphens))
 
     if isflag:
-        # Can we support both flag and setitem methods of cli
-        # parsing?
-        argkw.pop('type', None)
-        argkw.pop('choices', None)
-        argkw.pop('action', None)
-        argkw.pop('nargs', None)
-        argkw['dest'] = name
-
+        option_kw.pop('type', None)
+        option_kw.pop('choices', None)
+        option_kw.pop('action', None)
+        option_kw.pop('nargs', None)
         if isflag == 'counter':
-            argkw['action'] = argparse_ext.CounterOrKeyValAction
+            option_kw['action'] = argparse_ext.CounterOrKeyValAction
         else:
-            argkw['action'] = argparse_ext.BooleanFlagOrKeyValAction
+            option_kw['action'] = argparse_ext.BooleanFlagOrKeyValAction
 
-    if argkw.get('nargs', None) is not None and argkw.get('type', None) in {list, tuple, set, frozenset}:
-        argkw.pop('type', None)
+    if option_kw.get('nargs') is not None and option_kw.get('type') in {
+        list,
+        tuple,
+        set,
+        frozenset,
+    }:
+        option_kw.pop('type', None)
 
-    argkw['required'] = required
-    # parent.add_argument(*option_strings, required=required, **argkw)
+    if isinstance(option_kw.get('type'), str):
+        raise TypeError(
+            'Value type must be a callable or None at parser-build time, '
+            f'got the string {option_kw["type"]!r}. Named-type sentinels '
+            'are resolved in Value.__init__; if you reached this branch the '
+            'string was set after construction.'
+        )
 
-    invocations['key_value'] = (
-        'add_argument',
-        option_strings,
-        argkw,
-    )
+    option_kw['required'] = required
+    invocations['key_value'] = ('add_argument', option_strings, option_kw)
     return invocations
 
 
-def _resolve_alias(name: str, _value: Optional[_Value], fuzzy_hyphens: int | bool) -> list[str]:
+def _value_add_argument_to_parser(
+    value: Any,
+    _value: Optional[_Value],
+    self: Any,
+    parser: Any,
+    key: str,
+    fuzzy_hyphens: int | bool = False,
+) -> None:
+    """Add one field using the canonical invocation representation."""
+    group_lut: dict[str, Any] = getattr(parser, '_sc_group_lut', {})
+    mutex_group_lut: dict[str, Any] = getattr(parser, '_sc_mutex_group_lut', {})
+    parser._sc_group_lut = group_lut
+    parser._sc_mutex_group_lut = mutex_group_lut
+
+    parent = parser
+    if _value is not None and _value.group is not None:
+        if _value.group not in group_lut:
+            groupkw = (
+                {'title': _value.group} if isinstance(_value.group, str) else {}
+            )
+            group_lut[_value.group] = parser.add_argument_group(**groupkw)
+        parent = group_lut[_value.group]
+    if _value is not None and _value.mutex_group is not None:
+        if _value.mutex_group not in mutex_group_lut:
+            mutex_group_lut[_value.mutex_group] = (
+                parent.add_mutually_exclusive_group()
+            )
+        parent = mutex_group_lut[_value.mutex_group]
+
+    invocations = _value_argument_invocations(
+        value, _value, key, fuzzy_hyphens=fuzzy_hyphens
+    )
+    try:
+        for _kind, (method_name, args, kwargs) in invocations.items():
+            getattr(parent, method_name)(*args, **kwargs)
+    except Exception:
+        print(
+            'ERROR: Failed to add argument '
+            '(in _value_add_argument_to_parser / Config.argparse)'
+        )
+        print(f'key = {key!r}')
+        print(f'invocations = {pprint.pformat(invocations)}')
+        raise
+
+
+def _value_add_argument_kw(
+    value: Any,
+    _value: Optional[_Value],
+    self: Any,
+    key: str,
+    fuzzy_hyphens: int = 0,
+) -> dict[str, tuple]:
+    """Return the same canonical calls used by live parser construction."""
+    return _value_argument_invocations(
+        value,
+        _value,
+        key,
+        fuzzy_hyphens=fuzzy_hyphens,
+        portable=True,
+    )
+
+
+def _resolve_alias(
+    name: str, _value: Optional[_Value], fuzzy_hyphens: int | bool
+) -> list[str]:
     aliases: Optional[Sequence[str]]
     short_aliases: Optional[Sequence[str]]
     if _value is None:
@@ -926,7 +926,9 @@ def _resolve_alias(name: str, _value: Optional[_Value], fuzzy_hyphens: int | boo
         # Do we want to allow for people to use hyphens on the CLI?
         # Maybe, we can make it optional.
         unique_long_names: set[str] = set(long_names)
-        modified_long_names: set[str] = {n.replace('_', '-') for n in unique_long_names}
+        modified_long_names: set[str] = {
+            n.replace('_', '-') for n in unique_long_names
+        }
         extra_long_names: set[str] = modified_long_names - unique_long_names
         long_names += sorted(extra_long_names)
     short_option_strings: list[str] = ['-' + n for n in short_names]
@@ -935,12 +937,10 @@ def _resolve_alias(name: str, _value: Optional[_Value], fuzzy_hyphens: int | boo
     return option_strings
 
 
-def _maker_smart_parse_action(self):
+def _maker_smart_parse_action(template):
     import argparse
 
-    kwconf_object = self
-
-    class ParseAction(argparse._StoreAction):
+    class ParseAction(argparse.Action):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             # with script config nothing should be required by default
@@ -957,9 +957,11 @@ def _maker_smart_parse_action(self):
                 # the per-token results into a list (the uniform "apply the
                 # parser to each value" rule).
                 def _smart_type(value):
-                    template = kwconf_object.__default__[self.dest]
+                    if template is None:
+                        return value
                     if self.nargs is not None:
                         from kwconf import coerce as _coerce_mod
+
                         # With an explicit parser, apply it per token (csv ->
                         # list, yaml -> value); argparse collects the results.
                         if getattr(template, '_parser_spec', None) is not None:
@@ -967,7 +969,8 @@ def _maker_smart_parse_action(self):
                         # Otherwise coerce each token as the container's element
                         # type rather than the (container) field annotation.
                         elem = _coerce_mod.element_annotation(
-                            getattr(template, '_annotation', None))
+                            getattr(template, '_annotation', None)
+                        )
                         return _coerce_mod.auto(value, elem)
                     return template.coerce(value)
 
@@ -980,11 +983,9 @@ def _maker_smart_parse_action(self):
             # old concat hack is gone (it created ambiguity for structured
             # tokens, e.g. csv 1,2 3,4 -> [1,2,3,4] vs [[1,2],[3,4]]).
             setattr(namespace, action.dest, values)
-            if not hasattr(parser, '_explicitly_given'):
-                # We might be given a subparser / parent parser
-                # and not the original one we created.
-                parser._explicitly_given = set()
-            parser._explicitly_given.add(action.dest)
+            from kwconf.argparse_ext import mark_explicit
+
+            mark_explicit(parser, namespace, action.dest)
 
     return ParseAction
 
@@ -993,3 +994,43 @@ class CodeRepr(str):
     # When we want to write out the exact code that should be inserted.
     def __repr__(self):
         return self
+
+
+def _callable_code_repr(func: Callable[[], Any]) -> CodeRepr:
+    """Return executable source for an importable zero-argument factory."""
+    import importlib
+
+    module_name = getattr(func, '__module__', None)
+    qualname = getattr(func, '__qualname__', None)
+    if (
+        not module_name
+        or module_name == '__main__'
+        or not qualname
+        or '<' in qualname
+    ):
+        raise ValueError(
+            'port_to_config cannot represent a local, lambda, or dynamically '
+            f'constructed default_factory: {func!r}'
+        )
+
+    try:
+        obj: Any = importlib.import_module(module_name)
+        for part in qualname.split('.'):
+            obj = getattr(obj, part)
+    except Exception as ex:
+        raise ValueError(
+            f'port_to_config cannot import default_factory {func!r}'
+        ) from ex
+    if obj is not func:
+        raise ValueError(
+            'port_to_config requires default_factory to be importable by its '
+            f'module and qualified name: {func!r}'
+        )
+
+    if module_name == 'builtins':
+        expr = qualname
+    else:
+        expr = f"__import__({module_name!r}, fromlist=['*'])"
+        for part in qualname.split('.'):
+            expr += f'.{part}'
+    return CodeRepr(expr)

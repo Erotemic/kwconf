@@ -6,8 +6,9 @@ def test_inheritence():
     Test that a inheriting from a dataconfig unions existing config options
     with new ones.
     """
-    from kwconf import Config
     import ubelt as ub
+
+    from kwconf import Config
 
     class Config1(Config):
         arg1 = 1
@@ -27,23 +28,24 @@ def test_inheritence():
     c1 = Config1()
     c2 = Config2()
     c3 = Config3()
-    text1 = ('c1 = {}'.format(ub.urepr(c1, nl=1)))
-    text2 = ('c2 = {}'.format(ub.urepr(c2, nl=1)))
-    text3 = ('c3 = {}'.format(ub.urepr(c3, nl=1)))
+    text1 = 'c1 = {}'.format(ub.urepr(c1, nl=1))
+    text2 = 'c2 = {}'.format(ub.urepr(c2, nl=1))
+    text3 = 'c3 = {}'.format(ub.urepr(c3, nl=1))
 
     print(text1)
     print(text2)
     print(text3)
     assert text1 == ub.codeblock(
-        '''
+        """
         c1 = Config1(**{
             'arg1': 1,
             'arg2': 2,
             'arg3': 3,
         })
-        ''')
+        """
+    )
     assert text2 == ub.codeblock(
-        '''
+        """
         c2 = Config2(**{
             'arg1': 1,
             'arg2': 2,
@@ -52,9 +54,10 @@ def test_inheritence():
             'arg5': 5,
             'arg6': 6,
         })
-        ''')
+        """
+    )
     assert text3 == ub.codeblock(
-        '''
+        """
         c3 = Config3(**{
             'arg1': 1,
             'arg2': 22,
@@ -63,7 +66,8 @@ def test_inheritence():
             'arg5': 55,
             'arg6': 6,
         })
-        ''')
+        """
+    )
 
 
 def test_multiple_inheritence():
@@ -93,10 +97,11 @@ def test_multiple_inheritence():
 
     config = Foobarable()
     import ubelt as ub
+
     text = ub.urepr(config, nl=1)
     print(text)
     assert text == ub.codeblock(
-        '''
+        """
         Foobarable(**{
             'bar_arg1': 'a',
             'bar_arg2': Ellipsis,
@@ -106,7 +111,8 @@ def test_multiple_inheritence():
             'foo_arg2': Ellipsis,
             'new_arg': 'NEW',
         })
-        ''')
+        """
+    )
 
 
 def test_multiple_inheritence_diamond():
@@ -138,10 +144,11 @@ def test_multiple_inheritence_diamond():
 
     config = Joined()
     import ubelt as ub
+
     text = ub.urepr(config, nl=1)
     print(text)
     assert text == ub.codeblock(
-        '''
+        """
         Joined(**{
             'base_arg1': 'B1',
             'base_arg2': 'L_B2',
@@ -152,4 +159,47 @@ def test_multiple_inheritence_diamond():
             'left_arg1': 'L1',
             'left_arg2': 'J1',
         })
-        ''')
+        """
+    )
+
+
+def test_annotation_override_does_not_mutate_base_template():
+    """
+    A subclass overriding only the annotation of an inherited field must not
+    rewrite the base class's shared Value template (annotation processing
+    used to set _annotation in place before copying).
+    """
+    import warnings
+
+    import kwconf
+
+    class Base(kwconf.Config):
+        x: int = kwconf.Value(0)
+
+    class Sub(Base):
+        x: str
+
+    assert Base.__default__['x'] is not Sub.__default__['x']
+    assert Base.__default__['x']._annotation is int
+    assert Sub.__default__['x']._annotation is str
+
+    # The base must still validate against int, not the subclass's str.
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        Base(x=5)
+
+
+def test_annotation_does_not_mutate_user_typed_template():
+    """
+    Same guarantee for the branch where the user supplied an explicit type=
+    (previously mutated without copying).
+    """
+    import kwconf
+
+    template = kwconf.Value(0, type=int)
+
+    class A(kwconf.Config):
+        x: int = template
+
+    assert getattr(template, '_annotation', None) is None
+    assert A.__default__['x']._annotation is int

@@ -199,6 +199,27 @@ class MyConfig(kwconf.Config):
     option = 1
 ```
 
+### Declared fields and temporary attributes
+
+The class declaration is the persistence contract. Attaching an undeclared
+attribute remains valid Python and is useful for temporary state, but it does
+not create a config field:
+
+```python
+cfg.runtime_cache = cache
+assert 'runtime_cache' not in cfg
+assert 'runtime_cache' not in cfg.asdict()
+```
+
+This omission is intentional and does not warn. Declare the value on the class
+when it must participate in mapping behavior, CLI generation, validation, or
+round-trip serialization.
+
+`__allow_newattr__ = True` is a distinct experimental escape hatch that places
+unknown assignments into config data. Those dynamic keys currently have no
+schema metadata or guaranteed deserialization symmetry, so do not use the flag
+for persisted configuration until that contract is formalized.
+
 ### Constructor overloads
 
 Scriptconfig accepted constructor forms such as `Config(data=..., cmdline=...)`.
@@ -262,6 +283,22 @@ class ArchiveSource(kwconf.Config):
         return config
 ```
 
+### Modal command names
+
+`__command__` works the same as in scriptconfig (it sets the command name and
+takes precedence over the attribute a command is bound to). `kwconf` adds a
+convenience: when `__command__` is absent the attribute name is used, so you only
+need `__command__` to override that -- most commonly to give a nested class a
+clean command name. Full precedence (high to low): `ModalValue(command=...)` >
+`__command__` > attribute name > class name.
+
+Modal command tables are inherited. Commands declared through attributes,
+`__subconfigs__`, or class-level `register()` remain available on subclasses;
+normal attribute overriding can replace or hide an attribute-declared command.
+Implicit attribute discovery is intentionally limited to `Config` and
+`ModalCLI` subclasses, so unrelated public helper classes are not treated as
+commands. Register custom command-protocol classes explicitly.
+
 ### Lifecycle aliases
 
 Rename old non-dunder helpers:
@@ -310,7 +347,8 @@ Direct calls to `template.cast(value)` become `template.coerce(value)`.
 ## Validation
 
 `kwconf` checks user-supplied values against annotations after parsing. The
-default policy is `warn`. Use `__validate__ = 'error'` for stricter CLIs.
+class default is `warn`. Use `__validate__ = 'error'` for an application that
+wants strict value and structural input checks by default.
 
 ```python
 class C(kwconf.Config):
@@ -319,7 +357,17 @@ class C(kwconf.Config):
 ```
 
 Validation applies to constructor values, loaded data, assignment, parsed argv,
-and parsed env. Field defaults are accepted as declared. See [Core Contract](core_contract.rst).
+and parsed env. Field defaults are accepted as declared.
+
+`Config.cli` and `Config.load` additionally accept a per-call `validate=`
+override. `None` (the default) preserves class/field value checking without an
+extra structural scan; `False` is the lean opt-out; explicit `warn` or `error`
+checks contradictory source spellings such as both `inner` and
+`inner.__class__`. This performance split is intentional. The unscanned path
+still uses safe deterministic precedence and never stores selector text in
+place of a SubConfig. Static schema checks such as alias ambiguity belong in
+the separate opt-in `MyConfig.validate()` CI gate. See
+[Core Contract](core_contract.rst).
 
 ## Things that stayed familiar
 
