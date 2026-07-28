@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import Any, cast
 
 import ubelt as ub
 
@@ -6,12 +7,14 @@ import kwconf
 
 
 def test_modal_fuzzy_hyphens():
-    callnums = defaultdict(lambda: 0)
+    callnums: defaultdict[str, int] = defaultdict(lambda: 0)
 
     class _TestCommandTemplate(kwconf.Config):
         # not a normal pattern, just make tests more concise.
         __command__ = '_base_'
-        common_option = kwconf.Flag(None, help='an option with an underscore')
+        common_option = kwconf.Flag(
+            cast(Any, None), help='an option with an underscore'
+        )
 
         @classmethod
         def main(cls, argv=None, **kwargs):
@@ -555,13 +558,15 @@ def test_modal_inherits_explicit_registrations_without_sharing_list():
             calls.append('child')
             return 0
 
+    parent_specs = cast(list[Any], Parent.__subconfigs__)
+    child_specs = cast(list[Any], Child.__subconfigs__)
     parent_commands = [
         item.get('command') or item['cls'].__name__
-        for item in Parent.__subconfigs__
+        for item in parent_specs
     ]
     child_commands = [
         item.get('command') or item['cls'].__name__
-        for item in Child.__subconfigs__
+        for item in child_specs
     ]
     assert parent_commands == ['ListedCommand', 'registered']
     assert child_commands == ['ListedCommand', 'registered', 'child']
@@ -655,13 +660,13 @@ def test_modal_command_attribute_override_and_shadow():
         pass
 
     class Parent(kwconf.ModalCLI):
-        run = Original
+        run: type = Original
 
     class Replaced(Parent):
-        run = Replacement
+        run: type = Replacement
 
     class Hidden(Parent):
-        run = Helper
+        run: type = Helper
 
     assert Replaced.main(argv=['run'], _noexit=True) == 0
     assert calls == ['replacement']
@@ -679,7 +684,7 @@ def test_modal_shadowing_reveals_later_base_command():
         __command__ = 'run'
 
     class Left(kwconf.ModalCLI):
-        left_binding = LeftCommand
+        left_binding: type = LeftCommand
 
     class Right(kwconf.ModalCLI):
         right_binding = RightCommand
@@ -688,7 +693,7 @@ def test_modal_shadowing_reveals_later_base_command():
         pass
 
     class Child(Left, Right):
-        left_binding = Helper
+        left_binding: type = Helper
 
     assert len(Child.__subconfigs__) == 1
     assert Child.__subconfigs__[0]['cls'] is RightCommand

@@ -5,6 +5,7 @@ from typing import Any, Optional, Union
 import pytest
 
 from kwconf.coerce import CannotCoerce, auto, coerce, register_parser
+from kwconf.value import _Value
 
 
 def _is(value: Any, expect_type: type) -> bool:
@@ -140,41 +141,31 @@ class TestValueCoerceKwarg:
     kwconf.coerce; omitting it preserves the legacy type=/smartcast path."""
 
     def test_legacy_path_unchanged_when_coerce_unset(self):
-        from kwconf import Value
-
-        v = Value(None, type=float)
+        v = _Value(None, type=float)
         v.update('3.3')
         assert v.value == 3.3
 
     def test_coerce_callable(self):
-        from kwconf import Value
-
-        v = Value(None, parser=str)
+        v = _Value(None, parser=str)
         v.update('123')
         assert v.value == '123'  # explicit str escape hatch keeps the string
 
     def test_coerce_csv(self):
-        from kwconf import Value
-
-        v = Value(None, parser='csv')
+        v = _Value(None, parser='csv')
         v.update('1,2,3')
         assert v.value == [1, 2, 3]
 
     def test_coerce_auto_gated_by_annotation(self):
-        from kwconf import Value
-
-        v = Value(None, parser='auto')
+        v = _Value(None, parser='auto')
         v._annotation = str  # mimic a `: str` class annotation
         v.update('123')
         assert v.value == '123'
-        v2 = Value(None, parser='auto')
+        v2 = _Value(None, parser='auto')
         v2.update('123')  # no annotation -> full inference
         assert v2.value == 123
 
     def test_non_string_passthrough(self):
-        from kwconf import Value
-
-        v = Value(None, parser='csv')
+        v = _Value(None, parser='csv')
         v.update([1, 2])  # already a list; not re-parsed
         assert v.value == [1, 2]
 
@@ -235,7 +226,7 @@ class TestAutoIsDefaultParser:
     def test_explicit_deprecated_type_uses_legacy_path(self):
         import kwconf
 
-        v = kwconf.Value(None, type=int)
+        v = _Value(None, type=int)
         v.update('5')
         assert v.value == 5
 
@@ -264,9 +255,9 @@ class TestOptionalContainerCoercion:
         import kwconf
 
         class C(kwconf.Config):
-            items: 'list[int] | None' = kwconf.Value(None, nargs='*')
+            nums: 'list[int] | None' = kwconf.Value(None, nargs='*')
 
         with warnings.catch_warnings():
             warnings.simplefilter('error')
-            cfg = C.cli(argv=['--items', '1', '2', '3'])
-        assert cfg['items'] == [1, 2, 3]
+            cfg = C.cli(argv=['--nums', '1', '2', '3'])
+        assert cfg['nums'] == [1, 2, 3]

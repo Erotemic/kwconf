@@ -1,5 +1,6 @@
 import argparse
 import inspect
+from typing import cast
 
 import kwconf
 from kwconf import argparse_ext
@@ -14,7 +15,7 @@ def test_kwconf_actions_use_public_argparse_action_base():
     class Demo(kwconf.Config):
         count = kwconf.Value(0, type=int)
 
-    parser = Demo().argparse()
+    parser = cast(argparse_ext.ExtendedArgumentParser, Demo().argparse())
     action = next(a for a in parser._actions if a.dest == 'count')
     assert isinstance(action, argparse.Action)
     assert argparse._StoreAction not in type(action).__mro__
@@ -34,7 +35,7 @@ def test_parser_reuse_has_parse_local_provenance_and_clean_namespaces():
     class Demo(kwconf.Config):
         number = kwconf.Value(0, type=int)
 
-    parser = Demo().argparse()
+    parser = cast(argparse_ext.ExtendedArgumentParser, Demo().argparse())
     first = parser.parse_known_result(['--number=3'])
     second = parser.parse_known_result([])
 
