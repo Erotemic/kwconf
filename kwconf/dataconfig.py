@@ -49,7 +49,8 @@ class _ConfigFieldProxy:
         if instance is None:
             if owner is None:
                 raise AttributeError(self.name)
-            return owner.__default__[self.name]
+            default = getattr(owner, '__default__')
+            return default[self.name]
         return instance[self.name]
 
     def __set__(self, instance: Config, value: Any) -> None:
@@ -96,7 +97,7 @@ def _collect_plain_fields(cls: type) -> tuple[Dict[str, Any], Dict[str, Any]]:
 def _collect_dataclass_fields(cls: type) -> Dict[str, Any]:
     """Translate stdlib dataclass defaults into kwconf declarations."""
     defaults: Dict[str, Any] = {}
-    for field in dataclasses.fields(cls):
+    for field in dataclasses.fields(typing.cast(Any, cls)):
         if field.default_factory is not dataclasses.MISSING:
             defaults[field.name] = Value(
                 default_factory=field.default_factory  # type: ignore[arg-type]

@@ -204,7 +204,7 @@ class SubConfig(Value):
 
     def clone_default(self, *, context='SubConfig default'):
         """Copy selector metadata while retaining the baseline recipe/template."""
-        new = self.copy()
+        new = cast(SubConfig, self.copy())
         new.choices = dict(self.choices) if self.choices is not None else None
         # Config classes are constructors; Config instances are baseline
         # templates cloned by instantiate(). Neither should be deep-copied as
@@ -729,7 +729,7 @@ def apply_dot_updates(
             cfg, sugar, allow_import=allow_import, localns=localns
         )
 
-    canonical_sources = {}
+    canonical_sources: dict[str, str] = {}
     for key, value in leaf_updates.items():
         parts = key.split('.')
         parent = _ensure_parent_node(cfg, parts[:-1])

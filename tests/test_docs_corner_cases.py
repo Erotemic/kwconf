@@ -10,6 +10,7 @@ import os
 import pytest
 
 import kwconf
+from kwconf.value import _Value
 
 
 # --------------------------------------------------------------------------
@@ -19,7 +20,7 @@ def test_parser_list_callable_is_a_footgun():
     # Passing the builtin ``list`` as a parser does NOT build a list from a
     # comma string -- it splits the string into characters. The docs steer
     # users to csv/yaml/nargs instead; this test documents why.
-    assert kwconf.Value(None, parser=list).coerce('1,2,3') == [
+    assert _Value(None, parser=list).coerce('1,2,3') == [
         '1',
         ',',
         '2',
@@ -30,12 +31,12 @@ def test_parser_list_callable_is_a_footgun():
 
 def test_csv_is_the_comma_list_tool():
     # The correct replacement for the old ``type=list`` comma form.
-    assert kwconf.Value(None, parser='csv').coerce('1,2,3') == [1, 2, 3]
+    assert _Value(None, parser='csv').coerce('1,2,3') == [1, 2, 3]
 
 
 def test_yaml_is_the_structured_tool():
     pytest.importorskip('yaml')
-    assert kwconf.Value(None, parser='yaml').coerce('[1, 2, 3]') == [1, 2, 3]
+    assert _Value(None, parser='yaml').coerce('[1, 2, 3]') == [1, 2, 3]
 
 
 # --------------------------------------------------------------------------

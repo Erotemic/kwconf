@@ -4,6 +4,7 @@ import dataclasses
 import functools
 import json
 import threading
+from typing import Any, cast
 
 import pytest
 
@@ -83,7 +84,7 @@ def test_dataconf_preserves_zero_argument_super():
         def greet(self):
             return super().greet() + '-child'
 
-    assert Child(x=2).greet() == 'base-child'
+    assert cast(Any, Child)(x=2).greet() == 'base-child'
 
 
 def test_dataconf_translates_stdlib_default_factory_fields():
@@ -96,8 +97,14 @@ def test_dataconf_translates_stdlib_default_factory_fields():
     first = C()
     second = C()
     first.payload.append('first')
-    assert first.asdict() == {'payload': ['first'], 'count': 3}
-    assert second.asdict() == {'payload': [], 'count': 3}
+    assert cast(kwconf.Config, first).asdict() == {
+        'payload': ['first'],
+        'count': 3,
+    }
+    assert cast(kwconf.Config, second).asdict() == {
+        'payload': [],
+        'count': 3,
+    }
 
 
 def test_concrete_defaults_require_deepcopy_but_factories_do_not():
@@ -132,10 +139,12 @@ def test_subconfig_instance_clones_baseline_without_copying_factory_output():
 
     first = Outer()
     second = Outer()
-    assert first.inner.lock is not template.lock
-    assert first.inner.lock is not second.inner.lock
-    assert first.inner.payload == []
-    assert second.inner.payload == []
+    first_inner = cast(Inner, first['inner'])
+    second_inner = cast(Inner, second['inner'])
+    assert first_inner.lock is not template.lock
+    assert first_inner.lock is not second_inner.lock
+    assert first_inner.payload == []
+    assert second_inner.payload == []
 
 
 def test_port_to_config_preserves_importable_default_factory():
@@ -146,7 +155,7 @@ def test_port_to_config_preserves_importable_default_factory():
     assert 'default_factory=list' in text
     assert 'payload = kwconf.Value([])' not in text
 
-    namespace = {}
+    namespace: dict[str, Any] = {}
     exec(text, namespace)
     first = namespace['Source']()
     second = namespace['Source']()

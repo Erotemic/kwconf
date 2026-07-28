@@ -199,7 +199,7 @@ def test_dataconf_preserves_hooks_and_helpers():
         x: int = 1
 
         def __post_init__(self):
-            hits.append(self['x'])
+            hits.append(self.x)
 
         def _helper(self):
             return 'helped'
@@ -222,8 +222,8 @@ def test_dataconf_inherits_fields_from_plain_base():
 
     cfg = Child()
     assert set(cfg.keys()) == {'base_field', 'child_field'}
-    assert cfg['base_field'] == 10
-    assert cfg['child_field'] == 20
+    assert cfg.base_field == 10
+    assert cfg.child_field == 20
 
     # Subclass field overrides the base default.
     class Base2:
@@ -233,7 +233,7 @@ def test_dataconf_inherits_fields_from_plain_base():
     class Child2(Base2):
         val: int = 2
 
-    assert Child2()['val'] == 2
+    assert Child2().val == 2
 
 
 def test_dataconf_does_not_replace_config_init_with_user_init():

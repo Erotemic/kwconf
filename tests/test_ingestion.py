@@ -81,14 +81,14 @@ def test_from_cli_nargs_coerces_elements():
     """nargs fields coerce each token as the container's element type."""
 
     class C(kwconf.Config):
-        nums: 'list[int]' = kwconf.Value(None, nargs='+')
+        nums: 'list[int] | None' = kwconf.Value(None, nargs='+')
 
     assert C.from_cli(argv=['--nums', '1', '2', '3'])['nums'] == [1, 2, 3]
 
 
 def test_from_cli_nargs_bare_list_keeps_strings():
     class C(kwconf.Config):
-        words: list = kwconf.Value(None, nargs='+')
+        words: list | None = kwconf.Value(None, nargs='+')
 
     assert C.from_cli(argv=['--words', 'a', 'b'])['words'] == ['a', 'b']
 

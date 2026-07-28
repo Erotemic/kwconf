@@ -108,7 +108,7 @@ def test_yaml_nargs_single_structured_token_wraps():
 # yaml WITHOUT nargs : the right way to get a polymorphic list|dict (works now)
 # --------------------------------------------------------------------------
 class YamlPoly(kwconf.Config):
-    key: list | dict | int = kwconf.Value(None, parser='yaml')
+    key: list | dict | int | None = kwconf.Value(None, parser='yaml')
 
 
 def test_yaml_no_nargs_list():

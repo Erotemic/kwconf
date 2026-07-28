@@ -27,6 +27,7 @@ def test_root_no_command_has_stable_usage_and_structured_error(capsys):
     assert error.code == 1
     assert error.message == 'Root: error: no command was given'
     assert str(error) == error.message
+    assert error.parser is not None
     assert error.parser.prog == 'Root'
 
     stderr = capsys.readouterr().err
@@ -42,6 +43,7 @@ def test_nested_no_command_uses_selected_command_path(capsys):
     error = exc_info.value
     assert error.code == 1
     assert error.message == 'Root child: error: no command was given'
+    assert error.parser is not None
     assert error.parser.prog == 'Root child'
 
     stderr = capsys.readouterr().err

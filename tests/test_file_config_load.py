@@ -1,6 +1,7 @@
 # mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 import os
 import typing
+from typing import Any, cast
 
 import ubelt as ub
 
@@ -132,7 +133,8 @@ def test_open_text_input_rejects_bad_input():
         with open_text_input('/this/path/does/not/exist.yaml', 'r'):
             pass
     with pytest.raises(TypeError):
-        with open_text_input(12345, 'r'):  # not a path or readable file
+        with open_text_input(cast(Any, 12345), 'r'):
+            # Not a path or readable file.
             pass
 
 

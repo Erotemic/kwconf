@@ -8,8 +8,7 @@ class, ``Value(..., validate=...)`` per field, or the per-ingestion
 ``Literal[...]``, unions, and parameterized collections.
 
 Many tests in this file deliberately pass values that violate the field
-annotations to exercise the runtime validator. Inline ``# ty: ignore``
-comments suppress the corresponding static-analysis errors.
+annotations to exercise the runtime validator.
 """
 
 import typing
@@ -26,7 +25,7 @@ def test_validation_warns_by_default():
     # Validation now defaults to 'warn': a mismatched user value is still
     # accepted (never raises), but emits a warning.
     with pytest.warns(UserWarning, match='does not match annotation'):
-        cfg = D(mode='wrong')  # ty: ignore[invalid-argument-type]
+        cfg = D(mode='wrong')
     assert cfg['mode'] == 'wrong'
 
 
@@ -41,7 +40,7 @@ def test_validation_can_be_disabled():
 
     with warnings.catch_warnings():
         warnings.simplefilter('error')
-        cfg = D(mode='wrong')  # ty: ignore[invalid-argument-type]
+        cfg = D(mode='wrong')
     assert cfg['mode'] == 'wrong'
 
 
@@ -54,7 +53,7 @@ def test_class_level_error_validation_literal():
 
     assert C(mode='fast')['mode'] == 'fast'
     with pytest.raises(TypeError, match='does not match annotation'):
-        C(mode='wrong')  # ty: ignore[invalid-argument-type]
+        C(mode='wrong')
 
 
 def test_error_validation_raises_config_validation_error():
@@ -72,7 +71,7 @@ def test_error_validation_raises_config_validation_error():
 
     # constructor / data= / attribute assignment all raise the specific type
     with pytest.raises(kwconf.ConfigValidationError, match='does not match'):
-        C(mode='wrong')  # ty: ignore[invalid-argument-type]
+        C(mode='wrong')
     with pytest.raises(kwconf.ConfigValidationError):
         C.cli(argv=False, data={'mode': 'wrong'})
     cfg = C(mode='fast')
@@ -82,7 +81,7 @@ def test_error_validation_raises_config_validation_error():
     # A plain `except TypeError` still catches it (no breakage for existing
     # handlers that predate the specific type).
     try:
-        C(mode='wrong')  # ty: ignore[invalid-argument-type]
+        C(mode='wrong')
     except TypeError as ex:
         assert isinstance(ex, kwconf.ConfigValidationError)
 
@@ -95,7 +94,7 @@ def test_class_level_warn_validation_literal():
         mode: typing.Literal['fast', 'slow'] = 'fast'
 
     with pytest.warns(UserWarning, match='does not match annotation'):
-        cfg = C(mode='wrong')  # ty: ignore[invalid-argument-type]
+        cfg = C(mode='wrong')
     assert cfg['mode'] == 'wrong'
 
 
@@ -104,12 +103,12 @@ def test_per_field_validate_overrides_class():
 
     class C(kwconf.Config):
         __validate__ = 'error'
-        mode: typing.Literal['fast', 'slow'] = kwconf.Value(  # ty: ignore[invalid-assignment]
+        mode: typing.Literal['fast', 'slow'] = kwconf.Value(
             'fast', validate=False
         )
 
     # Class would error, but field opts out.
-    cfg = C(mode='whatever')  # ty: ignore[invalid-argument-type]
+    cfg = C(mode='whatever')
     assert cfg['mode'] == 'whatever'
 
 
@@ -125,11 +124,11 @@ def test_validation_union_int_or_none():
     # The plain constructor does not coerce; with __validate__='error' an
     # uncoerced string fails the int|None annotation.
     with pytest.raises(TypeError):
-        C(x='5')  # ty: ignore[invalid-argument-type]
+        C(x='5')
     # coerce() parses the string to an int, which then validates.
     assert C.coerce(x='5')['x'] == 5
     with pytest.raises(TypeError):
-        C(x=[1, 2])  # ty: ignore[invalid-argument-type]
+        C(x=[1, 2])
 
 
 def test_validation_yaml_typed_with_literal():
@@ -138,7 +137,7 @@ def test_validation_yaml_typed_with_literal():
 
     class C(kwconf.Config):
         __validate__ = 'error'
-        flag: typing.Literal[1, 0, True, 'auto', None] = kwconf.Value(  # ty: ignore[invalid-assignment]
+        flag: typing.Literal[1, 0, True, 'auto', None] = kwconf.Value(
             None, type='yaml'
         )
 
@@ -152,7 +151,7 @@ def test_validation_yaml_typed_with_literal():
     with pytest.raises(SystemExit):
         C.cli(argv=['--flag=foobar'])
     with pytest.raises(TypeError):
-        C(flag='foobar')  # ty: ignore[invalid-argument-type]
+        C(flag='foobar')
 
 
 def test_validation_list_of_int():
@@ -164,7 +163,7 @@ def test_validation_list_of_int():
 
     assert C(nums=[1, 2, 3])['nums'] == [1, 2, 3]
     with pytest.raises(TypeError):
-        C(nums=[1, 'two', 3])  # ty: ignore[invalid-argument-type]
+        C(nums=[1, 'two', 3])
 
 
 def test_validation_skipped_without_annotation():
@@ -175,7 +174,7 @@ def test_validation_skipped_without_annotation():
         x = kwconf.Value(None)  # no annotation
 
     # No annotation, no validation, no error.
-    assert C(x='whatever')['x'] == 'whatever'  # ty: ignore[unknown-argument]
+    assert C(x='whatever')['x'] == 'whatever'
 
 
 def test_default_is_exempt_from_validation():
@@ -187,7 +186,7 @@ def test_default_is_exempt_from_validation():
     # value (design.md §4); with validation on by default it must NOT warn
     # about itself -- on the plain constructor or the argv path.
     class C(kwconf.Config):
-        x: int = kwconf.Value('512')
+        x: int = typing.cast(int, kwconf.Value('512'))
 
     with warnings.catch_warnings():
         warnings.simplefilter('error')
@@ -203,7 +202,7 @@ def test_user_supplied_mismatch_still_warns_with_default_on():
         x: int = kwconf.Value(0)
 
     with pytest.warns(UserWarning, match='does not match annotation'):
-        C(x='not-an-int')  # ty: ignore[invalid-argument-type]
+        C(x='not-an-int')
 
 
 def test_validation_runs_on_setitem():
@@ -230,7 +229,7 @@ def test_int_accepted_where_float_annotated():
 
     with warnings.catch_warnings():
         warnings.simplefilter('error')
-        cfg = FloatCfg(x=1)  # ty: ignore[invalid-argument-type]
+        cfg = FloatCfg(x=1)
     assert cfg['x'] == 1
 
     class ComplexCfg(kwconf.Config):
@@ -238,8 +237,8 @@ def test_int_accepted_where_float_annotated():
 
     with warnings.catch_warnings():
         warnings.simplefilter('error')
-        ComplexCfg(y=1)  # ty: ignore[invalid-argument-type]
-        ComplexCfg(y=1.5)  # ty: ignore[invalid-argument-type]
+        ComplexCfg(y=1)
+        ComplexCfg(y=1.5)
 
 
 def test_validation_message_names_union_and_generic():
@@ -254,7 +253,7 @@ def test_validation_message_names_union_and_generic():
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
-        C(y='nope')  # ty: ignore[invalid-argument-type]
+        C(y='nope')
     msg = str(caught[-1].message)
     assert 'int | None' in msg
     assert 'Union' not in msg

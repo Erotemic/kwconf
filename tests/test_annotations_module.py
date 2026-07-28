@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from typing import Any
 
 import kwconf as kw
 from kwconf import annotations as ann
@@ -16,7 +17,7 @@ def test_annotations_helpers_infer_literal_and_optional():
 
 
 def test_annotations_helpers_resolve_future_annotations():
-    ns = {}
+    ns: dict[str, Any] = {}
     exec(
         """
 from __future__ import annotations
@@ -34,8 +35,12 @@ class C(kw.Config):
 
 
 def test_annotations_helpers_do_not_break_forward_refs():
-    class C(kw.Config):
-        node: 'NotYetDefined' = None  # noqa: F821
+    namespace: dict[str, Any] = {'kw': kw}
+    exec(
+        "class C(kw.Config):\n    node: 'NotYetDefined' = None",
+        namespace,
+    )
+    C = namespace['C']
 
     template = C.__default__['node']
     assert getattr(template, '_annotation', None) in {'NotYetDefined', None}

@@ -1,5 +1,6 @@
 # mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
 import textwrap
+from typing import Any
 
 import pytest
 
@@ -368,7 +369,7 @@ def test_subconfig_config_string_cases():
         model = kwconf.Value('vit', choices=['vit', 'resnet50'])
         epochs = kwconf.Value(10, type=int)
 
-    cases = [
+    cases: list[dict[str, Any]] = [
         {
             'argv': '--config "{model: resnet50, optim.momentum: 0.88}"',
             'optim': SGDLocal,
@@ -394,12 +395,12 @@ def test_subconfig_config_string_cases():
     for case in cases:
         cfg = TrainLocal.cli(
             argv=case['argv'],
-            allow_import=True,  # ty: ignore[invalid-argument-type]
+            allow_import=True,
             allow_subconfig_overrides=True,
             special_options=True,
         )
         assert cfg.model == 'resnet50'
-        assert isinstance(cfg.optim, case['optim'])  # ty: ignore[invalid-argument-type]
+        assert isinstance(cfg.optim, case['optim'])
         if isinstance(cfg.optim, SGDLocal):
             assert cfg.optim.momentum == pytest.approx(0.88)
         else:
@@ -812,7 +813,7 @@ def test_nested_qualname_import_roundtrip(monkeypatch):
         },
     )
     container = type('ImportContainer', (), {'NestedChoice': nested_cls})
-    module.ImportContainer = container
+    setattr(module, 'ImportContainer', container)
     monkeypatch.setitem(sys.modules, module_name, module)
 
     class DefaultChoice(kwconf.Config):
@@ -845,7 +846,7 @@ def test_field_allow_import_true_overrides_call_policy(monkeypatch):
         (kwconf.Config,),
         {'__module__': module_name, 'value': 3},
     )
-    module.ImportedChoice = imported_cls
+    setattr(module, 'ImportedChoice', imported_cls)
     monkeypatch.setitem(sys.modules, module_name, module)
 
     class DefaultChoice(kwconf.Config):
@@ -874,7 +875,7 @@ def test_call_level_allow_import_false_applies_when_field_inherits(monkeypatch):
         (kwconf.Config,),
         {'__module__': module_name, 'value': 3},
     )
-    module.ImportedChoice = imported_cls
+    setattr(module, 'ImportedChoice', imported_cls)
     monkeypatch.setitem(sys.modules, module_name, module)
 
     class DefaultChoice(kwconf.Config):
@@ -903,7 +904,7 @@ def test_field_allow_import_false_opts_out(monkeypatch):
         (kwconf.Config,),
         {'__module__': module_name, 'value': 3},
     )
-    module.ImportedChoice = imported_cls
+    setattr(module, 'ImportedChoice', imported_cls)
     monkeypatch.setitem(sys.modules, module_name, module)
 
     class DefaultChoice(kwconf.Config):

@@ -1,10 +1,12 @@
+from typing import Any
+
 import kwconf.subconfig as subconfig_mod
 
 
 def test_subconfig_module_public_surface():
     assert subconfig_mod.__all__ == ['SubConfig']
 
-    namespace = {}
+    namespace: dict[str, Any] = {}
     exec('from kwconf.subconfig import *', namespace)
     exported = {key for key in namespace if not key.startswith('_')}
     assert exported == {'SubConfig'}

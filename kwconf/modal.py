@@ -444,12 +444,15 @@ class ModalCLI(metaclass=MetaModalCLI):
         >>> MyModalCLI.main(argv=['command2', '--baz=buz'])
     """
 
-    __subconfigs__: List[Dict[str, Any]] = []
+    # The metaclass accepts either bare command classes or metadata mappings
+    # in class declarations, then normalizes both forms to dictionaries at
+    # runtime. ``Any`` accurately reflects that deliberately dynamic boundary.
+    __subconfigs__: List[Any] = []
 
     def __init__(
         self,
         description: str = '',
-        sub_clis: Optional[List[Dict[str, Any]]] = None,
+        sub_clis: Optional[List[Any]] = None,
         version: Optional[str] = None,
     ) -> None:
         if sub_clis is None:

@@ -76,7 +76,7 @@ def port_argparse_counter_to_kwconf():
 
     import kwconf
 
-    text = kwconf.Config.port_argparse(parser)
+    text = getattr(kwconf.Config, 'port_argparse')(parser)
     print(text)
     import ubelt as ub
 

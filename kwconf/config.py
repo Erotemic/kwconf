@@ -72,6 +72,7 @@ from __future__ import annotations
 import argparse as argparse_mod
 import inspect
 import itertools as it
+import os
 import pprint
 import sys
 import typing
@@ -129,6 +130,15 @@ class ConfigValidationError(TypeError):
 
 
 __all__ = ['Config', 'ConfigValidationError', 'define']
+
+
+ConfigData = (
+    Mapping[str, Any]
+    | str
+    | os.PathLike[str]
+    | IO[Any]
+    | None
+)
 
 
 def _normalize_validation_mode(mode: bool | str | None) -> bool | str | None:
@@ -937,7 +947,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     @classmethod
     def cli(
         cls,
-        data: Mapping[str, Any] | str | None = None,
+        data: ConfigData = None,
         default: Mapping[str, Any] | None = None,
         argv: Sequence[str] | str | bool | None = None,
         strict: bool = True,
@@ -1427,7 +1437,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     def load(
         self,
-        data: Mapping[str, Any] | str | None = None,
+        data: ConfigData = None,
         argv: bool | Sequence[str] | str = False,
         mode: str | None = None,
         default: Mapping[str, Any] | None = None,
@@ -1603,7 +1613,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # with stale history from a prior parse.
         _subcfg_mod.distribute_explicit_argv_keys(self, set())
         _subcfg_mod.distribute_provided_keys(self, set())
-        provided_keys = set()
+        provided_keys: set[str] = set()
         pending_updates = None
         if has_subconfigs:
             if argv:
@@ -1679,8 +1689,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         if getattr(self, '_alias_map', None) is None:
             self._alias_map = self._build_alias_map()
-        norm = {}
-        source = {}
+        norm: dict[str, Any] = {}
+        source: dict[str, str] = {}
         for raw_key, value in data.items():
             key = self._alias_map.get(raw_key, raw_key)  # type: ignore
             if key in norm:
@@ -1838,7 +1848,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
             argv = coerce_argv(argv)
 
-        provided_keys = set()
+        provided_keys: set[str] = set()
 
         # TODO: warn about any unused flags
         has_subconfigs = getattr(self, '_has_subconfigs', False)

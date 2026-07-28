@@ -85,7 +85,7 @@ def test_subconfig_templates_are_schema_only():
 
 
 def test_default_factory_recipe_is_reinvoked_on_reset():
-    calls = []
+    calls: list[int] = []
 
     def make_payload():
         calls.append(len(calls))

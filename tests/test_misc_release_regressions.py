@@ -2,6 +2,7 @@
 
 import json
 import typing
+from typing import cast
 
 import pytest
 
@@ -73,8 +74,8 @@ def test_classvar_is_not_a_config_field():
 
     dcfg = D()
     assert D.label == 'class-only'
-    assert dcfg.asdict() == {'value': 1}
-    assert 'label' not in D.__default__
+    assert cast(kwconf.Config, dcfg).asdict() == {'value': 1}
+    assert 'label' not in getattr(D, '__default__')
 
 
 def test_json_output_rejects_non_json_values_and_handles_mixed_keys():

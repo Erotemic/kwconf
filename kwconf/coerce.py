@@ -214,7 +214,7 @@ def _unwrap_optional_container(annotation: Any) -> Any:
     return annotation
 
 
-def auto(token: str, annotation: Any = Any) -> Any:
+def auto(token: Any, annotation: Any = Any) -> Any:
     """
     The default ``'auto'`` parser. Parse a CLI/env string token, gated by
     ``annotation``.
