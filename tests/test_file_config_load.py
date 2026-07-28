@@ -128,7 +128,7 @@ def test_open_text_input_rejects_bad_input():
 
     from kwconf.util.util_fileio import open_text_input
 
-    with pytest.raises(ValueError):
+    with pytest.raises(FileNotFoundError):
         with open_text_input('/this/path/does/not/exist.yaml', 'r'):
             pass
     with pytest.raises(TypeError):

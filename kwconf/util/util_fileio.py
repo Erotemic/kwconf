@@ -57,7 +57,9 @@ def open_text_input(
         # to pick between fspath's str and bytes overloads.
         fspath = os.fspath(cast('str | os.PathLike[str]', path_or_file))
         if not exists(fspath):
-            raise ValueError('Path {} does not exist'.format(fspath))
+            raise FileNotFoundError(
+                f'config file does not exist: {fspath!r}'
+            )
         with open(fspath, mode) as file:
             yield file
     elif hasattr(path_or_file, 'readable'):

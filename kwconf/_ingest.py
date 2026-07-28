@@ -46,15 +46,22 @@ def coerce_mapping_source(data: Any, mode: str | None = None) -> dict[str, Any]:
     if isinstance(data, Mapping):
         return dict(data)
     if isinstance(data, (str, os.PathLike)) or hasattr(data, 'readable'):
+        if mode not in {None, 'json', 'yaml'}:
+            raise KeyError(mode)
+
         if isinstance(data, str) and not os.path.exists(data):
-            try:
-                parsed = json.loads(data)
-            except (json.JSONDecodeError, TypeError):
-                # Preserve the useful missing-file diagnostic for an
-                # unambiguously bare path without requiring the optional YAML
-                # dependency. Mapping-shaped text must be parsed before the
-                # path heuristic because values commonly contain slashes or
-                # config-looking suffixes.
+            if mode == 'json':
+                try:
+                    parsed = json.loads(data)
+                except (json.JSONDecodeError, TypeError):
+                    if looks_like_config_path(
+                        data
+                    ) and not _could_be_inline_yaml_mapping(data):
+                        raise FileNotFoundError(
+                            f'config file does not exist: {data!r}'
+                        )
+                    raise
+            elif mode == 'yaml':
                 if looks_like_config_path(
                     data
                 ) and not _could_be_inline_yaml_mapping(data):
@@ -65,6 +72,27 @@ def coerce_mapping_source(data: Any, mode: str | None = None) -> dict[str, Any]:
 
                 yaml = import_yaml('YAML parsing')
                 parsed = yaml.load(io.StringIO(data), Loader=yaml.SafeLoader)
+            else:
+                try:
+                    parsed = json.loads(data)
+                except (json.JSONDecodeError, TypeError):
+                    # Preserve the useful missing-file diagnostic for an
+                    # unambiguously bare path without requiring the optional
+                    # YAML dependency. Mapping-shaped text must be parsed before
+                    # the path heuristic because values commonly contain
+                    # slashes or config-looking suffixes.
+                    if looks_like_config_path(
+                        data
+                    ) and not _could_be_inline_yaml_mapping(data):
+                        raise FileNotFoundError(
+                            f'config file does not exist: {data!r}'
+                        )
+                    import io
+
+                    yaml = import_yaml('YAML parsing')
+                    parsed = yaml.load(
+                        io.StringIO(data), Loader=yaml.SafeLoader
+                    )
             return _validate_mapping_payload(parsed, data)
 
         if mode is None:

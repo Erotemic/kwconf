@@ -28,8 +28,10 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+import typing
 from typing import Any, Dict, Type
 
+from kwconf.annotations import get_class_namespace_annotations
 from kwconf.config import Config, MetaConfig
 from kwconf.subconfig import SubConfig
 from kwconf.value import _Value as Value
@@ -75,9 +77,16 @@ def _collect_plain_fields(cls: type) -> tuple[Dict[str, Any], Dict[str, Any]]:
     for klass in reversed(inspect.getmro(cls)):
         if klass is object:
             continue
-        annotations.update(getattr(klass, '__annotations__', {}) or {})
+        klass_annotations = get_class_namespace_annotations(vars(klass))
+        annotations.update(klass_annotations)
         for name, value in vars(klass).items():
             if name.startswith('_') or name == 'default':
+                continue
+            if (
+                typing.get_origin(klass_annotations.get(name))
+                is typing.ClassVar
+            ):
+                defaults.pop(name, None)
                 continue
             if _is_field_candidate(value):
                 defaults[name] = value
@@ -110,6 +119,61 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
 
     Inheriting from :class:`Config` directly remains the preferred style; this
     decorator is primarily a compatibility bridge.
+
+    Example:
+        >>> from kwconf.dataconfig import *  # NOQA
+        >>> import kwconf
+        >>> @dataconf
+        >>> class ExampleConfig2:
+        >>>     chip_dims = kwconf.Value((256, 256), help='chip size')
+        >>>     time_dim = kwconf.Value(3, help='number of time steps')
+        >>>     channels = kwconf.Value('*:(red|green|blue)', help='sensor / channel code')
+        >>>     time_sampling = kwconf.Value('soft2')
+        >>> cls = ExampleConfig2
+        >>> print(f'cls={cls}')
+        >>> self = cls()
+        >>> print(f'self={self}')
+
+    Example:
+        >>> from kwconf.dataconfig import *  # NOQA
+        >>> import kwconf
+        >>> @dataconf
+        >>> class PathologicalConfig:
+        >>>     default0 = kwconf.Value((256, 256), help='chip size')
+        >>>     default = kwconf.Value((256, 256), help='chip size')
+        >>>     keys = [1, 2, 3]
+        >>>     __default__ = {
+        >>>         'argparse': 3.3,
+        >>>         'keys': [4, 5],
+        >>>     }
+        >>>     default = None
+        >>>     time_sampling = kwconf.Value('soft2')
+        >>>     def foobar(self):
+        >>>         ...
+        >>> self = PathologicalConfig(1, 2, 3)
+        >>> print(f'self={self}')
+
+    # FIXME: xdoctest problem. Need to be able to simulate a module global scope
+    # Example:
+    #     >>> # Using inheritance and the decorator lets you pickle the object
+    #     >>> from kwconf.dataconfig import *  # NOQA
+    #     >>> import kwconf
+    #     >>> @dataconf
+    #     >>> class PathologicalConfig2(kwconf.Config):
+    #     >>>     default0 = kwconf.Value((256, 256), help='chip size')
+    #     >>>     default2 = kwconf.Value((256, 256), help='chip size')
+    #     >>>     #keys = [1, 2, 3] : Too much
+    #     >>>     __default__3 = {
+    #     >>>         'argparse': 3.3,
+    #     >>>         'keys2': [4, 5],
+    #     >>>     }
+    #     >>>     default2 = None
+    #     >>>     time_sampling = kwconf.Value('soft2')
+    #     >>> config = PathologicalConfig2()
+    #     >>> import pickle
+    #     >>> serial = pickle.dumps(config)
+    #     >>> recon = pickle.loads(serial)
+    #     >>> assert 'locals' not in str(PathologicalConfig2)
     """
     if inspect.isclass(cls) and issubclass(cls, Config):
         return cls
@@ -178,3 +242,84 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
             namespace[name] = _ConfigFieldProxy(name)
 
     return MetaConfig(cls.__name__, (Config, cls), namespace)
+
+
+def __example__() -> None:
+    """
+    Doctests are broken for Configs, so putting them here.
+    """
+    import kwconf
+
+    dataclasses_module: Any
+    try:
+        import dataclasses as dataclasses_module
+    except ImportError:
+        dataclasses_module = None  # type: ignore
+
+    if dataclasses_module is None:
+        return
+
+    @dataclasses_module.dataclass
+    class ExampleConfig0:
+        x: int = 0
+        y: str = '3'
+
+    # Different variants of the same basic configuration (varying amounts of
+    # metadata).
+    class ExampleConfig1:
+        chip_dims = (256, 256)
+        time_dim = 5
+        channels = 'red|green|blue'
+        time_sampling = 'soft2'
+
+    ExampleConfig1d = dataclasses_module.dataclass(ExampleConfig1)
+
+    @dataclasses_module.dataclass
+    class ExampleConfig2:
+        chip_dims = kwconf.Value((256, 256), help='chip size')
+        time_dim = kwconf.Value(3, help='number of time steps')
+        channels = kwconf.Value(
+            '*:(red|green|blue)', help='sensor / channel code'
+        )
+        time_sampling = kwconf.Value('soft2')
+
+    @dataclasses_module.dataclass
+    class ExampleConfig2d:
+        chip_dims = kwconf.Value((256, 256), help='chip size')
+        time_dim: Any = kwconf.Value(3, help='number of time steps')
+        channels: Any = kwconf.Value(
+            '*:(red|green|blue)', help='sensor / channel code'
+        )
+        time_sampling: Any = kwconf.Value('soft2')
+
+    class ExampleConfig3:
+        __default__ = {
+            'chip_dims': kwconf.Value((256, 256), help='chip size'),
+            'time_dim': kwconf.Value(
+                3, type=int, help='number of time steps'
+            ),
+            'channels': kwconf.Value(
+                '*:(red|green|blue)',
+                type=str,
+                help='sensor / channel code',
+            ),
+            'time_sampling': kwconf.Value('soft2', type=str),
+        }
+
+    classes = [
+        ExampleConfig0,
+        ExampleConfig1,
+        ExampleConfig1d,
+        ExampleConfig2,
+        ExampleConfig2d,
+        ExampleConfig3,
+    ]
+    for cls in classes:
+        dcls = dataconf(cls)
+        self = dcls()
+        print(f'self={self}')
+
+    # cls = ExampleConfig2
+    # cls.__annotations__['channels'].__dict__
+    # cls.__annotations__['set_cover_algo'].__dict__
+    # # @kwconf.dataconfig

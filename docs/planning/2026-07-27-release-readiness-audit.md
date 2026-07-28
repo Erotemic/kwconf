@@ -51,29 +51,36 @@ regression tests in `tests/test_release_readiness_regressions.py`.
 - `SubConfig(instance)` clones the instance's reset baseline, not arbitrary
   mutations to its current runtime state.
 
-## Tracked follow-up defects
+## Follow-up defects fixed in the miscellaneous overlay
 
-These were confirmed during the same release-readiness pass. They are not part
-of the top-eight overlay, but remain explicit work items rather than relying on
-chat/history.
+These seven issues were confirmed during the same release-readiness pass and
+were fixed after the top-eight overlay.
 
-- [ ] **`Config.coerce()` alias parser lookup.** Aliased keys currently miss the
-  canonical field's parser/type metadata, so `C.coerce(alias='42')` may retain a
-  string where `C.coerce(canonical='42')` produces an integer.
-- [ ] **`short_alias` schema collisions.** `Config.validate()` checks canonical
-  and long aliases but does not reject two fields claiming the same short
-  option; argparse fails later during parser construction.
-- [ ] **Strict inline mode enforcement.** `mode='json'` should not parse YAML
+- [x] **`Config.coerce()` alias parser lookup.** Aliased keys now use the
+  canonical field's parser/type metadata, so `C.coerce(alias='42')` matches
+  `C.coerce(canonical='42')`.
+- [x] **`short_alias` schema collisions.** `Config.validate()` now rejects two
+  fields claiming the same short option before argparse construction.
+- [x] **Strict inline mode enforcement.** `mode='json'` no longer parses YAML
   inline text successfully.
-- [ ] **Consistent missing-path exceptions.** Missing `os.PathLike` inputs should
+- [x] **Consistent missing-path exceptions.** Missing `os.PathLike` inputs now
   raise the same `FileNotFoundError` diagnostic as missing string paths.
-- [ ] **Type-sensitive `Literal` validation.** `Literal[1]` must reject `True`
-  even though `True == 1` in Python.
-- [ ] **Exclude `ClassVar` declarations.** Class-only metadata should not become
+- [x] **Type-sensitive `Literal` validation.** `Literal[1]` rejects `True` even
+  though `True == 1` in Python.
+- [x] **Exclude `ClassVar` declarations.** Class-only metadata no longer becomes
   instance configuration fields, including through `@dataconf`.
-- [ ] **Make `Config.__json__()` actually JSON-safe.** Complex values need an
-  explicit representation/error policy, and mixed incomparable mapping keys
-  must not be blindly sorted.
+- [x] **Make `Config.__json__()` actually JSON-safe.** Complex values now raise
+  an explicit error, mixed incomparable mapping keys are not sorted, and the
+  transformed result is checked by the standard JSON encoder.
+
+## Documentation preservation correction
+
+The release-readiness overlay initially replaced the ``dataconf`` function
+docstring and accidentally removed its executable examples, the disabled pickle
+example, the xdoctest FIXME, and the manual ``__example__()`` coverage. Those
+items are restored. ``AGENTS.md`` now states that doctests and TODO comments must
+never be removed unless the underlying issue is explicitly addressed, and a
+regression test checks that the restored ``dataconf`` documentation remains.
 
 ## Verification checklist
 

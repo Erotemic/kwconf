@@ -18,6 +18,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   optional rich-argparse swap no longer defeats base-class inference, and the
   remaining suppressions are narrowed to argparse's overloaded `parse_args`
   and PyYAML's lazy import.
+* Restored the executable ``dataconf`` examples, its disabled pickle example,
+  the associated xdoctest FIXME, and the manual compatibility example suite
+  after they were inadvertently dropped during the decorator refactor.
 
 ### Added
 * `Config.cli(..., validate=...)` and `Config.load(..., validate=...)` now
@@ -110,6 +113,20 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   concrete default.
 * Properties, cached properties, and other non-Value descriptors are no longer
   collected as configuration fields.
+* ``Config.coerce()`` now resolves long aliases through the canonical field's
+  parser metadata, and ``Config.validate()`` rejects duplicate ``short_alias``
+  declarations before argparse construction.
+* Inline source parsing now honors an explicit ``mode`` strictly: JSON mode no
+  longer falls back to YAML. Missing string and ``os.PathLike`` config paths
+  consistently raise ``FileNotFoundError``.
+* Runtime ``Literal`` validation now compares both value and type, matching
+  typing semantics where ``Literal[1]`` does not admit ``True``.
+* ``ClassVar`` declarations remain class-only metadata instead of becoming
+  Config fields, including classes converted with ``@dataconf``.
+* ``Config.__json__()`` no longer treats complex numbers as JSON scalars or
+  sorts mappings with incomparable mixed key types. The transformed result is
+  validated with the standard JSON encoder, producing a targeted ``TypeError``
+  for unsupported values and keys.
 * Inline JSON/YAML mappings are parsed before applying the missing-path
   diagnostic, so mapping values may contain paths, URLs, or names ending in
   ``.json`` / ``.yaml`` without being mistaken for filenames.

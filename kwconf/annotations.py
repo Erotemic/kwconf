@@ -323,7 +323,10 @@ def value_matches_annotation(value: Any, annotation: Any) -> bool:
         return value is None
     origin = typing.get_origin(annotation)
     if origin is typing.Literal:
-        return value in typing.get_args(annotation)
+        return any(
+            type(value) is type(candidate) and value == candidate
+            for candidate in typing.get_args(annotation)
+        )
     if origin in {Union, types.UnionType}:
         return any(
             value_matches_annotation(value, arg)

@@ -74,6 +74,7 @@ import inspect
 import itertools as it
 import pprint
 import sys
+import typing
 import warnings
 from abc import ABCMeta as _ABCMeta
 from collections import Counter
@@ -269,6 +270,8 @@ def _collect_declared_config_attrs(
     for k, v in namespace.items():
         if k.startswith('_') or k == 'default':
             continue
+        if typing.get_origin(annotations.get(k)) is typing.ClassVar:
+            continue
         if isinstance(v, classmethod) or isinstance(v, staticmethod):
             continue
         # Descriptors define class/instance behavior; they are not declarative
@@ -308,11 +311,12 @@ def _coerce_data_to_dict(
 def _validate_class_aliases(
     class_name: str, defaults: Mapping[str, Any], fuzzy_hyphens: bool
 ) -> None:
-    """Reject ambiguous long option / mapping names during schema validation.
+    """Reject ambiguous option and mapping names during schema validation.
 
-    Canonical field names and ``Value.alias`` spellings share one lookup
-    namespace. When fuzzy hyphens are enabled, each underscore spelling also
-    claims its generated hyphen spelling. Any spelling claimed by two fields
+    Canonical field names and ``Value.alias`` spellings share one long-name
+    lookup namespace. When fuzzy hyphens are enabled, each underscore spelling
+    also claims its generated hyphen spelling. ``Value.short_alias`` spellings
+    share a separate short-option namespace. Any spelling claimed by two fields
     would otherwise be resolved inconsistently by constructor/data lookup and
     argparse.
 
@@ -322,6 +326,7 @@ def _validate_class_aliases(
     """
     spelling_owner: Dict[str, str] = {}
     spelling_source: Dict[str, str] = {}
+    short_owner: Dict[str, str] = {}
 
     for key, value in defaults.items():
         aliases = getattr(value, 'alias', None)
@@ -353,6 +358,21 @@ def _validate_class_aliases(
                     )
                 spelling_owner[accepted_name] = key
                 spelling_source[accepted_name] = source_kind
+
+        short_aliases = getattr(value, 'short_alias', None)
+        if short_aliases is None:
+            short_aliases = []
+        elif isinstance(short_aliases, str):
+            short_aliases = [short_aliases]
+        for short_name in short_aliases:
+            owner = short_owner.get(short_name)
+            if owner is not None and owner != key:
+                raise ValueError(
+                    f'Alias collision in {class_name}: short option '
+                    f'{("-" + short_name)!r} is claimed by fields '
+                    f'{owner!r} and {key!r}. Short aliases must be unique.'
+                )
+            short_owner[short_name] = key
 
 
 def _normalize_class_defaults(defaults, annotations=None):
@@ -807,9 +827,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         CI so schema mistakes are caught without adding repeated startup work to
         every command invocation.
 
-        Currently this checks that canonical field names, aliases, inherited
-        fields, and generated fuzzy-hyphen spellings form an unambiguous lookup
-        namespace. Additional static schema checks may be added here over time.
+        Currently this checks that canonical field names, long aliases, short
+        aliases, inherited fields, and generated fuzzy-hyphen spellings form
+        unambiguous lookup namespaces. Additional static schema checks may be
+        added here over time.
 
         Raises:
             ValueError:
@@ -846,9 +867,19 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> assert cfg['num'] == 42
         """
         defaults = getattr(cls, '__default__', {}) or {}
+        alias_map: Dict[str, str] = {}
+        for canonical, template in defaults.items():
+            aliases = getattr(template, 'alias', None)
+            if aliases:
+                if not iterable(aliases):
+                    aliases = [aliases]
+                for alias in aliases:
+                    alias_map[alias] = canonical
+
         coerced: Dict[str, Any] = {}
         for key, value in kwargs.items():
-            template = defaults.get(key)
+            canonical = alias_map.get(key, key)
+            template = defaults.get(canonical)
             if isinstance(value, str) and isinstance(template, Value):
                 coerced[key] = template.coerce(value)
             else:
@@ -1102,8 +1133,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             >>> self = Config.demo()
             >>> self.__json__()
             >>> self['option1'] = {1, 2, 3}
+            >>> self['option2'] = {1: 'one', 'two': 2}
+            >>> import json
+            >>> json.dumps(self.__json__())
             >>> self['option2'] = {(1, 2): 'fds'}
-            >>> self.__json__()
+            >>> import pytest
+            >>> with pytest.raises(TypeError):
+            >>>     self.__json__()
         """
         numpy: Any
         try:
@@ -1114,7 +1150,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             numpy = _numpy
         data = self.asdict()
 
-        BUILTIN_SCALAR_TYPES = (str, int, float, complex)
+        BUILTIN_SCALAR_TYPES = (str, int, float)
         BUILTIN_VECTOR_TYPES = (set, frozenset, list, tuple)
 
         # The walker method should be more efficient.
@@ -1130,7 +1166,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             elif numpy is not None and isinstance(item, numpy.ndarray):
                 walker[path] = item.tolist()
             elif isinstance(item, dict):
-                walker[path] = dict(sorted(item.items()))
+                # Preserve insertion order. Sorting is not JSON semantics and
+                # fails for otherwise valid mixed scalar keys such as 1 and
+                # "one" on Python 3.
+                ...
             else:
                 if hasattr(item, '__json__'):
                     walker[path] = item.__json__()
@@ -1140,6 +1179,12 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                             type(item)
                         )
                     )
+
+        # Validate the complete transformed object. In particular, JSON has no
+        # representation for complex numbers or tuple-valued mapping keys.
+        import json
+
+        json.dumps(data)
         return data
 
     def __nice__(self) -> str:
