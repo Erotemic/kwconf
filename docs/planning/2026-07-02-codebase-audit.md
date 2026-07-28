@@ -1,5 +1,9 @@
 # kwconf codebase audit — 2026-07-02
 
+> **Follow-up:** the 2026-07-27 release-readiness pass, its eight release-gate
+> fixes, and the remaining tracked defects are recorded in
+> [`2026-07-27-release-readiness-audit.md`](2026-07-27-release-readiness-audit.md).
+
 > **Current status (revalidated 2026-07-10).** The remediation pass fixed and
 > regression-tested every high-severity finding in §1, but the audit is **not
 > fully closed**. Several concrete correctness defects from §§2–3 remain

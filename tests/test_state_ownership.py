@@ -109,40 +109,28 @@ def test_default_factory_recipe_is_reinvoked_on_reset():
     assert other.payload == []
 
 
-def test_noncopyable_constructor_value_is_accepted():
-    class NonCopyable:
-        def __copy__(self):
-            raise TypeError('cannot copy')
 
+def test_noncopyable_concrete_baselines_raise_actionable_error():
+    import pytest
+
+    class NonCopyable:
         def __deepcopy__(self, memo):
             raise TypeError('cannot deepcopy')
 
-    class Demo(kwconf.Config):
+    supplied = NonCopyable()
+
+    class ConstructorDemo(kwconf.Config):
         payload = None
 
-    supplied = NonCopyable()
-    cfg = Demo(payload=supplied)
-    assert cfg.payload is supplied
+    with pytest.raises(TypeError, match='default_factory'):
+        ConstructorDemo(payload=supplied)
 
-    # When no independent copy can be made, reset preserves the valid Python
-    # object by identity instead of rejecting it during construction.
-    cfg.load(argv=False)
-    assert cfg.payload is supplied
+    cfg = ConstructorDemo()
+    with pytest.raises(TypeError, match='default_factory'):
+        cfg.update_defaults({'payload': supplied})
 
+    class DeclaredDemo(kwconf.Config):
+        payload = supplied
 
-def test_noncopyable_update_default_is_accepted():
-    class NonCopyable:
-        def __copy__(self):
-            raise TypeError('cannot copy')
-
-        def __deepcopy__(self, memo):
-            raise TypeError('cannot deepcopy')
-
-    class Demo(kwconf.Config):
-        payload = None
-
-    supplied = NonCopyable()
-    cfg = Demo()
-    cfg.update_defaults({'payload': supplied})
-    cfg.load(argv=False)
-    assert cfg.payload is supplied
+    with pytest.raises(TypeError, match='default_factory'):
+        DeclaredDemo()

@@ -388,7 +388,9 @@ class _Value(NiceRepr):
 
         return copy.copy(self)
 
-    def clone_default(self) -> '_Value':
+    def clone_default(
+        self, *, context: str = 'configuration default'
+    ) -> '_Value':
         """
         Create a fresh per-instance copy of this value template.
         """
@@ -399,7 +401,7 @@ class _Value(NiceRepr):
             # avoiding an undocumented deepcopy requirement on its output.
             new._value = _FACTORY_UNSET
         else:
-            new.value = copy_value(self.value)
+            new.value = copy_value(self.value, context=context)
         return new
 
     @property
@@ -418,10 +420,9 @@ class _Value(NiceRepr):
         value_kw: MutableMapping[str, Any] = {
             k: v
             for k, v in self.__dict__.items()
-            # Private attributes (_annotation, _parser_spec, _value, ...) and
-            # default_factory are runtime metadata, not Value(...) kwargs that
-            # the emitted code could evaluate. The default itself is exposed
-            # as ``default`` below.
+            # Private attributes (_annotation, _parser_spec, _value, ...) are
+            # runtime metadata. The concrete default or factory recipe is
+            # exposed explicitly below.
             if v and not k.startswith('_') and k != 'default_factory'
         }
         value_kw.pop('parsekw', None)
@@ -462,7 +463,12 @@ class _Value(NiceRepr):
 
         # help stays a plain repr string literal (set above) so emitted code is
         # dependency-free; we no longer wrap it in a ``ub.paragraph(...)`` call.
-        value_kw['default'] = value.value
+        if value.default_factory is not None:
+            value_kw['default_factory'] = _callable_code_repr(
+                value.default_factory
+            )
+        else:
+            value_kw['default'] = value.value
         value_kw.pop('value', None)
         return value_kw
 
@@ -988,3 +994,43 @@ class CodeRepr(str):
     # When we want to write out the exact code that should be inserted.
     def __repr__(self):
         return self
+
+
+def _callable_code_repr(func: Callable[[], Any]) -> CodeRepr:
+    """Return executable source for an importable zero-argument factory."""
+    import importlib
+
+    module_name = getattr(func, '__module__', None)
+    qualname = getattr(func, '__qualname__', None)
+    if (
+        not module_name
+        or module_name == '__main__'
+        or not qualname
+        or '<' in qualname
+    ):
+        raise ValueError(
+            'port_to_config cannot represent a local, lambda, or dynamically '
+            f'constructed default_factory: {func!r}'
+        )
+
+    try:
+        obj: Any = importlib.import_module(module_name)
+        for part in qualname.split('.'):
+            obj = getattr(obj, part)
+    except Exception as ex:
+        raise ValueError(
+            f'port_to_config cannot import default_factory {func!r}'
+        ) from ex
+    if obj is not func:
+        raise ValueError(
+            'port_to_config requires default_factory to be importable by its '
+            f'module and qualified name: {func!r}'
+        )
+
+    if module_name == 'builtins':
+        expr = qualname
+    else:
+        expr = f"__import__({module_name!r}, fromlist=['*'])"
+        for part in qualname.split('.'):
+            expr += f'.{part}'
+    return CodeRepr(expr)

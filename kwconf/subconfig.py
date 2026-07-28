@@ -202,20 +202,31 @@ class SubConfig(Value):
         )
         return f'{default_cls.__name__}'
 
+    def clone_default(self, *, context='SubConfig default'):
+        """Copy selector metadata while retaining the baseline recipe/template."""
+        new = self.copy()
+        new.choices = dict(self.choices) if self.choices is not None else None
+        # Config classes are constructors; Config instances are baseline
+        # templates cloned by instantiate(). Neither should be deep-copied as
+        # ordinary Value payload here.
+        new._value = self.value
+        return new
+
     def instantiate(self, *, _dont_call_post_init=False):
         """
         Return a fresh instance of the wrapped config.
         """
-        import copy
-
         if inspect.isclass(self.value):
             # __init__ validated that a class value is a Config subclass.
             subconfig_cls = cast(type[Config], self.value)
             instance = subconfig_cls(_dont_call_post_init=_dont_call_post_init)
         else:
-            instance = copy.deepcopy(self.value)
-            if _dont_call_post_init and hasattr(instance, '_enable_setattr'):
-                instance._enable_setattr = True  # type: ignore[attr-defined]
+            # An instance declaration is a reset-baseline template, not a
+            # request to deepcopy its live runtime objects. Config-aware cloning
+            # preserves concrete defaults while re-invoking factory recipes.
+            instance = self.value._clone_from_baseline(
+                _dont_call_post_init=_dont_call_post_init
+            )
         return instance
 
 
@@ -648,6 +659,8 @@ def apply_dot_updates(
     stacklevel=None,
     validation_mode=None,
     structural_validation=False,
+    provided_keys=None,
+    _path_prefix=(),
 ):
     """
     Apply dotted-path updates and selectors to a nested Config.
@@ -716,10 +729,12 @@ def apply_dot_updates(
             cfg, sugar, allow_import=allow_import, localns=localns
         )
 
+    canonical_sources = {}
     for key, value in leaf_updates.items():
         parts = key.split('.')
         parent = _ensure_parent_node(cfg, parts[:-1])
-        leaf = parts[-1]
+        raw_leaf = parts[-1]
+        leaf = raw_leaf
         if leaf == '__class__':
             raise KeyError(
                 'The name "__class__" is reserved for selector metadata'
@@ -728,6 +743,15 @@ def apply_dot_updates(
             leaf = parent._normalize_alias_key(leaf)
         if leaf not in parent._data:
             raise KeyError(f'Unknown configuration key: {key}')
+
+        canonical_key = '.'.join(parts[:-1] + [leaf])
+        prior = canonical_sources.get(canonical_key)
+        if prior is not None and prior != key:
+            raise TypeError(
+                f'Multiple input keys {prior!r} and {key!r} target '
+                f'configuration field {canonical_key!r}'
+            )
+        canonical_sources[canonical_key] = key
 
         if leaf in getattr(parent, '_subconfig_meta', {}):
             if not isinstance(value, Mapping):  # nocover - consumed as sugar
@@ -765,9 +789,15 @@ def apply_dot_updates(
                 stacklevel=None,
                 validation_mode=validation_mode,
                 structural_validation=structural_validation,
+                provided_keys=provided_keys,
+                _path_prefix=_path_prefix + tuple(parts[:-1]) + (leaf,),
             )
         else:
             parent._setitem(leaf, value, validation_mode=validation_mode)
+            if provided_keys is not None:
+                provided_keys.add(
+                    '.'.join(_path_prefix + tuple(parts[:-1]) + (leaf,))
+                )
     return cfg
 
 
@@ -884,6 +914,7 @@ def expand_multipass_parser(
     stacklevel=None,
     validation_mode=None,
     structural_validation=False,
+    provided_keys=None,
 ):
     """
     Expand an argparse parser for configs with nested SubConfig nodes.
@@ -930,6 +961,7 @@ def expand_multipass_parser(
             stacklevel=stacklevel,
             validation_mode=validation_mode,
             structural_validation=structural_validation,
+            provided_keys=provided_keys,
         )
 
     if special_options:
@@ -955,6 +987,7 @@ def expand_multipass_parser(
                 stacklevel=stacklevel,
                 validation_mode=validation_mode,
                 structural_validation=structural_validation,
+                provided_keys=provided_keys,
             )
 
     if allow_subconfig_overrides:
@@ -1042,6 +1075,23 @@ def find_subconfig_paths(cfg):
     return paths
 
 
+def _distribute_keys(cfg, keys, attr_name):
+    """Distribute canonical dotted keys across a realized Config tree."""
+    keys = frozenset(keys)
+    setattr(cfg, attr_name, keys)
+    child_keys: dict[str, set[str]] = {}
+    for key in keys:
+        head, sep, tail = key.partition('.')
+        if not sep or not tail:
+            continue
+        child = cfg._data.get(head)
+        if isinstance(child, Config):
+            child_keys.setdefault(head, set()).add(tail)
+    for head, child in cfg._data.items():
+        if isinstance(child, Config):
+            _distribute_keys(child, child_keys.get(head, set()), attr_name)
+
+
 def distribute_explicit_argv_keys(cfg, keys):
     """
     Record argv-explicit provenance across a realized config tree.
@@ -1065,21 +1115,12 @@ def distribute_explicit_argv_keys(cfg, keys):
         >>> assert cfg._explicit_argv_keys == frozenset({'inner.x'})
         >>> assert cfg._data['inner']._explicit_argv_keys == frozenset({'x'})
     """
-    keys = frozenset(keys)
-    cfg._explicit_argv_keys = keys
-    # Group dotted keys by their first segment so each subconfig child receives
-    # the remainder of the path.
-    child_keys: dict[str, set[str]] = {}
-    for key in keys:
-        head, sep, tail = key.partition('.')
-        if not sep or not tail:
-            continue
-        child = cfg._data.get(head)
-        if isinstance(child, Config):
-            child_keys.setdefault(head, set()).add(tail)
-    for head, child in cfg._data.items():
-        if isinstance(child, Config):
-            distribute_explicit_argv_keys(child, child_keys.get(head, set()))
+    _distribute_keys(cfg, keys, '_explicit_argv_keys')
+
+
+def distribute_provided_keys(cfg, keys):
+    """Record all fields supplied by the current load across the tree."""
+    _distribute_keys(cfg, keys, '_provided_keys')
 
 
 def config_to_nested_dict(cfg, include_class=True):

@@ -271,6 +271,11 @@ def _collect_declared_config_attrs(
             continue
         if isinstance(v, classmethod) or isinstance(v, staticmethod):
             continue
+        # Descriptors define class/instance behavior; they are not declarative
+        # field defaults unless explicitly wrapped in Value/SubConfig metadata.
+        if hasattr(v, '__get__') and not isinstance(v, Value):
+            if not (inspect.isclass(v) and issubclass(v, Config)):
+                continue
         if callable(v) and not (inspect.isclass(v) and issubclass(v, Config)):
             continue
         attr_default[k] = _maybe_apply_annotation_to_value(k, v, annotations)
@@ -281,9 +286,13 @@ def _materialize_default_items(defaults: Mapping[str, Any]) -> Dict[str, Any]:
     realized = {}
     for key, value in defaults.items():
         if isinstance(value, Value):
-            realized[key] = value.clone_default()
+            realized[key] = value.clone_default(
+                context=f'default for field {key!r}'
+            )
         else:
-            realized[key] = copy_value(value)
+            realized[key] = copy_value(
+                value, context=f'default for field {key!r}'
+            )
     return realized
 
 
@@ -676,6 +685,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # by ``__setitem__``, since that funnel also handles default/config
         # writes).
         self._explicit_argv_keys: frozenset = frozenset()
+        # Canonical keys supplied by any user source during the most recent
+        # load() call (data, --config, or explicit argv). Required-field
+        # enforcement relies only on this provenance, never value equality.
+        self._provided_keys: frozenset = frozenset()
         cls_default = getattr(self, '__default__', None)
         if cls_default:
             self._default.update(_materialize_default_items(cls_default))
@@ -687,14 +700,20 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """Replace one instance baseline while preserving field metadata."""
         template = self._default[key]
         if isinstance(value, Value):
-            new_template = value.clone_default()
+            new_template = value.clone_default(
+                context=f'explicit default for field {key!r}'
+            )
         elif isinstance(template, Value):
             new_template = template.copy()
             # An explicit baseline replaces the declared factory recipe.
             new_template.default_factory = None
-            new_template.value = copy_value(value)
+            new_template.value = copy_value(
+                value, context=f'explicit default for field {key!r}'
+            )
         else:
-            new_template = copy_value(value)
+            new_template = copy_value(
+                value, context=f'explicit default for field {key!r}'
+            )
         self._default[key] = new_template
         self._alias_map = None
 
@@ -728,10 +747,56 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     # construction invokes default_factory for each instance.
                     values[key] = template.default_factory()
                 else:
-                    values[key] = copy_value(template.value)
+                    values[key] = copy_value(
+                        template.value,
+                        context=f'reset baseline for field {key!r}',
+                    )
             else:
-                values[key] = copy_value(template)
+                values[key] = copy_value(
+                    template, context=f'reset baseline for field {key!r}'
+                )
         self._data = values
+
+    def _clone_from_baseline(
+        self, *, _dont_call_post_init: bool = False
+    ) -> 'Config':
+        """Clone this config's reset baseline without copying runtime values.
+
+        A ``SubConfig(instance)`` declaration treats the instance as a baseline
+        template. Concrete baseline values are deeply copied; factory-backed
+        fields invoke their recipes, so non-copyable factory outputs remain
+        supported and no runtime object is shared with the template instance.
+        """
+        clone = type(self).__new__(type(self))
+        clone._data = {}
+        clone._default = _materialize_default_items(self._default)
+        clone._subconfig_meta = {}
+        clone._has_subconfigs = False
+        clone._kwconf_post_init_done = False
+        clone._alias_map = None
+        clone._explicit_argv_keys = frozenset()
+        clone._provided_keys = frozenset()
+        clone._reset_data_from_defaults(
+            _dont_call_post_init=_dont_call_post_init
+        )
+        clone._enable_setattr = True
+        if not _dont_call_post_init:
+            clone.__post_init__()
+            clone._kwconf_post_init_done = True
+        return clone
+
+    def _validate_required_fields(self) -> None:
+        """Require explicit current-load provenance for required fields."""
+        for key, template in self._default.items():
+            if (
+                isinstance(template, Value)
+                and template.required
+                and key not in self._provided_keys
+            ):
+                raise ValueError(f'Required variable {key!r} was not given')
+        for value in self._data.values():
+            if isinstance(value, Config):
+                value._validate_required_fields()
 
     @classmethod
     def validate(cls) -> None:
@@ -1452,48 +1517,50 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
         user_config = _coerce_data_to_dict(data, mode=mode)
 
-        # check for unknown values
-        indirect_keys = set(user_config) - set(self._default)
-        if indirect_keys:
-            # Check if unknown keys are aliases
-            unknown_keys = []
-            _alias_map = self._build_alias_map()
-            for a in indirect_keys:
-                if a in _alias_map:
-                    k = _alias_map[a]
-                    user_config[k] = user_config.pop(a)  # type: ignore
-                else:
-                    # Ignore any unknown dunder keys or allow dotted keys when
-                    # subconfigs are enabled (they may be nested updates).
-                    if (
-                        a.startswith('.')
-                        or a.startswith('__')
-                        and a.endswith('__')
-                    ):
-                        user_config.pop(a, None)
-                    elif getattr(self, '_has_subconfigs', False) and '.' in a:
-                        continue
-                    else:
-                        unknown_keys.append(a)
-            if unknown_keys:
-                if strict:
-                    if diagnostics.DEBUG_CONFIG:
-                        print(f'[kwconf.config.Config] Error: data={data}')
-
-                    raise KeyError(f'Unknown data options {unknown_keys}')
-                else:
-                    for k in unknown_keys:
-                        user_config.pop(k, None)
-
         from kwconf import subconfig as _subcfg_mod
+
+        has_subconfigs = getattr(self, '_has_subconfigs', False)
+        if not has_subconfigs:
+            # Normalize in source order and reject canonical/alias duplicates.
+            # The previous set-based pass made the winner hash-seed dependent.
+            user_config = self._normalize_alias_dict(user_config)
+
+        # Check unknown values deterministically without destroying aliases or
+        # nested mapping shape before the SubConfig boundary sees them.
+        unknown_keys = []
+        alias_map = self._build_alias_map()
+        for raw_key in list(user_config):
+            if raw_key in self._default or raw_key in alias_map:
+                continue
+            if raw_key.startswith('.') or (
+                raw_key.startswith('__') and raw_key.endswith('__')
+            ):
+                user_config.pop(raw_key, None)
+            elif has_subconfigs and '.' in raw_key:
+                continue
+            else:
+                unknown_keys.append(raw_key)
+        if unknown_keys:
+            if strict:
+                if diagnostics.DEBUG_CONFIG:
+                    print(f'[kwconf.config.Config] Error: data={data}')
+                raise KeyError(f'Unknown data options {unknown_keys}')
+            for key in unknown_keys:
+                user_config.pop(key, None)
 
         localns = _subcfg_mod.resolve_localns(localns, stacklevel)  # type: ignore
         if _reset:
             self._reset_data_from_defaults(
                 _dont_call_post_init=_dont_call_post_init
             )
+        # Provenance is scoped to this load call. Clear both snapshots even
+        # when argv=False so reusing a Config cannot satisfy required fields
+        # with stale history from a prior parse.
+        _subcfg_mod.distribute_explicit_argv_keys(self, set())
+        _subcfg_mod.distribute_provided_keys(self, set())
+        provided_keys = set()
         pending_updates = None
-        if getattr(self, '_has_subconfigs', False):
+        if has_subconfigs:
             if argv:
                 # Preserve the original mapping shape until the canonical
                 # SubConfig update boundary. Pre-flattening here discards the
@@ -1508,6 +1575,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     stacklevel=None,
                     validation_mode=validate,
                     structural_validation=structural_validation,
+                    provided_keys=provided_keys,
                 )
         else:
             if validate is None:
@@ -1515,6 +1583,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             else:
                 for key, value in user_config.items():
                     self._setitem(key, value, validation_mode=validate)
+            provided_keys.update(user_config)
 
         if argv or iterable(argv):
             from kwconf._ingest import coerce_argv
@@ -1535,30 +1604,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 'structural_validation': structural_validation,
             }
             read_argv_kwargs['argv'] = argv
-            self._read_argv(**read_argv_kwargs)
+            provided_keys.update(self._read_argv(**read_argv_kwargs))
+
+        _subcfg_mod.distribute_provided_keys(self, provided_keys)
 
         if not _dont_call_post_init:
-            # Required fields must be supplied by some user source. Keys with
-            # tracked provenance (data=/kwargs or explicit argv) satisfy the
-            # requirement even when the supplied value equals the default.
-            # For untracked sources (e.g. --config files) fall back to the
-            # value-vs-default comparison.
-            provided_keys = set(user_config) | set(self._explicit_argv_keys)
-            for k, v in self._default.items():
-                if isinstance(v, Value) and v.required:
-                    if k in provided_keys:
-                        continue
-                    try:
-                        still_default = bool(self[k] == v.value)
-                    except Exception:
-                        # Defaults without well-behaved __eq__ (arrays, ...)
-                        # cannot prove the value was never supplied.
-                        still_default = False
-                    if still_default:
-                        raise ValueError(
-                            'Required variable {!r} was not given'.format(k)
-                        )
-            if getattr(self, '_has_subconfigs', False):
+            self._validate_required_fields()
+            if has_subconfigs:
                 _subcfg_mod.finalize_post_init(self)
             else:
                 self.__post_init__()
@@ -1582,7 +1634,17 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         if getattr(self, '_alias_map', None) is None:
             self._alias_map = self._build_alias_map()
-        norm = {self._alias_map.get(k, k): v for k, v in data.items()}  # type: ignore
+        norm = {}
+        source = {}
+        for raw_key, value in data.items():
+            key = self._alias_map.get(raw_key, raw_key)  # type: ignore
+            if key in norm:
+                raise TypeError(
+                    f'Multiple input keys {source[key]!r} and {raw_key!r} '
+                    f'target configuration field {key!r}'
+                )
+            norm[key] = value
+            source[key] = raw_key
         return norm
 
     def _build_alias_map(self):
@@ -1731,6 +1793,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
             argv = coerce_argv(argv)
 
+        provided_keys = set()
+
         # TODO: warn about any unused flags
         has_subconfigs = getattr(self, '_has_subconfigs', False)
         if has_subconfigs:
@@ -1753,6 +1817,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 stacklevel=None,
                 validation_mode=validation_mode,
                 structural_validation=structural_validation,
+                provided_keys=provided_keys,
             )
         else:
             parser = self.argparse(special_options=special_options)
@@ -1844,6 +1909,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                     _reset=False,
                     validate=(False if has_subconfigs else validation_mode),
                 )
+                provided_keys.update(self._provided_keys)
 
         # Finally load explicit CLI values. The parser action has already
         # coerced the raw token; we just need to store it.
@@ -1865,6 +1931,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             if key not in special_ns_keys
         }
         _subcfg_mod.distribute_explicit_argv_keys(self, recorded_keys)
+        provided_keys.update(recorded_keys)
 
         if special_options:
             dump_fpath = special_ns['dump']
@@ -1888,7 +1955,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 # A successful dump is a success: exit 0 so shell pipelines
                 # like ``tool --dumps > config.yaml`` do not report failure.
                 sys.exit(0)
-        return self
+        return provided_keys
 
     def __post_init__(self) -> None:
         """overloadable function called after each load"""
@@ -2158,10 +2225,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         for key, value_kw in entries:
             _value_kw = dict(value_kw)
 
-            default = _value_kw.pop('default')
-            value_args = [
-                repr(default),
-            ]
+            value_args = []
+            if 'default' in _value_kw:
+                default = _value_kw.pop('default')
+                value_args.append(repr(default))
             value_args.extend(
                 [
                     '{}={}'.format(k, repr(v))

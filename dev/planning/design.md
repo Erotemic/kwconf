@@ -56,6 +56,18 @@ master `kwconf_primatives` switch exists; granular ones are future work).
   ``_data`` contains only current raw/runtime values. Loading and parser
   construction each have one canonical implementation path. **[LOCKED
   2026-07-10]**
+- **Reset recipes and snapshots are distinct.** ``default_factory`` is retained
+  as a recipe and invoked for every construction/reset; its output is never
+  copied. Concrete declared defaults and constructor/``update_defaults``
+  overrides are reset snapshots and must support ``copy.deepcopy`` so
+  ``_default`` and ``_data`` never alias. ``SubConfig(instance)`` clones the
+  instance's reset baseline, not its live runtime mutations. **[LOCKED
+  2026-07-27]**
+- **Required means supplied by the current ingestion.** Required enforcement is
+  based on canonical provenance from the current ``data=`` / ``--config`` /
+  argv merge, recursively distributed through SubConfigs. It never compares a
+  runtime value to a default and never reuses provenance from an older load.
+  **[LOCKED 2026-07-27]**
 - **Argparse owns argv grammar in every pass.** Dynamic SubConfig selection may
   orchestrate multiple ``parse_known_args`` stages, but kwconf does not vendor
   or override argparse's private parse engine. Remaining private access is
@@ -86,8 +98,10 @@ master `kwconf_primatives` switch exists; granular ones are future work).
   passes `(token, annotation)`. **[LOCKED]**
 - **`default` is positional-allowed.** `Value(10)`, `Value((256, 256))`,
   `Value('soft2')` all valid. No keyword requirement. **[LOCKED]**
-- `default_factory=` (keyword) for mutable defaults. `required=True` with no
-  default → required field. **[LOCKED]**
+- `default_factory=` (keyword) for mutable or non-copyable defaults. It is a
+  zero-argument reset recipe, not a lazily materialized concrete baseline.
+  `required=True` with no default → required field. **[LOCKED, clarified
+  2026-07-27]**
 - **`annotations=` kwarg** lets dict-style / `__default__` configs declare a
   field's type when there is no real PEP 526 annotation. **Error if
   `annotations=` is given AND a real annotation exists** for that field (the

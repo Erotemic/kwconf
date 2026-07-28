@@ -84,12 +84,32 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 * ``Value(default_factory=...)`` now follows dataclass-style recipe semantics:
   construction and reset invoke the factory directly instead of deep-copying a
   materialized result. Non-copyable factory outputs such as thread locks are
-  therefore supported. Explicit Python values use best-effort copy isolation
-  and remain valid by identity when they cannot be copied at all.
-* ``@dataconf`` no longer copies user or generated object-protocol dunders such
-  as a dataclass ``__init__`` over ``Config`` internals. Decorating a standard
-  library dataclass now produces a correctly initialized kwconf object while
-  preserving supported kwconf hooks and ordinary helper methods.
+  therefore supported. Concrete declared defaults and constructor/default
+  overrides must be deep-copyable so reset baselines cannot silently share
+  mutable identity; the resulting error points non-copyable values toward a
+  factory declaration.
+* ``SubConfig(instance)`` now clones the instance's reset baseline through
+  Config-aware construction. Factory-backed child values are recreated rather
+  than deep-copied, so instance templates may contain non-copyable factory
+  outputs without sharing them across parent configs.
+* ``@dataconf`` now generates a Config subclass of the decorated class instead
+  of copying methods into an unrelated replacement. Zero-argument ``super()``
+  and descriptor state are preserved, Config construction remains authoritative,
+  and standard-library dataclass fields (including ``default_factory`` fields)
+  are translated into kwconf declarations.
+* Required fields are now enforced from canonical provenance for the current
+  ``data=`` / ``--config`` / argv merge. Explicit values equal to the default
+  count as supplied, stale argv history cannot satisfy a later load, factory
+  output identity is irrelevant, and dotted provenance reaches SubConfigs.
+* Mapping ingestion now rejects multiple canonical/alias spellings that target
+  the same field instead of silently choosing a hash-order-dependent winner.
+  The duplicate-binding diagnostic also applies to nested dotted aliases.
+* ``port_to_config()`` preserves importable ``default_factory`` recipes in the
+  emitted source. Factories that cannot be represented as stable imports raise
+  a targeted code-generation error rather than being invoked and frozen into a
+  concrete default.
+* Properties, cached properties, and other non-Value descriptors are no longer
+  collected as configuration fields.
 * Inline JSON/YAML mappings are parsed before applying the missing-path
   diagnostic, so mapping values may contain paths, URLs, or names ending in
   ``.json`` / ``.yaml`` without being mistaken for filenames.

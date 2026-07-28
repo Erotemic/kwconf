@@ -45,24 +45,26 @@ class _NoParamType:
 NoParam = _NoParamType()
 
 
-def copy_value(value: Any) -> Any:
-    """Copy a Python-boundary value when its protocols permit it.
+def copy_value(value: Any, *, context: str = 'configuration default') -> Any:
+    """Deep-copy a concrete reset baseline or raise an actionable error.
 
-    Config values are allowed to be arbitrary Python objects. Prefer a deep
-    copy so mutable reset baselines remain independent, fall back to a shallow
-    copy when the object does not support deepcopy, and finally preserve the
-    original object by identity when it is not copyable at all.
+    kwconf promises that concrete defaults and current runtime values do not
+    alias. Silently falling back to a shallow copy (or identity) breaks that
+    invariant for mutable objects, so concrete baselines must support
+    :func:`copy.deepcopy`.
 
     ``default_factory`` outputs do not use this helper: their recipe is invoked
-    afresh instead, matching :mod:`dataclasses`.
+    afresh instead, matching :mod:`dataclasses` and supporting arbitrary
+    non-copyable runtime objects.
     """
     try:
         return copy.deepcopy(value)
-    except Exception:
-        try:
-            return copy.copy(value)
-        except Exception:
-            return value
+    except Exception as ex:
+        raise TypeError(
+            f'{context} must support copy.deepcopy() so reset state remains '
+            'independent. Use Value(default_factory=...) for values that must '
+            'be constructed afresh instead of copied.'
+        ) from ex
 
 
 def iterable(obj: Any, strok: bool = False) -> bool:
