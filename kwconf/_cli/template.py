@@ -34,7 +34,9 @@ class TemplateCLI(kwconf.Config):
             >>> config = cls(**kwargs)
             >>> cls.main(argv=argv, **config)
         """
-        config = cls.cli(argv=argv, data=kwargs, strict=True, verbose='auto')  # type: ignore
+        config = cls._cli(  # type: ignore
+            argv=argv, data=kwargs, strict=True, verbose='auto'
+        )
         if config.type == 'single':
             text = _build_single_template(config)
         elif config.type == 'modal':

@@ -18,7 +18,7 @@ def _register_ubelt_repr_extensions() -> None:
         @_REPR_EXTENSIONS.register(kwconf.Config)
         def format_kwconf(data, **kwargs):
             name = data.__class__.__name__
-            body = ub.urepr(data.to_dict(), **kwargs)
+            body = ub.urepr(data._to_dict(), **kwargs)
             if isinstance(data, kwconf.Config):
                 text = f'{name}(**{body})'
             else:

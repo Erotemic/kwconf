@@ -32,29 +32,16 @@ import typing
 from typing import Any, Dict, Type
 
 from kwconf.annotations import get_class_namespace_annotations
-from kwconf.config import Config, MetaConfig
+from kwconf.config import (
+    Config,
+    MetaConfig,
+    _ConfigFieldProxy,
+    _MAPPING_API_NAMES,
+)
 from kwconf.subconfig import SubConfig
 from kwconf.value import _Value as Value
 
 __all__ = ['dataconf', 'Config', 'MetaConfig', 'SubConfig']
-
-
-class _ConfigFieldProxy:
-    """Shadow a plain base-class field so instance access reaches Config data."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def __get__(self, instance: Config | None, owner: type | None = None) -> Any:
-        if instance is None:
-            if owner is None:
-                raise AttributeError(self.name)
-            default = getattr(owner, '__default__')
-            return default[self.name]
-        return instance[self.name]
-
-    def __set__(self, instance: Config, value: Any) -> None:
-        instance[self.name] = value
 
 
 def _is_field_candidate(value: Any) -> bool:
@@ -233,13 +220,11 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
                 namespace[name] = value
 
     # The original class still owns its field class attributes. Data
-    # descriptors on the generated subclass shadow those attributes and route
-    # instance reads/writes through Config's mapping state.
+    # descriptors on the generated subclass route instance reads/writes through
+    # Config's mapping state. Mapping methods stay method-first; all other
+    # inherited APIs may be shadowed by a field on instances.
     for name in defaults:
-        # Keep Config's mapping/API methods authoritative for historical field
-        # names such as ``keys``. Non-conflicting inherited class defaults need
-        # a data descriptor so instance attribute access reaches ``_data``.
-        if not hasattr(Config, name):
+        if not name.startswith('_') and name not in _MAPPING_API_NAMES:
             namespace[name] = _ConfigFieldProxy(name)
 
     return MetaConfig(cls.__name__, (Config, cls), namespace)

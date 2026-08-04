@@ -385,6 +385,72 @@ def _validate_class_aliases(
             short_owner[short_name] = key
 
 
+_MAPPING_API_NAMES = frozenset(
+    {
+        'clear',
+        'copy',
+        'get',
+        'items',
+        'keys',
+        'pop',
+        'popitem',
+        'update',
+        'values',
+    }
+)
+
+
+class _ConfigFieldProxy:
+    """Route an instance attribute to config data without hiding class APIs.
+
+    Config item access is the authoritative field protocol. Attribute access is
+    convenience syntax, so mapping methods remain method-first. Other public
+    APIs may be used as field names: the field wins on an instance, while class
+    access still resolves the inherited method, classmethod, or property.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __get__(
+        self, instance: 'Config | None', owner: type | None = None
+    ) -> Any:
+        if instance is not None:
+            return instance[self.name]
+        if owner is None:
+            raise AttributeError(self.name)
+
+        config_type = globals().get('Config')
+        if config_type is not None:
+            sentinel = object()
+            for base in owner.__mro__[1:]:
+                if not issubclass(base, config_type):
+                    continue
+                candidate = vars(base).get(self.name, sentinel)
+                if candidate is sentinel or isinstance(
+                    candidate, _ConfigFieldProxy
+                ):
+                    continue
+                descriptor_get = getattr(candidate, '__get__', None)
+                if descriptor_get is not None:
+                    return descriptor_get(None, owner)
+                return candidate
+
+        default = getattr(owner, '__default__')
+        return default[self.name]
+
+    def __set__(self, instance: 'Config', value: Any) -> None:
+        instance[self.name] = value
+
+
+def _config_api_defines_attribute(name: str) -> bool:
+    """Return whether the root Config API defines public ``name``."""
+    config_type = globals().get('Config')
+    return config_type is not None and any(
+        name in vars(ancestor) for ancestor in inspect.getmro(config_type)
+    )
+
+
 def _normalize_class_defaults(defaults, annotations=None):
     """
     Normalize class-level defaults to ensure Value/SubConfig metadata is present.
@@ -537,6 +603,18 @@ class MetaConfig(_ABCMeta):
                     )
 
             this_default = _normalize_class_defaults(this_default, annotations)
+
+            # Mapping methods remain authoritative on instances. Other public
+            # inherited attributes may be shadowed by declared fields while
+            # staying available on the class and through their private alias.
+            for key in this_default:
+                if (
+                    not key.startswith('_')
+                    and key not in _MAPPING_API_NAMES
+                    and key not in namespace
+                    and _config_api_defines_attribute(key)
+                ):
+                    namespace[key] = _ConfigFieldProxy(key)
         namespace['__default__'] = this_default
 
         if diagnostics.DEBUG_META_CONFIG:
@@ -901,7 +979,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         cls, argv: Sequence[str] | str | bool | None = None, **kwargs: Any
     ) -> 'Config':
         """Construct from command-line arguments (a named alias for :meth:`cli`)."""
-        return cls.cli(argv=argv, **kwargs)
+        return cls._cli(argv=argv, **kwargs)
 
     @classmethod
     def from_yaml(cls, path: Any, **kwargs: Any) -> 'Config':
@@ -910,7 +988,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         format's own typing -- no extra string coercion is applied (a quoted
         ``"123"`` stays a string), consistent with the text-boundary rule.
         """
-        return cls.cli(data=path, argv=False, **kwargs)
+        return cls._cli(data=path, argv=False, **kwargs)
 
     @classmethod
     def from_env(cls, prefix: str = '', **kwargs: Any) -> 'Config':
@@ -942,7 +1020,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             if field in fields:
                 collected[field] = env_val
         collected.update(kwargs)
-        return cls.coerce(**collected)
+        return cls._coerce(**collected)
 
     @classmethod
     def cli(
@@ -1055,7 +1133,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         # (otherwise it would fire on the empty instance and again post-load).
         self = cls(_dont_call_post_init=True)
         next_stacklevel = None if stacklevel is None else stacklevel + 1
-        self.load(
+        self._load(
             data,
             argv=argv,
             default=default,
@@ -1070,9 +1148,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         )
 
         if isinstance(verbose, str) and verbose == 'auto':
-            verbose = self.get('verbose', verbose)
-            verbose = not self.get('quiet', not verbose)
-            verbose = not self.get('silent', not verbose)
+            verbose = self._get('verbose', verbose)
+            verbose = not self._get('quiet', not verbose)
+            verbose = not self._get('silent', not verbose)
 
         if verbose:
             try:
@@ -1158,7 +1236,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             numpy = None
         else:
             numpy = _numpy
-        data = self.asdict()
+        data = self._asdict()
 
         BUILTIN_SCALAR_TYPES = (str, int, float)
         BUILTIN_VECTOR_TYPES = (set, frozenset, list, tuple)
@@ -1198,7 +1276,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return data
 
     def __nice__(self) -> str:
-        data = self.asdict()
+        data = self._asdict()
         if isinstance(data, dict):
             data = dict(data)
         return str(data)
@@ -1208,13 +1286,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             from kwconf.subconfig import config_to_nested_dict
 
             return config_to_nested_dict(self, include_class=False)
-        return dict(self.items())
+        return dict(self._items())
 
     def to_dict(self) -> Dict[str, Any]:
-        return self.asdict()
+        return self._asdict()
 
     def copy(self) -> Dict[str, Any]:
-        return dict(self.items())
+        return dict(self._items())
 
     def __len__(self) -> int:
         return len(self._data)
@@ -1568,7 +1646,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             special_options = getattr(self, '__special_options__', False)
 
         if default:
-            self.update_defaults(default)
+            self._update_defaults(default)
 
         user_config = _coerce_data_to_dict(data, mode=mode)
 
@@ -1634,7 +1712,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 )
         else:
             if validate is None:
-                self.update(user_config)
+                self._update(user_config)
             else:
                 for key, value in user_config.items():
                     self._setitem(key, value, validation_mode=validate)
@@ -1875,7 +1953,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 provided_keys=provided_keys,
             )
         else:
-            parser = self.argparse(special_options=special_options)
+            parser = self._argparse(special_options=special_options)
 
         if autocomplete:
             try:
@@ -1957,7 +2035,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 # Nested configs apply --config during parser realization so
                 # selector-dependent arguments exist before the final parse.
                 # Flat configs still load the file here.
-                self.load(
+                self._load(
                     config_fpath,
                     argv=False,
                     _dont_call_post_init=True,
@@ -1998,13 +2076,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                         mode = 'json'
                     else:
                         mode = 'yaml'
-                    text = self.dumps(mode=mode)
+                    text = self._dumps(mode=mode)
                     with open(dump_fpath, 'w') as file:
                         file.write(text)
 
                 if do_dumps:
                     # Always use yaml to dump to stdout
-                    text = self.dumps(mode='yaml')
+                    text = self._dumps(mode='yaml')
                     print(text)
 
                 # A successful dump is a success: exit 0 so shell pipelines
@@ -2033,7 +2111,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
             payload = config_to_nested_dict(self, include_class=True)
         else:
-            payload = dict(self.items())
+            payload = dict(self._items())
         if mode == 'yaml':
             yaml = import_yaml("dump(mode='yaml')")
 
@@ -2071,7 +2149,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         import io
 
         stream = io.StringIO()
-        self.dump(stream=stream, mode=mode)
+        self._dump(stream=stream, mode=mode)
         return stream.getvalue()
 
     def __getattr__(self, key: str) -> Any:
@@ -2090,7 +2168,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     def __dir__(self) -> List[str]:
         initial = cast(List[str], super().__dir__())
-        return initial + list(self.keys())
+        return initial + list(self._keys())
 
     def __setattr__(self, key: str, value: Any) -> None:
         """
@@ -2123,7 +2201,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         if namespace is not None:
             raise NotImplementedError('namespaces are not handled in kwconf')
-        return cls.cli(argv=args, strict=True)
+        return cls._cli(argv=args, strict=True)
 
     @classmethod
     def parse_known_args(
@@ -2134,7 +2212,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         if namespace is not None:
             raise NotImplementedError('namespaces are not handled in kwconf')
-        return cls.cli(argv=args, strict=False)
+        return cls._cli(argv=args, strict=False)
 
     @classmethod
     def _register_main(cls, func):
@@ -2376,7 +2454,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             name = info_dict['name'].replace('-', '_')
         config_cls = define(default, name)
         instance = config_cls(_dont_call_post_init=True)
-        return instance.port_to_config(style=style)
+        return instance._port_to_config(style=style)
 
     @classmethod
     def port_from_argparse(
@@ -3189,7 +3267,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             flat_helper = _subcfg_mod.flat_config_from_tree(
                 self, include_class_options=False
             )
-            parser = flat_helper.argparse(
+            parser = flat_helper._argparse(
                 parser=parser, special_options=special_options
             )
             _subcfg_mod.add_forbidden_selector_args(parser, self)
@@ -3202,6 +3280,45 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             special_options=special_options,
             fuzzy_hyphens=fuzzy_hyphens,
         )
+
+    # Public Config operations are convenient spellings, but declared fields
+    # may shadow them on instances. These private aliases are the stable,
+    # non-shadowable implementation surface used by kwconf itself and available
+    # to callers that need an operation whose public name is also a field.
+    _validate = validate
+    _coerce = coerce
+    _from_cli = from_cli
+    _from_yaml = from_yaml
+    _from_env = from_env
+    _cli = cli
+    _demo = demo
+    _asdict = asdict
+    _to_dict = to_dict
+    _copy = copy
+    _update = update
+    _pop = pop
+    _popitem = popitem
+    _clear = clear
+    _keys = keys
+    _get = _ABCMapping.get
+    get = _get
+    _items = _ABCMapping.items
+    items = _items
+    _values = _ABCMapping.values
+    values = _values
+    _update_defaults = update_defaults
+    _load = load
+    _dump = dump
+    _dumps = dumps
+    _parse_args = parse_args
+    _parse_known_args = parse_known_args
+    _port_to_config = port_to_config
+    _port_from_click = port_from_click
+    _port_from_argparse = port_from_argparse
+    _cls_from_argparse = cls_from_argparse
+    _port_to_argparse = port_to_argparse
+    _namespace = namespace
+    _argparse = argparse
 
 
 __notes__ = """

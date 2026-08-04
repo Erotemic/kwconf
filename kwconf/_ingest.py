@@ -40,8 +40,13 @@ def coerce_mapping_source(data: Any, mode: str | None = None) -> dict[str, Any]:
     """
     if data is None:
         return {}
-    if hasattr(data, 'asdict') and callable(data.asdict):
-        parsed = data.asdict()
+    private_asdict = getattr(data, '_asdict', None)
+    if isinstance(data, Mapping) and callable(private_asdict):
+        parsed = private_asdict()
+        return _validate_mapping_payload(parsed, data)
+    public_asdict = getattr(data, 'asdict', None)
+    if callable(public_asdict):
+        parsed = public_asdict()
         return _validate_mapping_payload(parsed, data)
     if isinstance(data, Mapping):
         return dict(data)

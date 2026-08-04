@@ -23,6 +23,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   after they were inadvertently dropped during the decorator refactor.
 
 ### Added
+* Every public `Config` operation now has a matching private alias (for example,
+  `_load`, `_cli`, `_dump`, and `_validate`). Kwconf uses these non-shadowable
+  aliases internally, so schemas may safely use ordinary API names such as
+  `load`, `cli`, or `validate` as fields without redirecting framework calls.
 * `Config.cli(..., validate=...)` and `Config.load(..., validate=...)` now
   provide a per-ingestion override for runtime validation. `False` selects the
   lean path, `'warn'` enables structural diagnostics while continuing with
@@ -45,6 +49,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   handlers keep working while a CLI can catch the specific validation failure.
 
 ### Changed
+* Declared fields now win over non-mapping `Config` API names on instances,
+  while class access continues to expose inherited classmethods and methods.
+  Mapping methods (`clear`, `copy`, `get`, `items`, `keys`, `pop`, `popitem`,
+  `update`, and `values`) remain method-first so `Config` continues to satisfy
+  the normal mapping protocol; matching field values remain available through
+  item access.
 * Config state ownership is now explicit. Class-level ``__default__`` entries
   are treated as immutable schema templates; each instance owns an independent ``_default``
   reset baseline; and ``_data`` contains only current raw values and realized
