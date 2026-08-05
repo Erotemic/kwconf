@@ -557,6 +557,26 @@ class MetaConfig(_ABCMeta):
             attr_default = _collect_declared_config_attrs(
                 namespace, annotations
             )
+
+            # Keep the private operation surface aligned with ordinary
+            # subclass overrides. Declared fields are handled below by field
+            # proxies and deliberately do not replace the non-shadowable
+            # operation alias.
+            for public_name, public_value in tuple(namespace.items()):
+                if (
+                    public_name not in attr_default
+                    and not public_name.startswith('_')
+                    and _config_api_defines_attribute(public_name)
+                    and (
+                        isinstance(
+                            public_value,
+                            (classmethod, staticmethod, property),
+                        )
+                        or callable(public_value)
+                    )
+                ):
+                    namespace.setdefault('_' + public_name, public_value)
+
             if attr_default:
                 for key in attr_default:
                     namespace.pop(key, None)

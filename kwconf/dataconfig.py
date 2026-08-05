@@ -33,10 +33,10 @@ from typing import Any, Dict, Type
 
 from kwconf.annotations import get_class_namespace_annotations
 from kwconf.config import (
+    _MAPPING_API_NAMES,
     Config,
     MetaConfig,
     _ConfigFieldProxy,
-    _MAPPING_API_NAMES,
 )
 from kwconf.subconfig import SubConfig
 from kwconf.value import _Value as Value

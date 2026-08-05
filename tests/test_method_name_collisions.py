@@ -5,7 +5,6 @@ import pytest
 
 import kwconf
 
-
 CLASSMETHOD_NAMES = {
     'validate',
     'coerce',
@@ -221,6 +220,50 @@ def test_config_ingestion_uses_private_asdict_when_public_name_is_a_field():
     assert payload['asdict'] == 'field-asdict'
     assert payload['inner']['value'] == 1
     assert isinstance(payload['inner'], dict)
+
+
+def test_subclass_operation_overrides_update_private_aliases():
+    class CustomConfig(kwconf.Config):
+        value: int = 1
+
+        @classmethod
+        def cli(cls, *args, **kwargs):
+            return 'custom-cli'
+
+        def asdict(self):
+            return {'custom': self['value']}
+
+        def dump(self, stream=None, mode=None):
+            text = f'custom:{self["value"]}'
+            if stream is not None:
+                stream.write(text)
+            return text
+
+    assert CustomConfig.from_cli(argv=False) == 'custom-cli'
+
+    cfg = CustomConfig(value=3)
+    assert cfg.to_dict() == {'custom': 3}
+    assert cfg.dumps() == 'custom:3'
+    assert inspect.getattr_static(
+        CustomConfig, '_cli'
+    ) is inspect.getattr_static(CustomConfig, 'cli')
+    assert inspect.getattr_static(
+        CustomConfig, '_asdict'
+    ) is inspect.getattr_static(CustomConfig, 'asdict')
+    assert inspect.getattr_static(
+        CustomConfig, '_dump'
+    ) is inspect.getattr_static(CustomConfig, 'dump')
+
+
+def test_ingestion_ignores_unrelated_mapping_private_asdict():
+    from kwconf._ingest import coerce_mapping_source
+
+    class ForeignMapping(dict):
+        def _asdict(self, required_argument):
+            raise AssertionError('unrelated private method must not be called')
+
+    source = ForeignMapping(value=3)
+    assert coerce_mapping_source(source) == {'value': 3}
 
 
 def test_nested_cli_uses_private_argparse_operation():
