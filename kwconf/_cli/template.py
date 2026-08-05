@@ -16,7 +16,9 @@ class TemplateCLI(kwconf.Config):
         position=1,
     )
 
-    name: str = kwconf.Value('Template', help='The name of the config', position=2)
+    name: str = kwconf.Value(
+        'Template', help='The name of the config', position=2
+    )
 
     verbose = kwconf.Value(False, isflag=True)
 

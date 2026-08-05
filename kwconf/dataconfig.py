@@ -281,9 +281,7 @@ def __example__() -> None:
     class ExampleConfig3:
         __default__ = {
             'chip_dims': kwconf.Value((256, 256), help='chip size'),
-            'time_dim': kwconf.Value(
-                3, type=int, help='number of time steps'
-            ),
+            'time_dim': kwconf.Value(3, type=int, help='number of time steps'),
             'channels': kwconf.Value(
                 '*:(red|green|blue)',
                 type=str,

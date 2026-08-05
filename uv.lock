@@ -494,6 +494,7 @@ yaml = [
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
+    { name = "flake8" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pyyaml" },

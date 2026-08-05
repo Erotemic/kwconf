@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -euo pipefail
+
 # Syntax-level gate (keeps parity with the historical flake8 check) ...
 flake8 --count --select=E9,F63,F7,F82 --show-source --statistics kwconf
 flake8 --count --select=E9,F63,F7,F82 --show-source --statistics ./tests

@@ -199,9 +199,10 @@ def test_typed_class_attribute_collisions_follow_the_same_policy():
     CollisionConfig.validate()
     assert CollisionConfig.cli(argv=False).cli == 'field-cli'
     assert CollisionConfig.cli(argv=['--validate']).validate is True
-    assert CollisionConfig.cli(
-        data={'validate': True}, argv=False
-    ).validate is True
+    assert (
+        CollisionConfig.cli(data={'validate': True}, argv=False).validate
+        is True
+    )
     cfg._load({'load': 'changed'}, argv=False)
     assert cfg.load == 'changed'
 

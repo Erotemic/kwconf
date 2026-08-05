@@ -132,13 +132,7 @@ class ConfigValidationError(TypeError):
 __all__ = ['Config', 'ConfigValidationError', 'define']
 
 
-ConfigData = (
-    Mapping[str, Any]
-    | str
-    | os.PathLike[str]
-    | IO[Any]
-    | None
-)
+ConfigData = Mapping[str, Any] | str | os.PathLike[str] | IO[Any] | None
 
 
 def _normalize_validation_mode(mode: bool | str | None) -> bool | str | None:

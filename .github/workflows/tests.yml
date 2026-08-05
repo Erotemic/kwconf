@@ -29,11 +29,9 @@ jobs:
     - name: Install dependencies
       run: |-
         python -m pip install pip uv -U
-        python -m uv pip install flake8
-    - name: Lint with flake8
-      run: |-
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 ./kwconf --count --select=E9,F63,F7,F82 --show-source --statistics
+        python -m uv pip install flake8 ruff
+    - name: Lint with flake8 and Ruff
+      run: bash run_linter.sh
     - name: Typecheck
       run: |-
         python -m pip install ty
@@ -413,5 +411,4 @@ jobs:
       with:
         file: ./coverage.xml
         token: ${{ secrets.CODECOV_TOKEN }}
-
 

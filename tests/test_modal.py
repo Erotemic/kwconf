@@ -561,12 +561,10 @@ def test_modal_inherits_explicit_registrations_without_sharing_list():
     parent_specs = cast(list[Any], Parent.__subconfigs__)
     child_specs = cast(list[Any], Child.__subconfigs__)
     parent_commands = [
-        item.get('command') or item['cls'].__name__
-        for item in parent_specs
+        item.get('command') or item['cls'].__name__ for item in parent_specs
     ]
     child_commands = [
-        item.get('command') or item['cls'].__name__
-        for item in child_specs
+        item.get('command') or item['cls'].__name__ for item in child_specs
     ]
     assert parent_commands == ['ListedCommand', 'registered']
     assert child_commands == ['ListedCommand', 'registered', 'child']
