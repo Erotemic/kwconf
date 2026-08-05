@@ -111,7 +111,9 @@ Notes:
 # sys.path.insert(0, os.path.abspath('.'))
 
 # -- Project information -----------------------------------------------------
-from os.path import dirname, exists, join
+from os.path import exists
+from os.path import dirname
+from os.path import join
 
 
 def parse_version(fpath):
@@ -130,8 +132,7 @@ def parse_version(fpath):
         def visit_Assign(self, node):
             for target in node.targets:
                 if getattr(target, 'id', None) == '__version__':
-                    # ast.Constant.value (the .s alias was removed in 3.14)
-                    self.version = node.value.value
+                    self.version = node.value.s
 
     visitor = VersionVisitor()
     visitor.visit(pt)
@@ -235,6 +236,7 @@ intersphinx_mapping = {
     'xdoctest': ('https://xdoctest.readthedocs.io/en/latest/', None),
     'networkx': ('https://networkx.org/documentation/stable/', None),
     'scriptconfig': ('https://scriptconfig.readthedocs.io/en/latest/', None),
+    'kwconf': ('https://kwconf.readthedocs.io/en/latest/', None),
     'rich': ('https://rich.readthedocs.io/en/latest/', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
     'sympy': ('https://docs.sympy.org/latest/', None),
