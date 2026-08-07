@@ -109,7 +109,6 @@ def test_default_factory_recipe_is_reinvoked_on_reset():
     assert other.payload == []
 
 
-
 def test_noncopyable_concrete_baselines_raise_actionable_error():
     import pytest
 

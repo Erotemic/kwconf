@@ -17,7 +17,6 @@ from typing import IO, Any, cast
 from kwconf.util.util_fileio import looks_like_config_path, open_text_input
 from kwconf.util.util_yaml import import_yaml
 
-
 _YAML_MAPPING_LINE = re.compile(r'(?m)^\s*[^#\s][^:\n]*:\s')
 
 
@@ -40,8 +39,18 @@ def coerce_mapping_source(data: Any, mode: str | None = None) -> dict[str, Any]:
     """
     if data is None:
         return {}
-    if hasattr(data, 'asdict') and callable(data.asdict):
-        parsed = data.asdict()
+    if isinstance(data, Mapping):
+        # Import lazily because config imports this ingestion module. At call
+        # time Config is fully defined, so the concrete check avoids treating
+        # an unrelated Mapping._asdict method as kwconf's private operation.
+        from kwconf.config import Config
+
+        if isinstance(data, Config):
+            parsed = data._asdict()
+            return _validate_mapping_payload(parsed, data)
+    public_asdict = getattr(data, 'asdict', None)
+    if callable(public_asdict):
+        parsed = public_asdict()
         return _validate_mapping_payload(parsed, data)
     if isinstance(data, Mapping):
         return dict(data)

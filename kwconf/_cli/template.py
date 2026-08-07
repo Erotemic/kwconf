@@ -9,32 +9,34 @@ class TemplateCLI(kwconf.Config):
     Generate boilerplate for a template CLI script.
     """
 
-    __command__ = 'template'
-
-    type = kwconf.Value(
+    type: str = kwconf.Value(
         'single',
         help='The type of CLI to make',
         choices=['single', 'modal'],
         position=1,
     )
 
-    name = kwconf.Value('Template', help='The name of the config', position=2)
+    name: str = kwconf.Value(
+        'Template', help='The name of the config', position=2
+    )
 
-    verbose = kwconf.Value(False)
+    verbose = kwconf.Value(False, isflag=True)
 
     @classmethod
-    def main(cls, argv: int | bool = 1, **kwargs):
+    def main(cls, argv: bool = True, **kwargs):
         """
         Example:
             >>> # xdoctest: +SKIP
             >>> from kwconf._cli.template import *  # NOQA
-            >>> argv = 0
+            >>> argv = False
             >>> kwargs = dict()
             >>> cls = TemplateCLI
             >>> config = cls(**kwargs)
             >>> cls.main(argv=argv, **config)
         """
-        config = cls.cli(argv=argv, data=kwargs, strict=True, verbose='auto')  # type: ignore
+        config = cls._cli(  # type: ignore
+            argv=argv, data=kwargs, strict=True, verbose='auto'
+        )
         if config.type == 'single':
             text = _build_single_template(config)
         elif config.type == 'modal':
@@ -68,7 +70,7 @@ def _build_single_template(config):
             # param1 = kwconf.Value(None, help='your parameter help string')
 
             @classmethod
-            def main(cls, argv=1, **kwargs):
+            def main(cls, argv=True, **kwargs):
                 """
                 Example:
                     >>> # xdoctest: +SKIP

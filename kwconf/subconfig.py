@@ -999,11 +999,11 @@ def expand_multipass_parser(
             stacklevel=stacklevel,
         )
         flat_helper = flat_config_from_tree(cfg, include_class_options=True)
-        flat_helper.argparse(parser=parser, special_options=special_options)
+        flat_helper._argparse(parser=parser, special_options=special_options)
     else:
         # Static parse path: disallow selector overrides and fail early.
         flat_helper = flat_config_from_tree(cfg, include_class_options=False)
-        flat_helper.argparse(parser=parser, special_options=special_options)
+        flat_helper._argparse(parser=parser, special_options=special_options)
         add_forbidden_selector_args(parser, cfg)
     return parser, argv_list
 

@@ -65,6 +65,48 @@ field declaration order; extra positional values and any field supplied more
 than once (including through an alias) raise ``TypeError`` instead of silently
 discarding or replacing input.
 
+Field names and operation names
+-------------------------------
+
+Mapping access is the authoritative field protocol. Attribute access is a
+convenience and may overlap with the public ``Config`` API. A declared field
+such as ``load``, ``validate``, or ``cli`` wins on an instance, while the
+operation remains available on the class when applicable and through its
+private counterpart:
+
+.. code-block:: python
+
+    class C(kwconf.Config):
+        load: str = 'record'
+        cli: str = 'worker'
+
+
+    cfg = C()
+    assert cfg.load == 'record'
+    assert cfg['cli'] == 'worker'
+
+    C.cli(argv=False)       # classmethod remains available
+    cfg._load({'load': 'x'})  # guaranteed non-shadowable operation
+
+Every public ``Config`` operation has a matching underscore-prefixed alias.
+Kwconf itself uses those aliases internally so a field cannot redirect an
+internal method call.
+
+The dictionary-like methods ``clear``, ``copy``, ``get``, ``items``, ``keys``,
+``pop``, ``popitem``, ``update``, and ``values`` are different: they remain
+method-first on instances to preserve the mapping protocol. Those spellings are
+still valid field keys and are always available through item access:
+
+.. code-block:: python
+
+    class C(kwconf.Config):
+        keys: str = 'payload'
+
+
+    cfg = C()
+    assert cfg['keys'] == 'payload'
+    assert set(cfg.keys()) == {'keys'}
+
 Declared fields and transient attributes
 ----------------------------------------
 

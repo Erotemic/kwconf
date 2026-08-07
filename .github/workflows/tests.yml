@@ -8,8 +8,20 @@ name: PurePyCI
 
 on:
   push:
+    # Restricting push triggers to the default branch avoids running
+    # the whole pipeline twice (push + pull_request events) for every
+    # push to a PR branch. Feature branches are covered by the
+    # pull_request trigger; release branches and tags are handled by
+    # release.yml.
+    branches: [ main ]
   pull_request:
     branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded runs on the same ref are cancelled; deploy-bearing refs
+  # never trigger this workflow (release.yml owns them).
+  cancel-in-progress: true
 
 jobs:
   lint_job:
@@ -81,6 +93,7 @@ jobs:
         # Get path to installed package
         MOD_DPATH=$(python -c "import kwconf, os; print(os.path.dirname(kwconf.__file__))")
         echo "MOD_DPATH = $MOD_DPATH"
+        MOD_NAME=kwconf
         python -m pytest --verbose --cov=kwconf $MOD_DPATH ../tests
         cd ..
     - name: Test full loose sdist
@@ -97,6 +110,7 @@ jobs:
         # Get path to installed package
         MOD_DPATH=$(python -c "import kwconf, os; print(os.path.dirname(kwconf.__file__))")
         echo "MOD_DPATH = $MOD_DPATH"
+        MOD_NAME=kwconf
         python -m pytest --verbose --cov=kwconf $MOD_DPATH ../tests
         cd ..
     - uses: actions/upload-artifact@v6.0.0
@@ -109,7 +123,7 @@ jobs:
     # Build the pure-python wheels independently on a per-platform basis.
     # These will be tested later in the test_purepy_wheels step.
     ##
-    name: ${{ matrix.python-version }} on ${{ matrix.os }}, arch=${{ matrix.arch }} with ${{ matrix.install-extras }}
+    name: Build wheel ${{ matrix.python-version }} on ${{ matrix.os }}, arch=${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -148,7 +162,6 @@ jobs:
     # build_purepy_wheels step in this independent environment.
     ##
     name: ${{ matrix.python-version }} on ${{ matrix.os }}, arch=${{ matrix.arch }} with ${{ matrix.install-extras }}
-    if: "! startsWith(github.event.ref, 'refs/heads/release')"
     runs-on: ${{ matrix.os }}
     needs:
     - build_purepy_wheels
@@ -162,122 +175,189 @@ jobs:
           install-extras: tests
           os: ubuntu-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'true'
           lock-requirements: requirements/locks/tests.txt
         - python-version: '3.10'
           install-extras: tests
           os: macOS-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'true'
           lock-requirements: requirements/locks/tests.txt
         - python-version: '3.10'
           install-extras: tests
           os: windows-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'true'
           lock-requirements: requirements/locks/tests.txt
         - python-version: '3.14'
           install-extras: tests,optional
           os: ubuntu-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'true'
           lock-requirements: requirements/locks/tests-optional.txt
         - python-version: '3.14'
           install-extras: tests,optional
           os: macOS-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'true'
           lock-requirements: requirements/locks/tests-optional.txt
         - python-version: '3.14'
           install-extras: tests,optional
           os: windows-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'true'
           lock-requirements: requirements/locks/tests-optional.txt
         - python-version: '3.14'
           install-extras: tests
           os: macOS-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.14'
           install-extras: tests
           os: windows-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.10'
           install-extras: tests,optional
           os: ubuntu-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.11'
           install-extras: tests,optional
           os: ubuntu-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.12'
           install-extras: tests,optional
           os: ubuntu-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.13'
           install-extras: tests,optional
           os: ubuntu-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.14'
           install-extras: tests,optional
           os: ubuntu-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
+          use-lockfile: 'false'
+        - python-version: '3.15'
+          install-extras: tests,optional
+          os: ubuntu-latest
+          arch: auto
+          allow-prereleases: 'true'
+          check-latest: 'true'
           use-lockfile: 'false'
         - python-version: '3.10'
           install-extras: tests,optional
           os: macOS-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.11'
           install-extras: tests,optional
           os: macOS-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.12'
           install-extras: tests,optional
           os: macOS-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.13'
           install-extras: tests,optional
           os: macOS-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.14'
           install-extras: tests,optional
           os: macOS-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
+          use-lockfile: 'false'
+        - python-version: '3.15'
+          install-extras: tests,optional
+          os: macOS-latest
+          arch: auto
+          allow-prereleases: 'true'
+          check-latest: 'true'
           use-lockfile: 'false'
         - python-version: '3.10'
           install-extras: tests,optional
           os: windows-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.11'
           install-extras: tests,optional
           os: windows-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.12'
           install-extras: tests,optional
           os: windows-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.13'
           install-extras: tests,optional
           os: windows-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
           use-lockfile: 'false'
         - python-version: '3.14'
           install-extras: tests,optional
           os: windows-latest
           arch: auto
+          allow-prereleases: 'false'
+          check-latest: 'false'
+          use-lockfile: 'false'
+        - python-version: '3.15'
+          install-extras: tests,optional
+          os: windows-latest
+          arch: auto
+          allow-prereleases: 'true'
+          check-latest: 'true'
           use-lockfile: 'false'
     steps:
     - name: Checkout source
@@ -291,6 +371,8 @@ jobs:
       uses: actions/setup-python@v6.2.0
       with:
         python-version: ${{ matrix.python-version }}
+        allow-prereleases: ${{ matrix.allow-prereleases }}
+        check-latest: ${{ matrix.check-latest }}
     - uses: actions/download-artifact@v7.0.0
       name: Download wheels
       with:
@@ -304,6 +386,18 @@ jobs:
         USE_UV_LOCK: ${{ matrix.use-lockfile }}
         LOCK_REQUIREMENTS: ${{ matrix.lock-requirements }}
       run: |-
+        if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+            MSVC_CL_EXE="$(command -v cl.exe || true)"
+            if [[ -n "$MSVC_CL_EXE" ]]; then
+                MSVC_LINK_DIR="$(dirname "$MSVC_CL_EXE")"
+                export PATH="$MSVC_LINK_DIR:$PATH"
+                hash -r
+                echo "Prioritized MSVC linker directory: $MSVC_LINK_DIR"
+                echo "Resolved link.exe: $(command -v link.exe || true)"
+            else
+                echo "MSVC cl.exe was not found; leaving PATH unchanged"
+            fi
+        fi
         echo "Finding the path to the wheel"
         ls wheelhouse || echo "wheelhouse does not exist"
         echo "Installing helpers: update pip"

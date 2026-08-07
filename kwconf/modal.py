@@ -846,7 +846,7 @@ class ModalCLI(metaclass=MetaModalCLI):
                 # cases, but this works better than defaults
                 parserkw['prog'] = ' '.join([parser.prog, main_cmd])
                 subparser = command_subparsers.add_parser(main_cmd, **parserkw)
-                subparser = cmdinfo['subconfig'].argparse(
+                subparser = cmdinfo['subconfig']._argparse(
                     subparser, fuzzy_hyphens=fuzzy_hyphens
                 )
                 subparser.set_defaults(__main_function__=cmdinfo['main_func'])

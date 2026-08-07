@@ -54,9 +54,7 @@ def test_literal_via_optional_still_populates_choices():
 
 def test_user_choices_win_over_literal():
     class C(kw.Config):
-        mode: typing.Literal['a', 'b', 'c'] = kw.Value(
-            'a', choices=['a', 'b']
-        )
+        mode: typing.Literal['a', 'b', 'c'] = kw.Value('a', choices=['a', 'b'])
 
     template = C.__default__['mode']
     # user-provided choices should not be overridden by the Literal.

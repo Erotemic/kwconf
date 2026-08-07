@@ -224,8 +224,6 @@ class TestAutoIsDefaultParser:
         assert C.coerce(x='123')['x'] == '123'
 
     def test_explicit_deprecated_type_uses_legacy_path(self):
-        import kwconf
-
         v = _Value(None, type=int)
         v.update('5')
         assert v.value == 5
