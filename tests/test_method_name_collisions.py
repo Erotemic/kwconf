@@ -1,5 +1,6 @@
 import argparse
 import inspect
+from typing import Any, Callable, cast
 
 import pytest
 
@@ -33,6 +34,7 @@ INSTANCE_METHOD_NAMES = {
     'load',
     'dump',
     'dumps',
+    'port_to_pydantic',
     'port_to_config',
     'port_to_argparse',
     'argparse',
@@ -115,7 +117,7 @@ def test_config_api_names_can_be_instance_fields():
     # Private instance operations remain usable when the public spelling is data.
     cfg._load({'load': 'changed'}, argv=False)
     assert cfg.load == 'changed'
-    cfg.load = 'assigned'
+    setattr(cfg, 'load', 'assigned')
     assert cfg['load'] == 'assigned'
     assert '"load": "assigned"' in cfg._dumps(mode='json')
     assert isinstance(cfg._namespace, argparse.Namespace)
@@ -145,7 +147,7 @@ def test_mapping_names_remain_methods_but_are_valid_keys():
 
     cfg.update({'get': 'changed'})
     assert cfg['get'] == 'changed'
-    cfg.keys = 'changed-keys'
+    setattr(cfg, 'keys', 'changed-keys')
     assert cfg['keys'] == 'changed-keys'
     assert callable(cfg.keys)
 
@@ -196,13 +198,12 @@ def test_typed_class_attribute_collisions_follow_the_same_policy():
     assert cfg['keys'] == 'field-keys'
     assert callable(cfg.keys)
 
-    CollisionConfig.validate()
-    assert CollisionConfig.cli(argv=False).cli == 'field-cli'
-    assert CollisionConfig.cli(argv=['--validate']).validate is True
-    assert (
-        CollisionConfig.cli(data={'validate': True}, argv=False).validate
-        is True
-    )
+    validate_op = cast(Callable[[], Any], getattr(CollisionConfig, 'validate'))
+    cli_op = cast(Callable[..., CollisionConfig], getattr(CollisionConfig, 'cli'))
+    validate_op()
+    assert cli_op(argv=False).cli == 'field-cli'
+    assert cli_op(argv=['--validate']).validate is True
+    assert cli_op(data={'validate': True}, argv=False).validate is True
     cfg._load({'load': 'changed'}, argv=False)
     assert cfg.load == 'changed'
 

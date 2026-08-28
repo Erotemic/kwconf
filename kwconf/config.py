@@ -2317,6 +2317,31 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             parserkw['allow_abbrev'] = self.__allow_abbrev__
         return parserkw
 
+    def port_to_pydantic(self) -> str:
+        """
+        Generate Pydantic 2 ``BaseModel`` source from this Config schema.
+
+        Field annotations, defaults, importable default factories, help text,
+        long aliases, JSON-compatible tags, and simple nested ``SubConfig``
+        schemas are translated. Kwconf-specific CLI metadata is recorded in
+        ``REVIEW(kwconf-port)`` comments. This operation does not import
+        Pydantic.
+
+        Returns:
+            str: Python source for one or more Pydantic models.
+
+        Example:
+            >>> import kwconf
+            >>> class Demo(kwconf.Config):
+            ...     count: int = kwconf.Value(3, help='number of items')
+            >>> text = Demo().port_to_pydantic()
+            >>> assert 'class Demo(BaseModel):' in text
+            >>> assert 'count: int = Field(default=3' in text
+        """
+        from kwconf._port_pydantic import port_to_pydantic_source
+
+        return port_to_pydantic_source(self)
+
     def port_to_config(self, style: str = 'config') -> str:
         """
         Helper that writes kwconf source code for this config.
@@ -3326,6 +3351,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     _dumps = dumps
     _parse_args = parse_args
     _parse_known_args = parse_known_args
+    _port_to_pydantic = port_to_pydantic
     _port_to_config = port_to_config
     _port_from_click = port_from_click
     _port_from_argparse = port_from_argparse

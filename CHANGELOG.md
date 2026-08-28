@@ -5,6 +5,15 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Version 0.11.1 - Unreleased
 
+### Added
+* ``Config.port_to_pydantic()`` generates Pydantic 2 ``BaseModel`` source. It
+  translates annotations, defaults and importable default factories, help text,
+  long aliases, JSON-compatible tags, and simple nested ``SubConfig`` models.
+  Kwconf-specific CLI metadata is emitted as ``REVIEW(kwconf-port)`` comments.
+  Source generation does not import Pydantic.
+* Expanded the README comparison with Pydantic and ``pydantic-settings``,
+  including their CLI support and the ``port_to_pydantic()`` field mappings.
+
 
 ## [Version 0.11.0] - 2026-08-05
 
