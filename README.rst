@@ -1,12 +1,13 @@
-kwconf
-======
+kwconf - Keyword Configuration
+==============================
 
 |Pypi| |PypiDownloads| |ReadTheDocs| |GithubActions| |Codecov| |GitlabCIPipeline| |GitlabCICoverage|
 
-``kwconf`` defines small configuration objects that work from Python kwargs,
-command line arguments, environment variables, and JSON/YAML files. It is the
-successor to `scriptconfig <https://pypi.org/project/scriptconfig>`_, with the
-same small-script ergonomics and a clearer parser model.
+Kitware's keyword configuration module: ``kwconf`` defines small configuration
+objects that work from Python kwargs, command line arguments, environment
+variables, and JSON/YAML files. It is the successor to `scriptconfig
+<https://pypi.org/project/scriptconfig>`_, with the same small-script
+ergonomics and a clearer parser model.
 
 +-----------------+-----------------------------------------+
 | Read the Docs   | http://kwconf.readthedocs.io/en/latest/ |
