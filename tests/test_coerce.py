@@ -115,6 +115,13 @@ class TestCoerceDispatch:
         assert coerce('1,2,3', spec='csv') == [1, 2, 3]
         assert coerce('a,b', spec='csv') == ['a', 'b']
 
+    def test_csv_preserves_empty_fields(self):
+        assert coerce('a,,b', spec='csv') == ['a', '', 'b']
+        assert coerce(',a,b', spec='csv') == ['', 'a', 'b']
+        assert coerce('a,b,', spec='csv') == ['a', 'b', '']
+        assert coerce(',,', spec='csv') == ['', '', '']
+        assert coerce('', spec='csv') == ['']
+
     def test_yaml(self):
         pytest.importorskip('yaml')
         assert coerce('[1, 2, 3]', spec='yaml') == [1, 2, 3]

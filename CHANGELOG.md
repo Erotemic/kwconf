@@ -14,6 +14,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 * Expanded the README comparison with Pydantic and ``pydantic-settings``,
   including their CLI support and the ``port_to_pydantic()`` field mappings.
 
+### Fixed
+* The ``csv`` parser now preserves empty fields instead of dropping them. For
+  example, ``a,,b`` parses as ``['a', '', 'b']``, and an empty token parses as
+  ``['']``. Leading and trailing empty fields are preserved as well.
+
 
 ## [Version 0.11.0] - 2026-08-05
 
