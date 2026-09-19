@@ -62,8 +62,38 @@ uv run dev/benchmarks/cli_runtime.py \
     --argv-sizes 0,1,8,32,128,512
 ```
 
-The CSV records minimum and mean robust timerit samples, standard deviation,
-loop counts, Python/platform metadata, kwconf version, and the Git revision.
+The default CSV is an append-only measurement history. Every invocation gets
+one `run_id`; every row records Python/platform metadata, kwconf and timerit
+versions, the Git revision, dirty state, a Git working-state fingerprint, and
+the UTC timestamp. A one-time schema widening may rewrite an older CSV when new
+metadata columns are introduced, but existing measurement rows are preserved.
+
+By default a new run is compared with the most recent compatible prior run from
+the same history. Compatibility requires the same Python/platform and matching
+benchmark case parameters. The tool writes `cli_runtime_comparison.csv`, prints
+a compact current/baseline ratio summary, and writes comparison plots below the
+normal plot directory. Ratios below 1 mean the current code is faster.
+
+Run the benchmark before and after an optimization using the same command:
+
+```bash
+uv run dev/benchmarks/cli_runtime.py --quick
+# edit / optimize
+uv run dev/benchmarks/cli_runtime.py --quick
+```
+
+Select an older baseline explicitly with a prefix of its run id, Git revision,
+Git-state hash, kwconf version, or timestamp:
+
+```bash
+uv run dev/benchmarks/cli_runtime.py --quick --compare-to 41bad80a6658
+```
+
+Use `--compare-to none` when only recording a measurement. The Git-state hash
+also distinguishes tracked dirty-worktree changes at the same commit, which is
+useful while iterating before committing an optimization. Untracked paths are
+included through Git status, while their file contents are not hashed.
+
 Machine-specific timings should not be committed as a universal baseline;
 compare results from the same machine/environment when checking regressions.
 The short-normalizer microbenchmark is feature-detected, so the script can also

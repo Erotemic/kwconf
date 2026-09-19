@@ -41,6 +41,7 @@ import argparse
 import cProfile
 import csv
 import datetime as datetime_mod
+import hashlib
 import math
 import platform
 import pstats
@@ -70,7 +71,8 @@ ALL_FAMILIES = (
 )
 
 
-def _git_metadata() -> tuple[str, bool | None]:
+def _git_metadata() -> tuple[str, bool | None, str]:
+    """Return revision metadata plus a fingerprint of the working state."""
     try:
         git_prefix = ['git', '-c', f'safe.directory={REPO_DPATH}']
         revision_proc = subprocess.run(
@@ -87,10 +89,24 @@ def _git_metadata() -> tuple[str, bool | None]:
             capture_output=True,
             text=True,
         )
+        diff_proc = subprocess.run(
+            [*git_prefix, 'diff', '--no-ext-diff', '--binary', 'HEAD'],
+            cwd=REPO_DPATH,
+            check=True,
+            capture_output=True,
+        )
     except (OSError, subprocess.CalledProcessError):
-        return 'unknown', None
+        return 'unknown', None, 'unknown'
     else:
-        return revision_proc.stdout.strip(), bool(status_proc.stdout.strip())
+        revision = revision_proc.stdout.strip()
+        status = status_proc.stdout
+        hasher = hashlib.sha256()
+        hasher.update(revision.encode())
+        hasher.update(b'\0')
+        hasher.update(status.encode())
+        hasher.update(b'\0')
+        hasher.update(diff_proc.stdout)
+        return revision, bool(status.strip()), hasher.hexdigest()[:16]
 
 
 def _slug(text: str) -> str:
@@ -563,25 +579,175 @@ def _add_relative_ratios(rows: list[dict[str, object]]) -> None:
             row['ratio_vs_argparse'] = float(row['min_s']) / denom
 
 
-def _write_csv(rows: list[dict[str, object]], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    git_revision, git_dirty = _git_metadata()
+def _annotate_rows(rows: list[dict[str, object]]) -> str:
+    """Attach immutable run metadata and return the run identifier."""
+    git_revision, git_dirty, git_state_hash = _git_metadata()
+    timestamp = datetime_mod.datetime.now(datetime_mod.timezone.utc).isoformat()
+    run_id = f'{timestamp}@{git_revision}:{git_state_hash}'
     metadata = {
+        'run_id': run_id,
         'python': platform.python_version(),
         'platform': platform.platform(),
         'kwconf_version': kwconf.__version__,
         'timerit_version': timerit.__version__,
         'git_revision': git_revision,
         'git_dirty': git_dirty,
-        'timestamp_utc': datetime_mod.datetime.now(
-            datetime_mod.timezone.utc
-        ).isoformat(),
+        'git_state_hash': git_state_hash,
+        'timestamp_utc': timestamp,
     }
     for row in rows:
         row.update(metadata)
-    fieldnames = list(rows[0]) if rows else []
+    return run_id
+
+
+def _read_csv(output: Path) -> list[dict[str, str]]:
+    if not output.exists():
+        return []
+    with output.open(newline='') as file:
+        return list(csv.DictReader(file))
+
+
+def _append_csv(rows: list[dict[str, object]], output: Path) -> None:
+    """Append measurements, preserving older runs in the same CSV."""
+    if not rows:
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(rows[0])
+    if output.exists() and output.stat().st_size:
+        with output.open(newline='') as file:
+            reader = csv.reader(file)
+            old_fieldnames = next(reader)
+        if old_fieldnames != fieldnames:
+            # Benchmark CSVs are intentionally long lived. If the benchmark
+            # gains metadata columns, preserve old measurements while doing a
+            # one-time schema widening before returning to append-only writes.
+            old_rows = _read_csv(output)
+            merged = list(old_fieldnames)
+            merged.extend(name for name in fieldnames if name not in merged)
+            if any(name not in merged for name in fieldnames):  # pragma: no cover
+                raise AssertionError('failed to merge benchmark CSV schema')
+            with output.open('w', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=merged)
+                writer.writeheader()
+                writer.writerows(old_rows)
+            fieldnames = merged
+        with output.open('a', newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writerows(rows)
+    else:
+        with output.open('w', newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+def _case_key(row: dict[str, object]) -> tuple[str, ...]:
+    fields = (
+        'family',
+        'method',
+        'x_name',
+        'x_value',
+        'schema_size',
+        'argv_size',
+        'bestof',
+        'min_duration_s',
+    )
+    return tuple(str(row.get(field, '')) for field in fields)
+
+
+def _run_groups(rows: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+    groups: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        run_id = str(row.get('run_id') or row.get('timestamp_utc') or '')
+        groups.setdefault(run_id, []).append(row)
+    return groups
+
+
+def _compatible_run(
+    current_rows: list[dict[str, object]],
+    history_rows: list[dict[str, object]],
+    selector: str,
+) -> tuple[str | None, list[dict[str, object]]]:
+    """Resolve a baseline run with comparable environment/cases."""
+    if not history_rows or selector == 'none':
+        return None, []
+    groups = _run_groups(history_rows)
+    current = current_rows[0]
+    environment = (str(current.get('python')), str(current.get('platform')))
+
+    def compatible(rows: list[dict[str, object]]) -> bool:
+        if not rows:
+            return False
+        candidate_env = (str(rows[0].get('python')), str(rows[0].get('platform')))
+        if candidate_env != environment:
+            return False
+        current_keys = {_case_key(row) for row in current_rows}
+        candidate_keys = {_case_key(row) for row in rows}
+        return bool(current_keys & candidate_keys)
+
+    candidates = [(run_id, rows) for run_id, rows in groups.items() if compatible(rows)]
+    if selector == 'previous':
+        if not candidates:
+            return None, []
+        return candidates[-1]
+
+    matches = []
+    for run_id, rows in candidates:
+        first = rows[0]
+        haystacks = (
+            run_id,
+            str(first.get('git_revision', '')),
+            str(first.get('git_state_hash', '')),
+            str(first.get('kwconf_version', '')),
+            str(first.get('timestamp_utc', '')),
+        )
+        if any(value.startswith(selector) for value in haystacks):
+            matches.append((run_id, rows))
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise SystemExit(f'no compatible benchmark run matches --compare-to={selector!r}')
+    raise SystemExit(f'ambiguous --compare-to={selector!r}; matches {len(matches)} runs')
+
+
+def _comparison_rows(
+    baseline_rows: list[dict[str, object]],
+    current_rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    baseline_index = {_case_key(row): row for row in baseline_rows}
+    comparisons = []
+    for current in current_rows:
+        baseline = baseline_index.get(_case_key(current))
+        if baseline is None:
+            continue
+        before = float(baseline['min_s'])
+        after = float(current['min_s'])
+        ratio = after / before
+        comparisons.append({
+            'family': current['family'],
+            'method': current['method'],
+            'x_name': current['x_name'],
+            'x_value': current['x_value'],
+            'baseline_run_id': baseline.get('run_id') or baseline.get('timestamp_utc'),
+            'current_run_id': current.get('run_id'),
+            'baseline_git_revision': baseline.get('git_revision'),
+            'current_git_revision': current.get('git_revision'),
+            'baseline_git_state_hash': baseline.get('git_state_hash'),
+            'current_git_state_hash': current.get('git_state_hash'),
+            'baseline_min_s': before,
+            'current_min_s': after,
+            'ratio_current_vs_baseline': ratio,
+            'percent_change': (ratio - 1.0) * 100.0,
+        })
+    return comparisons
+
+
+def _write_comparison_csv(rows: list[dict[str, object]], output: Path) -> None:
+    if not rows:
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
     with output.open('w', newline='') as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer = csv.DictWriter(file, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
 
@@ -626,6 +792,61 @@ def _plot_rows(rows: list[dict[str, object]], plot_dpath: Path) -> list[Path]:
         outputs.append(output)
     return outputs
 
+
+
+def _plot_comparison_rows(
+    rows: list[dict[str, object]], plot_dpath: Path
+) -> list[Path]:
+    if not rows:
+        return []
+    import matplotlib
+
+    matplotlib.use('Agg', force=True)
+    import matplotlib.pyplot as plt
+
+    plot_dpath.mkdir(parents=True, exist_ok=True)
+    outputs: list[Path] = []
+    for family in ALL_FAMILIES:
+        family_rows = [row for row in rows if row['family'] == family]
+        if not family_rows:
+            continue
+        methods = sorted({str(row['method']) for row in family_rows})
+        fig, ax = plt.subplots()
+        for method in methods:
+            method_rows = sorted(
+                (row for row in family_rows if row['method'] == method),
+                key=lambda row: int(row['x_value']),
+            )
+            xs = [int(row['x_value']) for row in method_rows]
+            ys = [float(row['ratio_current_vs_baseline']) for row in method_rows]
+            ax.plot(xs, ys, marker='o', label=method)
+        ax.axhline(1.0, linewidth=1)
+        ax.set_xlabel(str(family_rows[0]['x_name']))
+        ax.set_ylabel('current / baseline runtime')
+        ax.set_title(f'kwconf CLI comparison: {family}')
+        if all(int(row['x_value']) > 0 for row in family_rows):
+            ax.set_xscale('log', base=2)
+        ax.legend()
+        fig.tight_layout()
+        output = plot_dpath / f'{_slug(family)}_comparison.png'
+        fig.savefig(output, dpi=160)
+        plt.close(fig)
+        outputs.append(output)
+    return outputs
+
+
+def _print_comparison_summary(rows: list[dict[str, object]]) -> None:
+    if not rows:
+        return
+    print('comparison summary (current / baseline; <1 is faster):')
+    grouped: dict[tuple[str, str], list[float]] = {}
+    for row in rows:
+        key = (str(row['family']), str(row['method']))
+        grouped.setdefault(key, []).append(float(row['ratio_current_vs_baseline']))
+    for (family, method), ratios in sorted(grouped.items()):
+        geometric_mean = math.exp(statistics.fmean(math.log(r) for r in ratios))
+        percent = (geometric_mean - 1.0) * 100.0
+        print(f'  {family:14s} {method:22s} {geometric_mean:8.3f}x ({percent:+7.2f}%)')
 
 def _profile_target(name: str, schema_size: int, argv_size: int) -> Callable:
     schema_size = max(schema_size, argv_size)
@@ -720,6 +941,14 @@ def _make_cli() -> argparse.ArgumentParser:
         REPO_DPATH / 'dev' / 'benchmarks' / '_results' / 'cli_runtime.csv'
     )
     parser.add_argument('--output', type=Path, default=default_output)
+    parser.add_argument(
+        '--compare-to',
+        default='previous',
+        help=(
+            "baseline run selector: 'previous', 'none', or a prefix of a "
+            "run id, git revision, git-state hash, version, or timestamp"
+        ),
+    )
     parser.add_argument('--plot-dir', type=Path, default=None)
     parser.add_argument('--no-plot', action='store_true')
     parser.add_argument(
@@ -782,13 +1011,32 @@ def main() -> None:
             raise AssertionError(family)
 
     _add_relative_ratios(rows)
-    _write_csv(rows, args.output)
-    print(f'wrote results: {args.output}')
+    history_rows = _read_csv(args.output)
+    run_id = _annotate_rows(rows)
+    baseline_run_id, baseline_rows = _compatible_run(
+        rows, history_rows, args.compare_to
+    )
+    comparisons = _comparison_rows(baseline_rows, rows)
+    _append_csv(rows, args.output)
+    print(f'appended run: {run_id}')
+    print(f'wrote history: {args.output}')
+    if baseline_run_id is not None:
+        print(f'comparison baseline: {baseline_run_id}')
+        comparison_output = args.output.with_name(
+            args.output.stem + '_comparison.csv'
+        )
+        _write_comparison_csv(comparisons, comparison_output)
+        print(f'wrote comparison: {comparison_output}')
+        _print_comparison_summary(comparisons)
     if not args.no_plot:
         plot_dpath = args.plot_dir
         if plot_dpath is None:
             plot_dpath = args.output.parent / (args.output.stem + '_plots')
         outputs = _plot_rows(rows, plot_dpath)
+        if comparisons:
+            outputs += _plot_comparison_rows(
+                comparisons, plot_dpath / 'comparison'
+            )
         for output in outputs:
             print(f'wrote plot: {output}')
 
