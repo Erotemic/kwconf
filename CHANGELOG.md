@@ -32,6 +32,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   argparse's ``-vvv`` -> ``-v`` + ``vv`` interpretation.
 
 ### Fixed
+* ``Config.port_from_click()`` ignores Click's generated help option by asking
+  Click for that option directly. This supports both the historical ``help``
+  storage name and Click 8.5's reserved ``_click_default_help`` name.
 * The ``csv`` parser now preserves empty fields instead of dropping them. For
   example, ``a,,b`` parses as ``['a', '', 'b']``, and an empty token parses as
   ``['']``. Leading and trailing empty fields are preserved as well.

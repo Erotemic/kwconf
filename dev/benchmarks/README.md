@@ -6,6 +6,13 @@ measurements and records long-form CSV suitable for comparing revisions.
 Timerit 1.1.0 is sufficient; that release introduced the `min_duration` API
 used by this benchmark.
 
+Each run also measures ``python -c pass`` once as a Python interpreter
+startup control. Every runtime plot reports that absolute startup reference,
+and every revision-comparison plot reports the current/baseline startup ratio.
+This gives the microbenchmarks an operational scale and helps distinguish code
+changes from machine-wide timing drift. The raw CSV records the startup row and
+``ratio_vs_python_startup`` for every measured case.
+
 The benchmark separates these dimensions:
 
 - parser construction as the number of configured options grows;

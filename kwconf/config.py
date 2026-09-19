@@ -2477,10 +2477,19 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         import click
 
-        ctx = click.Context(click.Command(''))
+        ctx = click.Context(click_main)
         info_dict = click_main.to_info_dict(ctx)  # NOQA
         default = {}
-        blocklist = {'help'}
+        blocklist = set()
+        help_option = click_main.get_help_option(ctx)
+        if help_option is not None:
+            # Click includes its synthetic help option in to_info_dict(), but
+            # it is not a value exposed to the command callback and therefore
+            # should not become a kwconf field. Click 8.5 changed the reserved
+            # storage name from ``help`` to ``_click_default_help``. Ask Click
+            # for the actual generated option rather than depending on either
+            # implementation detail.
+            blocklist.add(help_option.name)
         for param in info_dict['params']:
             if param['name'] in blocklist:
                 continue

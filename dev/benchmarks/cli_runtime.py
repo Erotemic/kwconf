@@ -70,6 +70,9 @@ ALL_FAMILIES = (
     'end_to_end',
 )
 
+REFERENCE_FAMILY = 'reference'
+REFERENCE_METHOD = 'python_startup'
+
 
 def _git_metadata() -> tuple[str, bool | None, str]:
     """Return revision metadata plus a fingerprint of the working state."""
@@ -295,6 +298,48 @@ def _run_case(
     row['bestof'] = bestof
     row['min_duration_s'] = min_duration
     rows.append(row)
+
+
+def _bench_python_startup(
+    rows: list[dict[str, object]],
+    *,
+    bestof: int,
+    min_duration: float,
+    verbose: int,
+) -> None:
+    """Measure interpreter process startup once as a run-wide reference."""
+
+    def python_startup() -> None:
+        subprocess.run(
+            [sys.executable, '-c', 'pass'],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    _run_case(
+        rows,
+        family=REFERENCE_FAMILY,
+        method=REFERENCE_METHOD,
+        x_name='reference',
+        x_value=1,
+        schema_size=0,
+        argv_size=0,
+        func=python_startup,
+        bestof=bestof,
+        min_duration=min_duration,
+        verbose=verbose,
+    )
+
+
+def _python_startup_seconds(rows: list[dict[str, object]]) -> float | None:
+    for row in rows:
+        if (
+            row.get('family') == REFERENCE_FAMILY
+            and row.get('method') == REFERENCE_METHOD
+        ):
+            return float(row['min_s'])
+    return None
 
 
 def _bench_build(
@@ -551,6 +596,7 @@ def _bench_end_to_end(
 
 
 def _add_relative_ratios(rows: list[dict[str, object]]) -> None:
+    python_startup_s = _python_startup_seconds(rows)
     baselines = {
         'build': 'argparse',
         'schema_parse': 'argparse',
@@ -577,6 +623,12 @@ def _add_relative_ratios(rows: list[dict[str, object]]) -> None:
         else:
             denom = float(baseline['min_s'])
             row['ratio_vs_argparse'] = float(row['min_s']) / denom
+        if python_startup_s is None:
+            row['ratio_vs_python_startup'] = math.nan
+        else:
+            row['ratio_vs_python_startup'] = (
+                float(row['min_s']) / python_startup_s
+            )
 
 
 def _annotate_rows(rows: list[dict[str, object]]) -> str:
@@ -763,6 +815,7 @@ def _plot_rows(rows: list[dict[str, object]], plot_dpath: Path) -> list[Path]:
 
     plot_dpath.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
+    python_startup_s = _python_startup_seconds(rows)
     for family in ALL_FAMILIES:
         family_rows = [row for row in rows if row['family'] == family]
         if not family_rows:
@@ -780,7 +833,13 @@ def _plot_rows(rows: list[dict[str, object]], plot_dpath: Path) -> list[Path]:
             ax.plot(xs, ys, marker='o', label=method)
         ax.set_xlabel(x_name)
         ax.set_ylabel('minimum robust time (microseconds)')
-        ax.set_title(f'kwconf CLI benchmark: {family}')
+        title = f'kwconf CLI benchmark: {family}'
+        if python_startup_s is not None:
+            title += (
+                f'\nPython startup reference: '
+                f'{python_startup_s * 1e3:.2f} ms'
+            )
+        ax.set_title(title)
         if all(int(row['x_value']) > 0 for row in family_rows):
             ax.set_xscale('log', base=2)
         ax.set_yscale('log')
@@ -806,6 +865,15 @@ def _plot_comparison_rows(
 
     plot_dpath.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
+    python_startup_ratio = next(
+        (
+            float(row['ratio_current_vs_baseline'])
+            for row in rows
+            if row.get('family') == REFERENCE_FAMILY
+            and row.get('method') == REFERENCE_METHOD
+        ),
+        None,
+    )
     for family in ALL_FAMILIES:
         family_rows = [row for row in rows if row['family'] == family]
         if not family_rows:
@@ -823,7 +891,13 @@ def _plot_comparison_rows(
         ax.axhline(1.0, linewidth=1)
         ax.set_xlabel(str(family_rows[0]['x_name']))
         ax.set_ylabel('current / baseline runtime')
-        ax.set_title(f'kwconf CLI comparison: {family}')
+        title = f'kwconf CLI comparison: {family}'
+        if python_startup_ratio is not None:
+            title += (
+                f'\nPython startup control: {python_startup_ratio:.3f}x '
+                '(current / baseline)'
+            )
+        ax.set_title(title)
         if all(int(row['x_value']) > 0 for row in family_rows):
             ax.set_xscale('log', base=2)
         ax.legend()
@@ -989,6 +1063,7 @@ def main() -> None:
         'min_duration': args.min_duration,
         'verbose': args.verbose,
     }
+    _bench_python_startup(rows, **common)
     for family in args.families:
         if family == 'build':
             _bench_build(rows, args.schema_sizes, **common)
