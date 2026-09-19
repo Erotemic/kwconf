@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "matplotlib>=3.7",
-#   "timerit>=1.1.1",
+#   "timerit>=1.1.0",
 # ]
 # ///
 """Benchmark kwconf CLI overhead against stdlib argparse.
@@ -587,6 +587,12 @@ def _write_csv(rows: list[dict[str, object]], output: Path) -> None:
 
 
 def _plot_rows(rows: list[dict[str, object]], plot_dpath: Path) -> list[Path]:
+    # This benchmark only writes image files. Do not inherit a user rc file's
+    # interactive backend (for example QtAgg), because the isolated PEP 723
+    # environment intentionally does not depend on GUI toolkit bindings.
+    import matplotlib
+
+    matplotlib.use('Agg', force=True)
     import matplotlib.pyplot as plt
 
     plot_dpath.mkdir(parents=True, exist_ok=True)

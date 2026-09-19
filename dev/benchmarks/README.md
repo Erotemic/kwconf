@@ -3,6 +3,8 @@
 `cli_runtime.py` measures where kwconf CLI cost comes from instead of treating
 "kwconf versus argparse" as one number. It uses `timerit` for robust inline
 measurements and records long-form CSV suitable for comparing revisions.
+Timerit 1.1.0 is sufficient; that release introduced the `min_duration` API
+used by this benchmark.
 
 The benchmark separates these dimensions:
 
@@ -106,3 +108,9 @@ In particular, the expected scaling properties are:
   options, so this family is the one to watch for schema-width regressions;
 - parser construction is expected to grow with schema size and should be
   evaluated separately from reuse of an already-built parser.
+
+## Plot backend
+
+The benchmark forces Matplotlib's non-interactive `Agg` backend when writing
+plots. This intentionally ignores interactive backends selected by a user
+Matplotlib rc file (for example `QtAgg`), so `uv run` does not need Qt bindings.
