@@ -21,6 +21,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   ``__short_alias_clusters__`` / ``argparse(short_alias_clusters=...)``.
 
 ### Changed
+* CLI parser construction and reuse avoid per-field dynamic ``argparse.Action``
+  classes, and fuzzy underscore/hyphen fallback lookup is cached per parser
+  schema. This reduces overhead without changing accepted CLI syntax.
 * Compact short tokens no longer use undelimited attached values for options
   that have a bare form. ``-fVALUE`` is reserved for ordinary required-value
   options; use ``-f=VALUE`` or ``-f VALUE`` for a flag, counter, ``bare=``

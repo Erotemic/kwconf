@@ -182,3 +182,33 @@ def test_short_optional_value_clusters_are_lexically_normalized():
     assert ns.f == 'v'
     assert ns.v is None
     assert unknown == []
+
+
+def test_fuzzy_option_index_is_reused_and_invalidated_by_schema_growth():
+    """Fuzzy spelling lookup should be cached across parses, but stay fresh."""
+    from kwconf import argparse_ext
+
+    parser = argparse_ext.ExtendedArgumentParser(allow_abbrev=False)
+    parser.add_argument('--alpha-beta')
+
+    got = argparse_ext._normalize_fuzzy_option_tokens(
+        parser, ['--alpha_beta=value']
+    )
+    assert got == ['--alpha-beta=value']
+    first_cache = parser._kwconf_fuzzy_option_index
+
+    got = argparse_ext._normalize_fuzzy_option_tokens(
+        parser, ['--alpha_beta=other']
+    )
+    assert got == ['--alpha-beta=other']
+    assert parser._kwconf_fuzzy_option_index is first_cache
+
+    # Parser schemas are normally built before parsing, but argparse permits
+    # later additions. The cache must notice those without requiring callers to
+    # manually invalidate kwconf internals.
+    parser.add_argument('--gamma-delta')
+    got = argparse_ext._normalize_fuzzy_option_tokens(
+        parser, ['--gamma_delta=value']
+    )
+    assert got == ['--gamma-delta=value']
+    assert parser._kwconf_fuzzy_option_index is not first_cache

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import pprint
 import re
 from collections.abc import MutableMapping, Sequence
@@ -537,9 +538,23 @@ class _Value(NiceRepr):
         )
         short_alias: list[str] = [a for a in short_alias_seen if a != key]
 
+        action_type = action.type
+        if isinstance(action_type, _SmartValueCoercer):
+            # A live kwconf parser uses an internal coercer as argparse's
+            # ``type`` callable so all text-boundary conversion still routes
+            # through the originating Value.  That implementation detail is
+            # not part of the parser's portable configuration surface.  When
+            # porting the parser back to a Value, recover the original
+            # argparse-facing type instead of serializing the internal
+            # coercer object.
+            template = action_type.template
+            action_type = (
+                None if template is None else template.parsekw.get('type')
+            )
+
         real_value_kw = {
             'default': action.default,
-            'type': action.type,
+            'type': action_type,
             'alias': alias,
             'short_alias': short_alias,
             'required': action.required,
@@ -845,7 +860,9 @@ def _value_argument_invocations(
 
     argkw['help'] = argkw.get('help') or ''
     argkw['default'] = value
-    argkw['action'] = _maker_smart_parse_action(template)
+    argkw['action'] = _SmartParseAction
+    if not portable and not isflag:
+        argkw['_kwconf_template'] = template
 
     if not isflag and not portable:
         # ParseAction routes conversion through Value.coerce, so argparse's
@@ -995,57 +1012,73 @@ def _resolve_alias(
     return option_strings
 
 
-def _maker_smart_parse_action(template):
-    import argparse
+class _SmartValueCoercer:
+    """Per-field callable used by the shared argparse action.
 
-    class ParseAction(argparse.Action):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            # with script config nothing should be required by default
-            # (unless specified) all positional arguments should have
-            # keyword arg variants Setting required=False here will prevent
-            # positional args from erroring if they are not specified. I
-            # dont think there are other side effects, but we should make
-            # sure that is actually the case.
-            self.required = False  # hack
+    This deliberately does not retain a reference to the action itself.
+    ``argparse.Action.__repr__`` includes the public ``type`` attribute; using
+    a bound action method there makes the action recursively repr itself.
+    """
 
-            if self.type is None:
-                # Route conversion through the field's coerce(). argparse calls
-                # the converter once per token; for nargs fields it then collects
-                # the per-token results into a list (the uniform "apply the
-                # parser to each value" rule).
-                def _smart_type(value):
-                    if template is None:
-                        return value
-                    if self.nargs is not None:
-                        from kwconf import coerce as _coerce_mod
+    __slots__ = ('template', 'nargs')
 
-                        # With an explicit parser, apply it per token (csv ->
-                        # list, yaml -> value); argparse collects the results.
-                        if getattr(template, '_parser_spec', None) is not None:
-                            return template.coerce(value)
-                        # Otherwise coerce each token as the container's element
-                        # type rather than the (container) field annotation.
-                        elem = _coerce_mod.element_annotation(
-                            getattr(template, '_annotation', None)
-                        )
-                        return _coerce_mod.auto(value, elem)
-                    return template.coerce(value)
+    def __init__(self, template, nargs):
+        self.template = template
+        self.nargs = nargs
 
-                self.type = _smart_type
+    def __call__(self, value):
+        template = self.template
+        if template is None:
+            return value
+        if self.nargs is not None:
+            from kwconf import coerce as _coerce_mod
 
-        def __call__(action, parser, namespace, values, option_string=None):
-            # No flattening: under nargs we apply the parser to each token and
-            # collect the results verbatim (the uniform rule). A list-producing
-            # parser like csv therefore yields a list-of-lists -- intended; the
-            # old concat hack is gone (it created ambiguity for structured
-            # tokens, e.g. csv 1,2 3,4 -> [1,2,3,4] vs [[1,2],[3,4]]).
-            setattr(namespace, action.dest, values)
-            from kwconf.argparse_ext import mark_explicit
+            # With an explicit parser, apply it per token (csv -> list, yaml ->
+            # value); argparse collects the results.
+            if getattr(template, '_parser_spec', None) is not None:
+                return template.coerce(value)
+            # Otherwise coerce each token as the container's element type
+            # rather than the (container) field annotation.
+            elem = _coerce_mod.element_annotation(
+                getattr(template, '_annotation', None)
+            )
+            return _coerce_mod.auto(value, elem)
+        return template.coerce(value)
 
-            mark_explicit(parser, namespace, action.dest)
 
-    return ParseAction
+class _SmartParseAction(argparse.Action):
+    """Shared argparse action for ordinary kwconf values.
+
+    Keeping one action class for every field avoids creating a Python class per
+    parser argument. Besides reducing parser-construction work, the stable
+    action type lets CPython specialize argparse's schema-wide action loops.
+    Field-specific coercion state lives on the action instance instead.
+    """
+
+    def __init__(self, *args, _kwconf_template=None, **kwargs):
+        self._kwconf_template = _kwconf_template
+        super().__init__(*args, **kwargs)
+        # With script config nothing should be required by default (unless
+        # specified). Positional arguments also have keyword variants, so the
+        # positional action itself must not force presence.
+        self.required = False
+
+        if self.type is None:
+            # argparse calls the converter once per token; for nargs fields it
+            # then collects those per-token results into a list. Keep the
+            # converter separate from this action so Action.__repr__ cannot
+            # recurse through a bound method that points back at ``self``.
+            self.type = _SmartValueCoercer(self._kwconf_template, self.nargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        # No flattening: under nargs we apply the parser to each token and
+        # collect the results verbatim (the uniform rule). A list-producing
+        # parser like csv therefore yields a list-of-lists -- intended; the old
+        # concat hack created ambiguity for structured tokens.
+        setattr(namespace, self.dest, values)
+        from kwconf.argparse_ext import mark_explicit
+
+        mark_explicit(parser, namespace, self.dest)
 
 
 class CodeRepr(str):

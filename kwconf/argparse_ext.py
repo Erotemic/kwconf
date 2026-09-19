@@ -694,6 +694,45 @@ class CompatArgumentParser(argparse.ArgumentParser):
         return super()._get_values(action, arg_strings)  # type: ignore
 
 
+def _fuzzy_option_index(
+    parser: argparse.ArgumentParser,
+    option_actions: dict[str, argparse.Action],
+) -> dict[str, list[str]]:
+    """Return a cached fuzzy long-option lookup for one parser schema.
+
+    ``argparse`` exposes no public option-registry version, so the cache uses a
+    constant-time signature of its insertion-ordered option dictionary. Normal
+    ``add_argument`` mutations either change its size or its final key; replacing
+    an action under the same spelling leaves the lookup itself unchanged. Direct
+    mutation of argparse's private registry is outside this cache contract.
+    """
+    if option_actions:
+        signature = (
+            len(option_actions),
+            next(iter(option_actions)),
+            next(reversed(option_actions)),
+        )
+    else:
+        signature = (0, None, None)
+
+    cached = getattr(parser, '_kwconf_fuzzy_option_index', None)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
+    normalized_to_options: dict[str, list[str]] = {}
+    for known_option in option_actions:
+        if known_option.startswith('--'):
+            normalized_to_options.setdefault(
+                known_option.replace('-', '_'), []
+            ).append(known_option)
+    setattr(
+        parser,
+        '_kwconf_fuzzy_option_index',
+        (signature, normalized_to_options),
+    )
+    return normalized_to_options
+
+
 def _normalize_fuzzy_option_tokens(
     parser: argparse.ArgumentParser, args: Sequence[str]
 ) -> list[str]:
@@ -730,12 +769,7 @@ def _normalize_fuzzy_option_tokens(
             result.append(token)
             continue
         if normalized_to_options is None:
-            normalized_to_options = {}
-            for known_option in option_actions:
-                if known_option.startswith('--'):
-                    normalized_to_options.setdefault(
-                        known_option.replace('-', '_'), []
-                    ).append(known_option)
+            normalized_to_options = _fuzzy_option_index(parser, option_actions)
         candidates = normalized_to_options.get(option.replace('-', '_'), [])
         if len(candidates) == 1:
             replacement = candidates[0]
