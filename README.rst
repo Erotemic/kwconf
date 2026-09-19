@@ -107,6 +107,41 @@ that parser. See the `coercion manual
 <http://kwconf.readthedocs.io/en/latest/manual/coercion_and_cli.html>`_ for
 the detailed parser contract.
 
+Flags and bare options
+----------------------
+
+Kwconf deliberately lets flags be written both conveniently and explicitly.
+For example, ``--flag`` means the flag's bare value while ``--flag=false`` or
+``--flag false`` records an explicit false value on the command line. This is a
+core kwconf feature: explicit configurations do not need to delete false-valued
+keys.
+
+``bare=`` generalizes the same idea to non-boolean values:
+
+.. code-block:: python
+
+    class ArchiveConfig(kwconf.Config):
+        patch = kwconf.Value(None, bare='auto', short_alias=['p'])
+        verbose = kwconf.Value(0, isflag='counter', short_alias=['v'])
+
+
+    assert ArchiveConfig.cli(argv=['--patch']).patch == 'auto'
+    assert ArchiveConfig.cli(argv=['--patch=base.tar']).patch == 'base.tar'
+    assert ArchiveConfig.cli(argv=['-pv']).patch == 'auto'
+    assert ArchiveConfig.cli(argv=['-pv']).verbose == 1
+
+Bare-capable short aliases are clusterable. They intentionally do not accept
+undelimited attached values: use ``-p=file`` or ``-p file``, not ``-pfile``.
+Ordinary required-value aliases continue to accept argparse's ``-kVALUE``
+syntax. Use ``--`` when a token following a bare option must be positional,
+for example ``prog --flag -- input.txt``.
+
+The lexical conveniences can be disabled independently with
+``__fuzzy_hyphens__ = False`` and ``__short_alias_clusters__ = False``. See the
+`coercion and CLI contract
+<http://kwconf.readthedocs.io/en/latest/manual/coercion_and_cli.html>`_ for the
+full grammar.
+
 Growing a script
 ----------------
 

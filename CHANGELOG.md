@@ -13,6 +13,20 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   Source generation does not import Pydantic.
 * Expanded the README comparison with Pydantic and ``pydantic-settings``,
   including their CLI support and the ``port_to_pydantic()`` field mappings.
+* ``Value(..., bare=VALUE)`` defines an option's bare CLI result without
+  exposing argparse's ``const`` terminology. Bare values retain explicit
+  ``--key=value`` / ``--key value`` and ``-k=value`` / ``-k value`` forms.
+* Bare-capable short aliases now have deterministic compact clustering (for
+  example ``-pv`` and ``-vvv``), controlled by
+  ``__short_alias_clusters__`` / ``argparse(short_alias_clusters=...)``.
+
+### Changed
+* Compact short tokens no longer use undelimited attached values for options
+  that have a bare form. ``-fVALUE`` is reserved for ordinary required-value
+  options; use ``-f=VALUE`` or ``-f VALUE`` for a flag, counter, ``bare=``
+  value, or other optional-value short option. Counter clustering is now a
+  parser-level lexical rule rather than a ``CounterOrKeyValAction`` repair for
+  argparse's ``-vvv`` -> ``-v`` + ``vv`` interpretation.
 
 ### Fixed
 * The ``csv`` parser now preserves empty fields instead of dropping them. For

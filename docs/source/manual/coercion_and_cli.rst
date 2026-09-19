@@ -24,6 +24,90 @@ The user-facing rule
 the same string parsing path from Python. ``from_yaml`` loads YAML/JSON values
 with the types supplied by the file format.
 
+CLI spelling invariants
+-----------------------
+
+Kwconf delegates parsing to :mod:`argparse`, but it intentionally adds a small
+set of CLI spelling rules. These rules are part of kwconf's public contract,
+not accidental consequences of a particular ``argparse.Action``.
+
+1. **Every CLI key can be assigned explicitly.** A boolean flag is not limited
+   to presence/absence. All of these are meaningful kwconf spellings::
+
+       --flag
+       --flag=false
+       --flag false
+
+   This is intentional. An explicit command line can show that a setting was
+   considered and disabled instead of making the setting disappear from the
+   command merely because its value is false.
+
+2. **Options may have a bare form.** *Bare* is the kwconf term for an option
+   occurrence with no explicit value. ``Flag(False)`` has a built-in bare
+   meaning of true. A counter's bare meaning is increment. For an ordinary
+   value, define the bare result explicitly with ``bare=``::
+
+       class C(kwconf.Config):
+           patch = kwconf.Value(None, bare='auto', short_alias=['p'])
+
+   The resulting forms are::
+
+       --patch              # -> 'auto' (bare)
+       --patch=archive.tar  # -> 'archive.tar' (explicit)
+       --patch archive.tar  # -> 'archive.tar' (explicit)
+       -p                   # -> 'auto' (bare)
+       -p=archive.tar       # -> 'archive.tar' (explicit)
+       -p archive.tar       # -> 'archive.tar' (explicit)
+
+   ``bare=...`` is the semantic kwconf API over argparse's lower-level
+   ``nargs='?'`` / ``const=...`` mechanism and implies ``nargs='?'``.
+
+3. **A bare-capable option may consume the following token.** Therefore
+   ``--flag input.txt`` assigns ``input.txt`` to ``flag`` rather than assuming
+   that it is positional. Use the standard end-of-options separator when the
+   option should stay bare::
+
+       prog --flag -- input.txt
+       prog -p -- .
+
+4. **Bare-capable short aliases cluster and never use undelimited attached
+   values.** With ``-f`` and ``-v`` registered as bare-capable aliases::
+
+       -fv       # -> -f -v
+       -vvf      # -> -v -v -f
+       -f=false  # explicit assignment
+       -f false  # explicit assignment
+
+   ``-ffalse`` does *not* mean ``-f false``. This avoids the intrinsic ambiguity
+   between an attached optional value and a short-option cluster. Use ``=`` or
+   a separate token for an explicit value.
+
+5. **Ordinary required-value short options retain argparse syntax.** If ``-k``
+   is an ordinary value-taking option, ``-k value``, ``-k=value``, and the
+   traditional ``-kVALUE`` spelling remain accepted. Kwconf does not need to
+   promote the compact spelling in documentation or generated examples. A
+   required-value option can terminate a cluster, so ``-vkfoo`` is interpreted
+   as ``-v -kfoo`` when ``-v`` is bare-capable and ``-k`` takes a value.
+
+6. **``--`` ends option interpretation.** This is the standard escape hatch
+   whenever an otherwise ambiguous token must be positional.
+
+7. **Kwconf lexical conveniences are configurable.** Hyphen/underscore long
+   option matching is controlled by ``__fuzzy_hyphens__``. Bare-capable short
+   clustering is controlled by ``__short_alias_clusters__``. Set either to
+   ``False`` to move that part of the grammar closer to raw argparse behavior.
+   Parser construction also has corresponding per-call controls::
+
+       parser = cfg.argparse(
+           fuzzy_hyphens=False,
+           short_alias_clusters=False,
+       )
+
+The short-cluster rule is deliberately lexical and narrow. Kwconf normalizes a
+compact token before handing it to argparse; it does not replace argparse's
+cross-token parsing, conversion, ``nargs``, positional, subparser, or error
+machinery.
+
 What a parser does
 ------------------
 

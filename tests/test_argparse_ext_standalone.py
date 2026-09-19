@@ -152,3 +152,33 @@ def test_fuzzy_hyphens_independent_of_allow_abbrev():
     parser.add_argument('--my-option', default='d')
     _, unknown = parser.parse_known_args(['--my=x'])
     assert '--my=x' in unknown
+
+
+def test_short_optional_value_clusters_are_lexically_normalized():
+    """The parser, not the action, owns kwconf's compact short grammar."""
+    from kwconf.argparse_ext import ExtendedArgumentParser
+
+    parser = ExtendedArgumentParser(exit_on_error=False)
+    parser.add_argument('-f', nargs='?', const='bare-f')
+    parser.add_argument('-v', nargs='?', const='bare-v')
+    parser.add_argument('-k')
+
+    ns, unknown = parser.parse_known_args(['-fv'])
+    assert vars(ns) == {'f': 'bare-f', 'v': 'bare-v', 'k': None}
+    assert unknown == []
+
+    ns, unknown = parser.parse_known_args(['-vkfoo'])
+    assert vars(ns) == {'f': None, 'v': 'bare-v', 'k': 'foo'}
+    assert unknown == []
+
+    # A bare-capable short alias cannot fall back to -fVALUE when the suffix
+    # is not a valid cluster.
+    ns, unknown = parser.parse_known_args(['-f3'])
+    assert ns.f is None
+    assert unknown == ['-f3']
+
+    parser._kwconf_short_alias_clusters = False
+    ns, unknown = parser.parse_known_args(['-fv'])
+    assert ns.f == 'v'
+    assert ns.v is None
+    assert unknown == []

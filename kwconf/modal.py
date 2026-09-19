@@ -662,6 +662,7 @@ class ModalCLI(metaclass=MetaModalCLI):
         parser: Optional[Any] = None,
         special_options: Any = ...,
         fuzzy_hyphens: Optional[int] = None,
+        short_alias_clusters: Optional[bool] = None,
     ) -> Any:
         """
         Builds a new argparse object for this ModalCLI or extends an existing
@@ -676,6 +677,11 @@ class ModalCLI(metaclass=MetaModalCLI):
                 own settings (an ancestor opting out propagates down). This is
                 threaded per-call, so the same Config/ModalCLI reused under two
                 different parents resolves independently.
+
+            short_alias_clusters (bool | None):
+                Effective bare-capable short-alias clustering setting. ``None``
+                uses ``__short_alias_clusters__``; a falsy value forces the
+                extension off for this modal subtree.
         """
 
         if parser is None:
@@ -709,6 +715,17 @@ class ModalCLI(metaclass=MetaModalCLI):
         # Effective = own setting, but forced off if an ancestor opted out.
         fuzzy_hyphens = (
             own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
+        )
+        own_short_clusters = getattr(self, '__short_alias_clusters__', True)
+        short_alias_clusters = (
+            own_short_clusters
+            if short_alias_clusters is None or short_alias_clusters
+            else False
+        )
+        setattr(
+            parser,
+            '_kwconf_short_alias_clusters',
+            bool(short_alias_clusters),
         )
 
         # Build a list of primary command names to display as the valid options
@@ -834,7 +851,9 @@ class ModalCLI(metaclass=MetaModalCLI):
                     main_cmd, **parserkw
                 )
                 modal_parser = modal_inst.argparse(
-                    parser=modal_parser, fuzzy_hyphens=fuzzy_hyphens
+                    parser=modal_parser,
+                    fuzzy_hyphens=fuzzy_hyphens,
+                    short_alias_clusters=short_alias_clusters,
                 )
                 modal_parser.set_defaults(
                     __main_function__=cmdinfo['main_func']
@@ -847,7 +866,9 @@ class ModalCLI(metaclass=MetaModalCLI):
                 parserkw['prog'] = ' '.join([parser.prog, main_cmd])
                 subparser = command_subparsers.add_parser(main_cmd, **parserkw)
                 subparser = cmdinfo['subconfig']._argparse(
-                    subparser, fuzzy_hyphens=fuzzy_hyphens
+                    subparser,
+                    fuzzy_hyphens=fuzzy_hyphens,
+                    short_alias_clusters=short_alias_clusters,
                 )
                 subparser.set_defaults(__main_function__=cmdinfo['main_func'])
                 subparser.set_defaults(

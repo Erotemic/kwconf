@@ -164,6 +164,15 @@ class _Value(NiceRepr):
             argparse ``nargs`` for this option (e.g. ``'+'``, ``'*'``, ``'?'``,
             or an integer count).
 
+        bare (Any):
+            Value used when this option appears without an explicit value.
+            Supplying ``bare=...`` gives the option a kwconf *bare form* and
+            implies ``nargs='?'``. Explicit values remain available with
+            ``--option=value`` / ``--option value`` and ``-o=value`` /
+            ``-o value``. Bare-capable short options do not accept the
+            undelimited ``-oVALUE`` spelling when short-alias clustering is
+            enabled.
+
         required (bool):
             If True, the CLI requires this option to be supplied.
 
@@ -213,6 +222,7 @@ class _Value(NiceRepr):
         mutex_group: Optional[str] = None,
         tags: Optional[Any] = None,
         *,
+        bare: Any = NoParam,
         default_factory: Callable[[], Any] | None = None,
         parser: Any = None,
         validate: Optional[Union[bool, str]] = None,
@@ -229,6 +239,18 @@ class _Value(NiceRepr):
                 '`type`, not both.'
             )
 
+        if bare is not NoParam:
+            if isflag:
+                raise ValueError(
+                    'Value(bare=...) is for non-flag values; Flag and counter '
+                    'fields already define their own bare behavior.'
+                )
+            if nargs not in {None, '?'}:
+                raise ValueError(
+                    "Value(bare=...) implies nargs='?' and is incompatible "
+                    f'with nargs={nargs!r}'
+                )
+
         # Whether the user explicitly passed ``type=`` (deprecated). The
         # metaclass also populates ``self.type`` from a field annotation, so we
         # capture user intent here, before that happens, to decide whether
@@ -242,6 +264,7 @@ class _Value(NiceRepr):
         self.alias = alias
         self.position = position
         self.isflag = isflag
+        self.bare = bare
         self.parsekw: dict[str, Any] = {
             'help': help,
             'type': type,
@@ -427,6 +450,10 @@ class _Value(NiceRepr):
         }
         value_kw.pop('parsekw', None)
         value_kw.update(value.parsekw)
+        if value.bare is not NoParam:
+            # ``bare`` may intentionally be falsy (None / False / 0), so it
+            # cannot rely on the truthiness filter above.
+            value_kw['bare'] = value.bare
         if orig_help is None:
             # Do not emit a redundant help=None kwarg.
             value_kw.pop('help', None)
@@ -444,6 +471,7 @@ class _Value(NiceRepr):
         _order_keys = {
             'value',
             'nargs',
+            'bare',
             'type',
             'isflag',
             'position',
@@ -525,7 +553,14 @@ class _Value(NiceRepr):
             real_value_kw['isflag'] = 'counter'
         else:
             real_value_kw.pop('isflag', None)
-            if action.nargs is not None:
+            if action.option_strings and action.nargs == '?':
+                # Argparse expresses an option with a meaningful bare form as
+                # ``nargs='?'`` plus ``const=...``. Port that pair into
+                # kwconf's semantic spelling instead of preserving the lower-
+                # level argparse representation. ``const=None`` is meaningful
+                # and therefore intentionally becomes ``bare=None``.
+                real_value_kw['bare'] = action.const
+            elif action.nargs is not None:
                 real_value_kw['nargs'] = action.nargs
         action_id = id(action)
         if action_id in actionid_to_groupkey:
@@ -580,6 +615,7 @@ def Value(
     mutex_group: Optional[str] = ...,
     tags: Optional[Any] = ...,
     *,
+    bare: Any = ...,
     default_factory: None = ...,
     parser: Any = ...,
     validate: Optional[Union[bool, str]] = ...,
@@ -600,6 +636,7 @@ def Value(
     group: Optional[str] = ...,
     mutex_group: Optional[str] = ...,
     tags: Optional[Any] = ...,
+    bare: Any = ...,
     parser: Any = ...,
     validate: Optional[Union[bool, str]] = ...,
 ) -> _T: ...
@@ -618,6 +655,7 @@ def Value(
     mutex_group: Optional[str] = None,
     tags: Optional[Any] = None,
     *,
+    bare: Any = NoParam,
     default_factory: Optional[Callable[[], Any]] = None,
     parser: Any = None,
     validate: Optional[Union[bool, str]] = None,
@@ -676,6 +714,13 @@ def Value(
         tags (Any):
             Free-form metadata for external program use.
 
+        bare (Any):
+            Define the field's CLI *bare form*. When the option appears without
+            an explicit value, use this value. ``bare=...`` implies
+            ``nargs='?'``. For example ``Value(None, bare='auto')`` accepts
+            ``--key`` as ``'auto'`` while ``--key=file`` and ``--key file``
+            remain explicit assignments.
+
         default_factory (Callable[[], T] | None):
             Zero-argument callable producing the default; mutually exclusive with
             ``default``. Use for mutable defaults (e.g. ``default_factory=list``).
@@ -721,6 +766,7 @@ def Value(
         group=group,
         mutex_group=mutex_group,
         tags=tags,
+        bare=bare,
         default_factory=default_factory,
         parser=parser,
         validate=validate,
@@ -742,9 +788,16 @@ def Flag(
     validate: Optional[Union[bool, str]] = None,
 ) -> bool:
     """
-    Declare a boolean flag field: like :func:`Value` but with flag semantics
-    (supports both ``--flag`` and ``--flag=value`` on the CLI). Typed to return
-    ``bool``. See :func:`Value` for the shared keyword arguments.
+    Declare a boolean flag field: like :func:`Value` but with flag semantics.
+
+    A flag always has a *bare form*: ``--flag`` means true (and ``--no-flag``
+    means false), while explicit assignment remains available as
+    ``--flag=false`` / ``--flag false`` and ``-f=false`` / ``-f false``. This
+    explicit-assignment property is intentional kwconf behavior, not ordinary
+    ``argparse`` ``store_true`` semantics.
+
+    Typed to return ``bool``. See :func:`Value` for the shared keyword
+    arguments.
     """
     return cast(
         bool,
@@ -820,6 +873,11 @@ def _value_argument_invocations(
             option_kw['action'] = argparse_ext.CounterOrKeyValAction
         else:
             option_kw['action'] = argparse_ext.BooleanFlagOrKeyValAction
+    elif template is not None and template.bare is not NoParam:
+        # ``bare`` is the public semantic abstraction over argparse's
+        # ``nargs='?'`` + ``const=...`` pair.
+        option_kw['nargs'] = '?'
+        option_kw['const'] = template.bare
 
     if option_kw.get('nargs') is not None and option_kw.get('type') in {
         list,

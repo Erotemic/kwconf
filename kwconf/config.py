@@ -719,6 +719,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     __description__: Optional[str] = None
     __epilog__: Optional[str] = None
     __validate__: bool | str = 'warn'
+    __short_alias_clusters__: bool = True
     # __allow_newattr__ = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -2829,16 +2830,22 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 """
                 )
             )
+        parser_ctor = (
+            'argparse_ext.ExtendedArgumentParser'
+            if kwconf_primatives
+            else 'argparse.ArgumentParser'
+        )
         lines.append(
             codeblock(
                 """
             import argparse
-            parser = argparse.ArgumentParser(
+            parser = {parser_ctor}(
             {constructor_body}
                 formatter_class=argparse.RawDescriptionHelpFormatter,
             )
             """
             ).format(
+                parser_ctor=parser_ctor,
                 constructor_body=constructor_body,
             )
         )
@@ -3106,13 +3113,25 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         *,
         special_options: bool = False,
         fuzzy_hyphens: Optional[int] = None,
+        short_alias_clusters: Optional[bool] = None,
     ) -> argparse_mod.ArgumentParser:
         """Populate a parser from the current values and instance schema."""
         own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
         effective_fuzzy = (
             own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
         )
+        own_short_clusters = getattr(self, '__short_alias_clusters__', True)
+        effective_short_clusters = (
+            own_short_clusters
+            if short_alias_clusters is None or short_alias_clusters
+            else False
+        )
         setattr(parser, '_kwconf_fuzzy_hyphens', bool(effective_fuzzy))
+        setattr(
+            parser,
+            '_kwconf_short_alias_clusters',
+            bool(effective_short_clusters),
+        )
 
         from kwconf import value as value_mod
 
@@ -3135,6 +3154,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         special_options: bool = False,
         allow_subconfig_overrides: bool = False,
         fuzzy_hyphens: Optional[int] = None,
+        short_alias_clusters: Optional[bool] = None,
     ) -> argparse_mod.ArgumentParser:
         """
         construct or update an argparse.ArgumentParser CLI parser
@@ -3150,6 +3170,16 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             allow_subconfig_overrides (bool):
                 If True, allow SubConfig selector overrides. SubConfig
                 selection requires multipass parsing; use ``cli`` instead.
+
+            fuzzy_hyphens (int | None):
+                Per-parser control for kwconf's long-option underscore/hyphen
+                normalization. A falsy value disables the extension.
+
+            short_alias_clusters (bool | None):
+                Per-parser control for kwconf's bare-capable short-option
+                clustering. A falsy value disables the extension and delegates
+                compact short tokens directly to argparse. The class-level
+                default is ``__short_alias_clusters__``.
 
         Returns:
             argparse.ArgumentParser : a new or updated argument parser
@@ -3307,7 +3337,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 self, include_class_options=False
             )
             parser = flat_helper._argparse(
-                parser=parser, special_options=special_options
+                parser=parser,
+                special_options=special_options,
+                fuzzy_hyphens=fuzzy_hyphens,
+                short_alias_clusters=short_alias_clusters,
             )
             _subcfg_mod.add_forbidden_selector_args(parser, self)
             return parser
@@ -3318,6 +3351,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             parser,
             special_options=special_options,
             fuzzy_hyphens=fuzzy_hyphens,
+            short_alias_clusters=short_alias_clusters,
         )
 
     # Public Config operations are convenient spellings, but declared fields

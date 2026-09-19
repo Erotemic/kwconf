@@ -222,7 +222,8 @@ limited to declared fields unless metadata is supplied explicitly.
 Configuration state has three non-overlapping ownership layers, and all input
 and parser construction paths share canonical normalization/building helpers.
 Staged SubConfig selection is orchestration around argparse; kwconf does not
-implement an independent argv grammar.
+implement an independent argv parser. A narrow lexical normalization layer may
+rewrite kwconf-specific spellings before argparse runs.
 
 **Locks down**
 
@@ -237,8 +238,10 @@ implement an independent argv grammar.
 * ``Config.argparse``, SubConfig parser expansion, and argparse port generation
   derive their field calls from canonical parser-building helpers.
 * Multipass selection may rebuild the known selector set, but every pass uses
-  ``argparse.parse_known_args``. Kwconf does not manually decide token/value
-  boundaries.
+  ``argparse.parse_known_args``. Kwconf does not manually decide cross-token
+  value boundaries. The argv normalizer may resolve only documented lexical
+  extensions, currently fuzzy long-option hyphens and compact bare-capable
+  short-option clusters.
 * Selector realization is monotone: each bootstrap pass consumes recognized
   selector tokens, resolved selector paths leave the pending set, and selecting
   the class already present at a node is a no-op. There is no arbitrary nesting
@@ -249,7 +252,9 @@ implement an independent argv grammar.
   class is unchanged.
 * Kwconf parser actions subclass public ``argparse.Action``. The package does
   not vendor ``parse_known_args`` or override argparse's private
-  ``_parse_optional`` / ``_get_option_tuples`` engine.
+  ``_parse_optional`` / ``_get_option_tuples`` engine. Short-option cluster
+  spelling is normalized before argparse instead of being reconstructed inside
+  an action after argparse has mistaken a suffix for an optional value.
 * Private argparse access is confined to small compatibility adapters for
   enumerating registered option strings, walking selected subparsers, and
   importing/exporting parser structure. Those adapters require behavioral

@@ -16,6 +16,7 @@ from typing import Any, cast
 
 from kwconf.annotations import choices_from_annotation
 from kwconf.config import Config
+from kwconf.util.util_misc import NoParam
 from kwconf.value import _Value as Value
 
 
@@ -330,6 +331,8 @@ def _field_review_notes(key: str, template: Value) -> list[str]:
         cli_parts.append("isflag='counter'")
     if template.parsekw.get('nargs') is not None:
         cli_parts.append(f"nargs={template.parsekw['nargs']!r}")
+    if template.bare is not NoParam:
+        cli_parts.append(f'bare={template.bare!r}')
     if template.short_alias:
         cli_parts.append(f'short_alias={template.short_alias!r}')
     if template.group is not None:
@@ -538,6 +541,10 @@ class _PydanticSourcePorter:
             notes.append('argparse allow_abbrev policy was not translated')
         if '__fuzzy_hyphens__' in config_cls.__dict__:
             notes.append('kwconf fuzzy-hyphen CLI policy was not translated')
+        if '__short_alias_clusters__' in config_cls.__dict__:
+            notes.append(
+                'kwconf short-alias cluster CLI policy was not translated'
+            )
         if config_cls.__dict__.get('__validate__', 'warn') != 'warn':
             notes.append(
                 'class-level kwconf validation policy was not translated'
