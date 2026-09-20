@@ -156,25 +156,37 @@ forcing arbitrary Python callbacks into a Rust API.
 
 ## End-to-end evidence bundle
 
-Run the complete evaluation campaign with one command:
+Use the review-quality evaluation campaign for normal handoffs:
 
 ```bash
 python dev/rust_backend/evidence_bundle.py
-# or a faster diagnostic pass
+# minimal edit/test-loop diagnostic
 python dev/rust_backend/evidence_bundle.py --quick
+# exhaustive release-performance/profiling campaign
+python dev/rust_backend/evidence_bundle.py --deep
 ```
 
-The command builds/installs the ABI3 wheel, runs backend/feature parity checks,
-pytest, real startup/completion/modal/help benchmarks, exact completion/help
-wire-parity checks when argcomplete/rich-argparse are installed, native Cargo
-checks and Criterion when available, import/cProfile/perf diagnostics, and
-packages the
-results into one tarball. The bundle also contains the exact changed source
-snapshot, generated benchmark programs, raw trial CSVs, wheel metadata/hash,
-and every command log. When a ``~/code/kwconf-rs`` checkout is present it also
-captures its relevant contract/source state and runs its tests/metadata as
-non-blocking convergence evidence. Required failures make the command exit
-nonzero *after* the evidence tarball has been written.
+The default review profile builds/installs the ABI3 wheel, runs backend/feature
+parity, full pytest, Ruff, required Cargo gates, real
+startup/completion/modal/help benchmarks, exact completion/help wire parity,
+and import diagnostics. It retains every semantic coverage dimension while
+reducing repeated fresh-process samples that add little information: delegated
+completion gets two parity trials, help gets a small representative sample, and
+headline/native timing gets moderate paired/interleaved sampling. Criterion,
+cProfile, perf, and the separate ``kwconf-rs`` test run move to ``--deep``.
+
+Required correctness failures are collected before the expensive repeated
+benchmarks. In review mode a failed gate causes those timing campaigns to be
+recorded as skipped; use ``--deep`` when performance evidence is still wanted
+from a failing tree. Every command row records elapsed time in ``commands.json``
+and ``SUMMARY.md`` so the collector's own runtime can be audited.
+
+The bundle also contains the exact changed source snapshot, generated benchmark
+programs, raw observations, wheel metadata/hash, and every command log. When a
+``~/code/kwconf-rs`` checkout is present, review mode captures its relevant
+state/metadata while ``--deep`` also runs its tests as non-blocking convergence
+evidence. Required failures make the command exit nonzero *after* the evidence
+tarball has been written.
 
 ## Measure
 

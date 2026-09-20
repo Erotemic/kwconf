@@ -145,6 +145,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--quick', action='store_true')
     parser.add_argument('--trials', type=int, default=50)
+    parser.add_argument(
+        '--delegated-trials',
+        type=int,
+        help='trial count for delegated parity-only completion cases (default: --trials)',
+    )
     parser.add_argument('--schema-sizes', default='1,16,64,256')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--script-dir', type=Path)
@@ -152,6 +157,12 @@ def main() -> None:
     args = parser.parse_args()
     if args.quick:
         args.trials = min(args.trials, 12)
+        if args.delegated_trials is None:
+            args.delegated_trials = min(args.trials, 2)
+    if args.delegated_trials is None:
+        args.delegated_trials = args.trials
+    if args.trials < 1 or args.delegated_trials < 1:
+        raise SystemExit('trial counts must be at least 1')
     sizes = [int(x) for x in args.schema_sizes.split(',') if x]
     methods = _available_methods()
 
@@ -162,6 +173,8 @@ def main() -> None:
     report: dict[str, Any] = {
         'python': sys.executable,
         'trials': args.trials,
+        'native_trials': args.trials,
+        'delegated_trials': args.delegated_trials,
         'argcomplete_available': 'argparse_argcomplete' in methods,
         'cases': [],
     }
@@ -275,7 +288,10 @@ def main() -> None:
 
             observations = {method: [] for method in methods}
             outputs = {method: set() for method in methods}
-            for trial in range(args.trials):
+            case_trials = (
+                args.delegated_trials if ownership == 'delegated' else args.trials
+            )
+            for trial in range(case_trials):
                 order = list(methods)
                 rng.shuffle(order)
                 for method in order:
@@ -300,6 +316,7 @@ def main() -> None:
                 'schema_size': size,
                 'line_tail': line_tail,
                 'expected_ownership': ownership,
+                'trials': case_trials,
                 'extra_env': extra_env,
                 'methods': {},
             }

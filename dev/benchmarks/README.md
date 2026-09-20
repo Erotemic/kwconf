@@ -250,10 +250,24 @@ For a review-quality run, prefer the one-command evidence campaign. It retains
 the generated programs and raw observations in addition to the summaries:
 
 ```bash
+# Review-quality default: all release gates + representative timing.
 python dev/rust_backend/evidence_bundle.py
-# quicker diagnostic bundle
+
+# Minimal edit/test-loop diagnostic.
 python dev/rust_backend/evidence_bundle.py --quick
+
+# Exhaustive statistical/profiling campaign used for release characterization.
+python dev/rust_backend/evidence_bundle.py --deep
 ```
+
+The default review profile keeps every correctness/parity dimension but uses
+fewer repeated fresh-process timing samples, uses two trials for delegated
+completion cases whose purpose is exact wire parity, and omits deep Criterion,
+cProfile, perf, and cross-repository test runs. If a required gate fails, it
+skips the repeated performance campaign because those measurements cannot make
+the build release-ready; ``--deep`` collects them anyway. The bundle records
+per-step elapsed time so future slow stages are visible directly in the
+summary.
 
 The command always creates one ``kwconf-rust-evidence-*.tar.gz`` bundle. It
 keeps logs even when a required check fails, so the archive can be handed to a

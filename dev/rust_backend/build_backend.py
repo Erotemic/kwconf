@@ -276,7 +276,7 @@ def main() -> None:
         print('  ' + ' '.join(startup_benchmark))
         print('native Rust benchmark:')
         print('  ' + ' '.join(native_benchmark))
-        print('full evidence bundle:')
+        print('review evidence bundle:')
         print(f'  {sys.executable} dev/rust_backend/evidence_bundle.py')
 
 
