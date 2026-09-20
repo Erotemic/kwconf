@@ -252,7 +252,7 @@ def _modal_route_model(modal: Any):
     every leaf Config's option schema.  Routing only needs the command tree.
     ``_update_metadata`` is still used so command/alias/main semantics and the
     parser-stage Config materialization remain identical to the canonical
-    ModalCLI path.
+    ModalCLI path, but parser/help metadata stays lazy.
     """
     from kwconf import _rust
 
@@ -296,7 +296,7 @@ def _modal_route_model(modal: Any):
             (list(path), ['-h', '--help'], False, [], 'show this help message and exit')
         )
         for metadata in current._subconfig_metadata:
-            current._update_metadata(metadata)
+            current._update_metadata(metadata, with_parserkw=False)
             if metadata.get('is_opaque'):
                 raise _rust.UnsupportedSchema(
                     'opaque modal command requires canonical argcomplete/argparse'

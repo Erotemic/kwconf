@@ -273,6 +273,13 @@ def test_modal_route_model_skips_leaf_completion_schema(monkeypatch):
             AssertionError('routing must not compile leaf completion schemas')
         ),
     )
+    monkeypatch.setattr(
+        Root.Train,
+        '_parserkw',
+        lambda self: (_ for _ in ()).throw(
+            AssertionError('routing must not materialize argparse parserkw')
+        ),
+    )
     options, commands, leaves = _completion._modal_route_model(Root())
     assert any(path == [] and name == 'train' for path, name, *_ in commands)
     assert ('train',) in leaves

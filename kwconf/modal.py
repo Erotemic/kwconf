@@ -82,7 +82,15 @@ import os
 import sys
 
 from kwconf import diagnostics
-from kwconf._typing_runtime import Any, Dict, List, Optional, Sequence, Tuple, Union
+from kwconf._typing_runtime import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 from kwconf.util.util_class import class_or_instancemethod
 from kwconf.util.util_repr import NiceRepr
 from kwconf.util.util_text import codeblock, paragraph
@@ -498,15 +506,17 @@ class ModalCLI(metaclass=MetaModalCLI):
         return _copy_registration_spec(cli_cls)
 
     @staticmethod
-    def _update_metadata(metadata: Dict):
+    def _update_metadata(metadata: Dict, *, with_parserkw: bool = True):
         """
         Given a metadata dictionary (which must contain a "cls" item) we
-        introspect and fill in other unspecified items. To make initialization
-        faster we only do this when we need to build the argparse object
-        explicitly.
+        introspect and fill in other unspecified items. Routing/completion can
+        omit parser/help metadata so successful Rust paths do not import the
+        canonical argparse formatter stack.
 
         Args:
             metadata (dict): modified inplace
+            with_parserkw (bool):
+                If false, resolve only command-routing runtime metadata.
         """
         cli_cls = metadata['cls']
         if cli_cls is None:
@@ -555,7 +565,8 @@ class ModalCLI(metaclass=MetaModalCLI):
         if metadata['alias']:
             if isinstance(metadata['alias'], str):
                 metadata['alias'] = [metadata['alias']]
-            parserkw['aliases'] = metadata['alias']
+            if with_parserkw:
+                parserkw['aliases'] = metadata['alias']
 
         # group = 'FOO'
         # print(f'cli_cls={cli_cls}')
@@ -569,29 +580,31 @@ class ModalCLI(metaclass=MetaModalCLI):
                 modal = cli_cls()
             else:
                 modal = cli_cls
-            parserkw.update(modal._parserkw())
-            parserkw['help'] = parserkw['description'].split('\n')[0]
-            metadata.update(
-                {
-                    'is_modal': True,
-                    'parserkw': parserkw,
-                    'main_func': cli_cls.main,
-                    'subconfig': modal,
-                }
-            )
+            if with_parserkw:
+                parserkw.update(modal._parserkw())
+                parserkw['help'] = parserkw['description'].split('\n')[0]
+            runtime_metadata = {
+                'is_modal': True,
+                'main_func': cli_cls.main,
+                'subconfig': modal,
+            }
+            if with_parserkw:
+                runtime_metadata['parserkw'] = parserkw
+            metadata.update(runtime_metadata)
         else:
             # A leaf Config CLI
             subconfig = cli_cls()
-            parserkw.update(subconfig._parserkw())
-            parserkw['help'] = parserkw['description'].split('\n')[0]
-            metadata.update(
-                {
-                    'is_modal': False,
-                    'parserkw': parserkw,
-                    'main_func': cli_cls.main,
-                    'subconfig': subconfig,
-                }
-            )
+            if with_parserkw:
+                parserkw.update(subconfig._parserkw())
+                parserkw['help'] = parserkw['description'].split('\n')[0]
+            runtime_metadata = {
+                'is_modal': False,
+                'main_func': cli_cls.main,
+                'subconfig': subconfig,
+            }
+            if with_parserkw:
+                runtime_metadata['parserkw'] = parserkw
+            metadata.update(runtime_metadata)
 
     def __call__(self, cli_cls: type) -> type:
         """alias of register"""

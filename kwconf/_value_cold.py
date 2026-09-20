@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 
-# Imported lazily after kwconf.value is fully initialized.
 from kwconf import value as _value_mod
 from kwconf._typing_runtime import Any, Callable, Optional, Union, cast
 from kwconf.util.util_misc import NoParam
 from kwconf.value import _Value, _resolve_alias, normalize_option_str
+
+# This cold module is imported only after kwconf.value is fully initialized.
 
 
 def _value_to_value_kw(self) -> MutableMapping[str, Any]:

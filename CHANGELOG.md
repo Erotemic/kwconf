@@ -90,6 +90,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   orchestration overhead without changing the Rust ABI, routing semantics, or
   canonical fallback behavior. The release evidence gates also enforce clean
   Rust formatting and Python linting for the accelerator campaign.
+* Static ModalCLI routing and command-name completion now resolve command
+  metadata without materializing argparse parser/formatter kwargs. Successful
+  Rust routing therefore does not import argparse, inspect, typing, or
+  rich-argparse solely for unused help metadata; canonical help/error and
+  delegated paths still build the same parser stack when needed.
 
 ### Fixed
 * The Rust evidence campaign now accepts Maturin's normal pure-Rust wrapper

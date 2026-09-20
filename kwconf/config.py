@@ -86,13 +86,17 @@ from kwconf._typing_runtime import (
     Type,
     cast,
 )
-from kwconf.annotations import _is_any as _annotation_is_any
-from kwconf.annotations import choices_from_annotation as _choices_from_annotation
-from kwconf.annotations import format_annotation as _format_annotation
+from kwconf.annotations import (
+    choices_from_annotation as _choices_from_annotation,
+)
+from kwconf.annotations import (
+    format_annotation as _format_annotation,
+)
 from kwconf.annotations import (
     get_class_namespace_annotations as _get_class_namespace_annotations,
 )
 from kwconf.annotations import is_classvar_annotation as _is_classvar_annotation
+from kwconf.annotations import _is_any as _annotation_is_any
 from kwconf.annotations import (
     runtime_type_from_annotation as _runtime_type_from_annotation,
 )

@@ -18,8 +18,14 @@ stay deferred.
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterable, Iterator, Mapping, MutableMapping, Sequence
-from collections.abc import Callable as ABCCallable
+from collections.abc import (
+    Callable as ABCCallable,
+    Iterable as Iterable,
+    Iterator as Iterator,
+    Mapping as Mapping,
+    MutableMapping as MutableMapping,
+    Sequence as Sequence,
+)
 
 TYPE_CHECKING = False
 
