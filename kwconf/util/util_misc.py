@@ -45,6 +45,9 @@ class _NoParamType:
 NoParam = _NoParamType()
 
 
+_ATOMIC_IMMUTABLE_TYPES = (type(None), bool, int, float, complex, str, bytes)
+
+
 def copy_value(value: Any, *, context: str = 'configuration default') -> Any:
     """Deep-copy a concrete reset baseline or raise an actionable error.
 
@@ -57,6 +60,8 @@ def copy_value(value: Any, *, context: str = 'configuration default') -> Any:
     afresh instead, matching :mod:`dataclasses` and supporting arbitrary
     non-copyable runtime objects.
     """
+    if type(value) in _ATOMIC_IMMUTABLE_TYPES:
+        return value
     try:
         return copy.deepcopy(value)
     except Exception as ex:

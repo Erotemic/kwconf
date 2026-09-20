@@ -408,9 +408,14 @@ class _Value(NiceRepr):
         return value
 
     def copy(self) -> '_Value':
-        import copy
-
-        return copy.copy(self)
+        # _Value is an internal plain Python metadata object. copy.copy()
+        # reaches the same shallow-copy result through generic reconstruction
+        # machinery; cloning __dict__ directly is substantially cheaper when
+        # configs contain hundreds of fields.
+        cls = type(self)
+        new = cls.__new__(cls)
+        new.__dict__ = self.__dict__.copy()
+        return new
 
     def clone_default(
         self, *, context: str = 'configuration default'
@@ -876,8 +881,12 @@ def _value_argument_invocations(
             (name,),
             argkw.copy(),
         )
-
-    option_kw = argkw.copy()
+        # Positional and key/value variants need independent kwargs because
+        # the option path mutates its dictionary below.
+        option_kw = argkw.copy()
+    else:
+        # The common non-positional case owns this kwargs dictionary already.
+        option_kw = argkw
     option_kw['dest'] = name
     option_strings = tuple(_resolve_alias(name, template, fuzzy_hyphens))
 
@@ -990,6 +999,17 @@ def _resolve_alias(
     else:
         aliases = _value.alias
         short_aliases = _value.short_alias
+
+    # Most fields have only their canonical long name. Avoid allocating the
+    # general alias-normalization sets/lists for that common case.
+    if not aliases and not short_aliases:
+        canonical = '--' + name
+        if fuzzy_hyphens and '_' in name:
+            fuzzy_name = name.replace('_', '-')
+            if fuzzy_name != name:
+                return [canonical, '--' + fuzzy_name]
+        return [canonical]
+
     if isinstance(aliases, str):
         aliases = [aliases]
     if isinstance(short_aliases, str):

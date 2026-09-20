@@ -909,6 +909,57 @@ def _plot_comparison_rows(
     return outputs
 
 
+def _format_seconds(seconds: float) -> str:
+    if seconds >= 1:
+        return f'{seconds:.3f} s'
+    if seconds >= 1e-3:
+        return f'{seconds * 1e3:.3f} ms'
+    return f'{seconds * 1e6:.3f} us'
+
+
+def _print_current_reference_summary(rows: list[dict[str, object]]) -> None:
+    """Show the absolute current gap to the closest argparse baseline."""
+    startup = _python_startup_seconds(rows)
+    if startup is not None:
+        print(f'python startup reference: {_format_seconds(startup)}')
+
+    comparisons = {
+        'build': ('kwconf_default', 'argparse_aliases'),
+        'schema_parse': ('kwconf_default', 'argparse_aliases'),
+        'argv_parse': ('kwconf_default', 'argparse_aliases'),
+        'end_to_end': ('kwconf_default', 'argparse_aliases'),
+        'short_cluster': ('kwconf_counter', 'argparse_count'),
+        'fuzzy': ('extended_fuzzy', 'argparse_alias'),
+    }
+    print('current reference summary (largest measured point):')
+    for family, (target_method, baseline_method) in comparisons.items():
+        family_rows = [r for r in rows if str(r.get('family')) == family]
+        target_rows = [r for r in family_rows if r.get('method') == target_method]
+        baseline_rows = [r for r in family_rows if r.get('method') == baseline_method]
+        if not target_rows or not baseline_rows:
+            continue
+        target_by_x = {int(r['x_value']): r for r in target_rows}
+        baseline_by_x = {int(r['x_value']): r for r in baseline_rows}
+        common_x = sorted(set(target_by_x) & set(baseline_by_x))
+        if not common_x:
+            continue
+        x_value = common_x[-1]
+        target_s = float(target_by_x[x_value]['min_s'])
+        baseline_s = float(baseline_by_x[x_value]['min_s'])
+        ratio = target_s / baseline_s
+        delta = target_s - baseline_s
+        startup_text = ''
+        if startup:
+            startup_text = f', {target_s / startup * 100:.2f}% of python startup'
+        print(
+            f'  {family:14s} @{x_value:<5d} '
+            f'{_format_seconds(target_s):>10s} vs '
+            f'{_format_seconds(baseline_s):>10s}  '
+            f'{ratio:5.2f}x, delta {_format_seconds(delta)}'
+            f'{startup_text}'
+        )
+
+
 def _print_comparison_summary(rows: list[dict[str, object]]) -> None:
     if not rows:
         return
@@ -1095,6 +1146,7 @@ def main() -> None:
     _append_csv(rows, args.output)
     print(f'appended run: {run_id}')
     print(f'wrote history: {args.output}')
+    _print_current_reference_summary(rows)
     if baseline_run_id is not None:
         print(f'comparison baseline: {baseline_run_id}')
         comparison_output = args.output.with_name(

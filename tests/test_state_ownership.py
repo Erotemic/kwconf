@@ -133,3 +133,42 @@ def test_noncopyable_concrete_baselines_raise_actionable_error():
 
     with pytest.raises(TypeError, match='default_factory'):
         DeclaredDemo()
+
+
+def test_value_copy_keeps_shallow_metadata_semantics():
+    """The optimized internal clone must remain equivalent to copy.copy()."""
+    from kwconf.value import _Flag
+
+    template = _Flag(False, help='demo', alias=['other'])
+    clone = template.copy()
+
+    assert type(clone) is type(template)
+    assert clone is not template
+    assert clone.__dict__ == template.__dict__
+    # _Value.copy has always been shallow: metadata containers are shared until
+    # a caller intentionally replaces them.
+    assert clone.parsekw is template.parsekw
+    assert clone.alias is template.alias
+
+
+def test_copy_value_skips_deepcopy_for_atomic_immutables(monkeypatch):
+    from kwconf.util import util_misc
+
+    original = util_misc.copy.deepcopy
+    seen = []
+
+    def recording_deepcopy(value):
+        seen.append(value)
+        return original(value)
+
+    monkeypatch.setattr(util_misc.copy, 'deepcopy', recording_deepcopy)
+
+    for value in [None, False, 3, 3.5, 2 + 1j, 'text', b'bytes']:
+        assert util_misc.copy_value(value) is value
+    assert seen == []
+
+    payload = ['mutable']
+    cloned = util_misc.copy_value(payload)
+    assert seen == [payload]
+    assert cloned == payload
+    assert cloned is not payload
