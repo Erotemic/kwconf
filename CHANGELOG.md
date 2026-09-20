@@ -3,6 +3,49 @@ We [keep a changelog](https://keepachangelog.com/en/1.0.0/).
 We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## Version 0.12.0 - Unreleased
+
+### Added
+* ``Config.port_to_pydantic()`` generates Pydantic 2 ``BaseModel`` source. It
+  translates annotations, defaults and importable default factories, help text,
+  long aliases, JSON-compatible tags, and simple nested ``SubConfig`` models.
+  Kwconf-specific CLI metadata is emitted as ``REVIEW(kwconf-port)`` comments.
+  Source generation does not import Pydantic.
+* Expanded the README comparison with Pydantic and ``pydantic-settings``,
+  including their CLI support and the ``port_to_pydantic()`` field mappings.
+* ``Value(..., bare=VALUE)`` defines an option's bare CLI result without
+  exposing argparse's ``const`` terminology. Bare values retain explicit
+  ``--key=value`` / ``--key value`` and ``-k=value`` / ``-k value`` forms.
+* Bare-capable short aliases now have deterministic compact clustering (for
+  example ``-pv`` and ``-vvv``), controlled by
+  ``__short_alias_clusters__`` / ``argparse(short_alias_clusters=...)``.
+
+### Changed
+* CLI parser construction and reuse avoid per-field dynamic ``argparse.Action``
+  classes, and fuzzy underscore/hyphen fallback lookup is cached per parser
+  schema. This reduces overhead without changing accepted CLI syntax.
+* Config construction now clones internal ``Value`` metadata directly instead
+  of routing each field through generic ``copy.copy`` reconstruction, and
+  skips ``deepcopy`` for builtin atomic immutable defaults. Parser construction
+  also fast-paths fields without explicit aliases and avoids an unnecessary
+  kwargs copy for non-positional options. These keep the same ownership and
+  CLI semantics while improving large-schema startup scaling.
+* Compact short tokens no longer use undelimited attached values for options
+  that have a bare form. ``-fVALUE`` is reserved for ordinary required-value
+  options; use ``-f=VALUE`` or ``-f VALUE`` for a flag, counter, ``bare=``
+  value, or other optional-value short option. Counter clustering is now a
+  parser-level lexical rule rather than a ``CounterOrKeyValAction`` repair for
+  argparse's ``-vvv`` -> ``-v`` + ``vv`` interpretation.
+
+### Fixed
+* ``Config.port_from_click()`` ignores Click's generated help option by asking
+  Click for that option directly. This supports both the historical ``help``
+  storage name and Click 8.5's reserved ``_click_default_help`` name.
+* The ``csv`` parser now preserves empty fields instead of dropping them. For
+  example, ``a,,b`` parses as ``['a', '', 'b']``, and an empty token parses as
+  ``['']``. Leading and trailing empty fields are preserved as well.
+
+
 ## [Version 0.11.0] - 2026-08-05
 
 ### Development

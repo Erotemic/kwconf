@@ -432,7 +432,7 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
     Example:
         >>> from kwconf.argparse_ext import *  # NOQA
         >>> import argparse
-        >>> parser = argparse.ArgumentParser()
+        >>> parser = ExtendedArgumentParser()
         >>> parser.add_argument('-f', '--flag', action=CounterOrKeyValAction)
         >>> print(parser.format_usage())
         >>> print(parser.format_help())
@@ -456,11 +456,11 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
         >>>     '--no-flag=False': True,
         >>>     # Multiple flag specification cases
         >>>     '--flag --flag --flag': 3,
-        >>>     # Short names can be combined with = (this is standard argparse behavior)
+        >>>     # Explicit short assignment remains available with =
         >>>     '-f=5': 5,
-        >>>     # Grouped short options should also count
+        >>>     # ExtendedArgumentParser normalizes bare-capable short clusters
         >>>     '-fff': 3,
-        >>>     # Grouping with an explicit value overrides
+        >>>     # The explicit value applies to the final option in the cluster
         >>>     '-fff=5': 5,
         >>>     # An explicit set overwrites previous increments
         >>>     '--flag --flag --flag --flag=0': 0,
@@ -488,52 +488,6 @@ class CounterOrKeyValAction(BooleanFlagOrKeyValAction):
         if option_string in self.option_strings:
             # Was the positive or negated key given?
             key_default: bool = not option_string.startswith('--no-')
-
-        # ---------- handling for grouped short options ------------
-        # Argparse allows ``-v=123`` just like ``--verbose=123``; when we
-        # use ``nargs='?'`` this means ``-vvv`` is parsed as option ``-v``
-        # with value ``'vv'``.  The code below detects that situation and
-        # normalizes it into either (a) a pure increment or (b) an explicit
-        # value.  We avoid doing any smartcasting here and instead modify
-        # ``values`` so that the original logic later in the method will
-        # handle casting/boolean inversion as usual.
-        #
-        # This only applies to a genuine short option (``-v``); for a long
-        # option (``--flag``) the value is never a short-option concatenation,
-        # and stripping the option's first letter would corrupt real values
-        # (``--flag=false`` -> ``'alse'``).
-        is_short_option = (
-            len(option_string) == 2
-            and option_string[0] == '-'
-            and option_string[1] != '-'
-        )
-        if values is not None and isinstance(values, str) and is_short_option:
-            short: str = option_string[1]
-            rep: int = 0
-            rest: str = values
-            while rest and rest[0] == short:
-                rep += 1
-                rest = rest[1:]
-            if rep > 0:
-                # Grouping detected: ``-v`` + rep extra occurrences
-                if not rest:
-                    # ``-vvv`` with no explicit value: let the normal
-                    # "no values" branch compute the increment by
-                    # pretending ``values`` was None, but we must apply
-                    # all of the increments at once.
-                    prev_value = getattr(namespace, self.dest)
-                    if prev_value is None:
-                        prev_value = 0
-                    setattr(namespace, self.dest, prev_value + rep + 1)
-                    mark_explicit(parser, namespace, self.dest)
-                    return
-                # For explicit value forms we strip leading '=' if present
-                if rest.startswith('='):
-                    values = rest[1:]
-                else:
-                    values = rest
-                # fall through to normal handling below with updated values
-        # ---------------------------------------------------------------
 
         # Was there a value or was the flag specified by itself?
         if values is None:
@@ -740,6 +694,45 @@ class CompatArgumentParser(argparse.ArgumentParser):
         return super()._get_values(action, arg_strings)  # type: ignore
 
 
+def _fuzzy_option_index(
+    parser: argparse.ArgumentParser,
+    option_actions: dict[str, argparse.Action],
+) -> dict[str, list[str]]:
+    """Return a cached fuzzy long-option lookup for one parser schema.
+
+    ``argparse`` exposes no public option-registry version, so the cache uses a
+    constant-time signature of its insertion-ordered option dictionary. Normal
+    ``add_argument`` mutations either change its size or its final key; replacing
+    an action under the same spelling leaves the lookup itself unchanged. Direct
+    mutation of argparse's private registry is outside this cache contract.
+    """
+    if option_actions:
+        signature = (
+            len(option_actions),
+            next(iter(option_actions)),
+            next(reversed(option_actions)),
+        )
+    else:
+        signature = (0, None, None)
+
+    cached = getattr(parser, '_kwconf_fuzzy_option_index', None)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
+    normalized_to_options: dict[str, list[str]] = {}
+    for known_option in option_actions:
+        if known_option.startswith('--'):
+            normalized_to_options.setdefault(
+                known_option.replace('-', '_'), []
+            ).append(known_option)
+    setattr(
+        parser,
+        '_kwconf_fuzzy_option_index',
+        (signature, normalized_to_options),
+    )
+    return normalized_to_options
+
+
 def _normalize_fuzzy_option_tokens(
     parser: argparse.ArgumentParser, args: Sequence[str]
 ) -> list[str]:
@@ -776,12 +769,7 @@ def _normalize_fuzzy_option_tokens(
             result.append(token)
             continue
         if normalized_to_options is None:
-            normalized_to_options = {}
-            for known_option in option_actions:
-                if known_option.startswith('--'):
-                    normalized_to_options.setdefault(
-                        known_option.replace('-', '_'), []
-                    ).append(known_option)
+            normalized_to_options = _fuzzy_option_index(parser, option_actions)
         candidates = normalized_to_options.get(option.replace('-', '_'), [])
         if len(candidates) == 1:
             replacement = candidates[0]
@@ -793,10 +781,133 @@ def _normalize_fuzzy_option_tokens(
     return result
 
 
+def _normalize_short_option_clusters(
+    parser: argparse.ArgumentParser, args: Sequence[str]
+) -> tuple[list[str], dict[str, str]]:
+    """Normalize compact short-option clusters with bare-capable options.
+
+    Argparse treats an ``nargs='?'`` short option as value-taking, so ``-fv``
+    is normally parsed as ``-f`` with the attached value ``'v'``. Kwconf's
+    grammar instead treats zero-argument and optional-value (bare-capable)
+    short options as cluster members. Required-value options retain argparse's
+    normal ``-kVALUE`` behavior and consume the remainder of the compact token.
+
+    Explicit ``=`` assignment remains available. Thus ``-vvv=3`` normalizes
+    to ``-v -v -v=3``. A compact token that starts with a bare-capable option
+    but cannot be decomposed into registered one-character aliases is made
+    unknown rather than falling back to ``-fVALUE`` semantics. The returned
+    marker map lets :meth:`ExtendedArgumentParser.parse_known_args` restore the
+    user's original token in its ``unknown`` result / error message.
+    """
+    if not getattr(parser, '_kwconf_short_alias_clusters', True):
+        return list(args), {}
+
+    option_actions = getattr(parser, '_option_string_actions', {})
+    invalid_markers: dict[str, str] = {}
+    result: list[str] = []
+    after_separator = False
+
+    def is_clusterable(action: argparse.Action) -> bool:
+        # nargs=0 is an ordinary argparse flag/count action. nargs='?' is the
+        # kwconf-relevant case: it has a meaningful bare occurrence but can
+        # still consume a separately supplied explicit value.
+        return action.nargs in {0, '?'}
+
+    def make_invalid_marker(original: str) -> str:
+        index = len(invalid_markers)
+        while True:
+            marker = f'--__kwconf_invalid_short_cluster_{index}__'
+            # Avoid an exact option or an allow_abbrev prefix of a registered
+            # long option. This marker must remain unknown to argparse.
+            if marker not in option_actions and not any(
+                known.startswith(marker)
+                for known in option_actions
+                if known.startswith('--')
+            ):
+                invalid_markers[marker] = original
+                return marker
+            index += 1
+
+    for token in args:
+        if after_separator:
+            result.append(token)
+            continue
+        if token == '--':
+            after_separator = True
+            result.append(token)
+            continue
+        if (
+            not token.startswith('-')
+            or token.startswith('--')
+            or len(token) <= 2
+        ):
+            result.append(token)
+            continue
+
+        option_text, sep, explicit_value = token.partition('=')
+        if option_text in option_actions:
+            # Exact registered spellings (including multi-character short
+            # aliases) take precedence over cluster decomposition.
+            result.append(token)
+            continue
+
+        body = option_text[1:]
+        first_action = option_actions.get('-' + body[0])
+        if first_action is None:
+            # This parser does not own the token. A selected subparser may.
+            result.append(token)
+            continue
+        if not is_clusterable(first_action):
+            # Preserve ordinary argparse / UNIX attached-value syntax such as
+            # ``-I/usr/include`` and ``-kVALUE`` for required-value options.
+            result.append(token)
+            continue
+
+        pieces: list[str] = []
+        index = 0
+        value_taker_seen = False
+        valid = True
+        while index < len(body):
+            short_option = '-' + body[index]
+            action = option_actions.get(short_option)
+            if action is None:
+                valid = False
+                break
+            if is_clusterable(action):
+                pieces.append(short_option)
+                index += 1
+                continue
+
+            # A required-value option terminates the cluster and owns the
+            # remainder exactly as argparse normally allows for -kVALUE.
+            remainder = body[index + 1 :]
+            piece = short_option + remainder
+            if sep:
+                piece += '=' + explicit_value
+            pieces.append(piece)
+            value_taker_seen = True
+            index = len(body)
+
+        if not valid:
+            # Crucially, do not leave the original token for argparse: doing so
+            # would resurrect the forbidden ``-fVALUE`` interpretation for the
+            # first bare-capable option. Keep it unknown instead.
+            result.append(make_invalid_marker(token))
+            continue
+
+        if sep and not value_taker_seen:
+            # ``=value`` belongs to the final member of an all-bare cluster.
+            pieces[-1] += '=' + explicit_value
+        result.extend(pieces)
+
+    return result, invalid_markers
+
+
 class ExtendedArgumentParser(CompatArgumentParser):
     """
-    Extends the compatible argument parser to add minor new features.
-    Namely: allowing options in argv to interchangeably use "_" or "-".
+    Extends the compatible argument parser with kwconf's narrow lexical
+    conveniences: interchangeable "_" / "-" long-option spellings and
+    deterministic clustering for bare-capable short aliases.
 
     CommandLine:
         xdoctest -m kwconf.argparse_ext ExtendedArgumentParser
@@ -881,6 +992,9 @@ class ExtendedArgumentParser(CompatArgumentParser):
         if args is None:
             args = sys.argv[1:]
         normalized = _normalize_fuzzy_option_tokens(self, list(args))
+        normalized, invalid_short_markers = _normalize_short_option_clusters(
+            self, normalized
+        )
         # Replace, rather than accumulate, provenance on every parse.  Actions
         # owned by this parser populate the set; child parsers maintain their
         # own set so modal dispatch can read only the selected command's keys.
@@ -896,6 +1010,8 @@ class ExtendedArgumentParser(CompatArgumentParser):
         )
         if hasattr(parsed, _EXPLICIT_KEYS_ATTR):
             delattr(parsed, _EXPLICIT_KEYS_ATTR)
+        if invalid_short_markers:
+            unknown = [invalid_short_markers.get(item, item) for item in unknown]
         return parsed, unknown
 
     def parse_known_result(

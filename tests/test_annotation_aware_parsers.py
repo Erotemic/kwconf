@@ -29,6 +29,14 @@ def test_csv_parses_int_elements():
     assert C.cli(argv=['--nums', '1,2,3'])['nums'] == [1, 2, 3]
 
 
+def test_csv_cli_preserves_empty_fields():
+    class C(kwconf.Config):
+        tags: list[str] = kwconf.Value(default_factory=list, parser='csv')
+
+    assert C.cli(argv=['--tags=a,,b'])['tags'] == ['a', '', 'b']
+    assert C.cli(argv=['--tags='])['tags'] == ['']
+
+
 def test_csv_union_element_annotation():
     class C(kwconf.Config):
         mixed: list[int | str] = kwconf.Value(

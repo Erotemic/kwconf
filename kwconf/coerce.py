@@ -292,12 +292,14 @@ def _parse_csv(token: str, annotation: Any = Any) -> list[Any]:
         ['1', '2', '3o']
         >>> _parse_csv('a,b,c')
         ['a', 'b', 'c']
+        >>> _parse_csv('a,,b')
+        ['a', '', 'b']
         >>> _parse_csv('')
-        []
+        ['']
     """
     elem = element_annotation(annotation)
     parts = [p.strip() for p in token.split(',')]
-    return [auto(p, elem) for p in parts if p]
+    return [auto(p, elem) for p in parts]
 
 
 # ``auto`` and ``csv`` consult the field annotation; ``yaml`` does not. The

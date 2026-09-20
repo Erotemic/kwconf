@@ -719,6 +719,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     __description__: Optional[str] = None
     __epilog__: Optional[str] = None
     __validate__: bool | str = 'warn'
+    __short_alias_clusters__: bool = True
     # __allow_newattr__ = False
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -2317,6 +2318,31 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             parserkw['allow_abbrev'] = self.__allow_abbrev__
         return parserkw
 
+    def port_to_pydantic(self) -> str:
+        """
+        Generate Pydantic 2 ``BaseModel`` source from this Config schema.
+
+        Field annotations, defaults, importable default factories, help text,
+        long aliases, JSON-compatible tags, and simple nested ``SubConfig``
+        schemas are translated. Kwconf-specific CLI metadata is recorded in
+        ``REVIEW(kwconf-port)`` comments. This operation does not import
+        Pydantic.
+
+        Returns:
+            str: Python source for one or more Pydantic models.
+
+        Example:
+            >>> import kwconf
+            >>> class Demo(kwconf.Config):
+            ...     count: int = kwconf.Value(3, help='number of items')
+            >>> text = Demo().port_to_pydantic()
+            >>> assert 'class Demo(BaseModel):' in text
+            >>> assert 'count: int = Field(default=3' in text
+        """
+        from kwconf._port_pydantic import port_to_pydantic_source
+
+        return port_to_pydantic_source(self)
+
     def port_to_config(self, style: str = 'config') -> str:
         """
         Helper that writes kwconf source code for this config.
@@ -2451,10 +2477,19 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         """
         import click
 
-        ctx = click.Context(click.Command(''))
+        ctx = click.Context(click_main)
         info_dict = click_main.to_info_dict(ctx)  # NOQA
         default = {}
-        blocklist = {'help'}
+        blocklist = set()
+        help_option = click_main.get_help_option(ctx)
+        if help_option is not None:
+            # Click includes its synthetic help option in to_info_dict(), but
+            # it is not a value exposed to the command callback and therefore
+            # should not become a kwconf field. Click 8.5 changed the reserved
+            # storage name from ``help`` to ``_click_default_help``. Ask Click
+            # for the actual generated option rather than depending on either
+            # implementation detail.
+            blocklist.add(help_option.name)
         for param in info_dict['params']:
             if param['name'] in blocklist:
                 continue
@@ -2804,16 +2839,22 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 """
                 )
             )
+        parser_ctor = (
+            'argparse_ext.ExtendedArgumentParser'
+            if kwconf_primatives
+            else 'argparse.ArgumentParser'
+        )
         lines.append(
             codeblock(
                 """
             import argparse
-            parser = argparse.ArgumentParser(
+            parser = {parser_ctor}(
             {constructor_body}
                 formatter_class=argparse.RawDescriptionHelpFormatter,
             )
             """
             ).format(
+                parser_ctor=parser_ctor,
                 constructor_body=constructor_body,
             )
         )
@@ -3081,13 +3122,25 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         *,
         special_options: bool = False,
         fuzzy_hyphens: Optional[int] = None,
+        short_alias_clusters: Optional[bool] = None,
     ) -> argparse_mod.ArgumentParser:
         """Populate a parser from the current values and instance schema."""
         own_fuzzy = getattr(self, '__fuzzy_hyphens__', 1)
         effective_fuzzy = (
             own_fuzzy if (fuzzy_hyphens is None or fuzzy_hyphens) else 0
         )
+        own_short_clusters = getattr(self, '__short_alias_clusters__', True)
+        effective_short_clusters = (
+            own_short_clusters
+            if short_alias_clusters is None or short_alias_clusters
+            else False
+        )
         setattr(parser, '_kwconf_fuzzy_hyphens', bool(effective_fuzzy))
+        setattr(
+            parser,
+            '_kwconf_short_alias_clusters',
+            bool(effective_short_clusters),
+        )
 
         from kwconf import value as value_mod
 
@@ -3110,6 +3163,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         special_options: bool = False,
         allow_subconfig_overrides: bool = False,
         fuzzy_hyphens: Optional[int] = None,
+        short_alias_clusters: Optional[bool] = None,
     ) -> argparse_mod.ArgumentParser:
         """
         construct or update an argparse.ArgumentParser CLI parser
@@ -3125,6 +3179,16 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             allow_subconfig_overrides (bool):
                 If True, allow SubConfig selector overrides. SubConfig
                 selection requires multipass parsing; use ``cli`` instead.
+
+            fuzzy_hyphens (int | None):
+                Per-parser control for kwconf's long-option underscore/hyphen
+                normalization. A falsy value disables the extension.
+
+            short_alias_clusters (bool | None):
+                Per-parser control for kwconf's bare-capable short-option
+                clustering. A falsy value disables the extension and delegates
+                compact short tokens directly to argparse. The class-level
+                default is ``__short_alias_clusters__``.
 
         Returns:
             argparse.ArgumentParser : a new or updated argument parser
@@ -3282,7 +3346,10 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
                 self, include_class_options=False
             )
             parser = flat_helper._argparse(
-                parser=parser, special_options=special_options
+                parser=parser,
+                special_options=special_options,
+                fuzzy_hyphens=fuzzy_hyphens,
+                short_alias_clusters=short_alias_clusters,
             )
             _subcfg_mod.add_forbidden_selector_args(parser, self)
             return parser
@@ -3293,6 +3360,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
             parser,
             special_options=special_options,
             fuzzy_hyphens=fuzzy_hyphens,
+            short_alias_clusters=short_alias_clusters,
         )
 
     # Public Config operations are convenient spellings, but declared fields
@@ -3326,6 +3394,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     _dumps = dumps
     _parse_args = parse_args
     _parse_known_args = parse_known_args
+    _port_to_pydantic = port_to_pydantic
     _port_to_config = port_to_config
     _port_from_click = port_from_click
     _port_from_argparse = port_from_argparse

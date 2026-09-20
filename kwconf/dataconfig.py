@@ -203,6 +203,7 @@ def dataconf(cls: Type[Any]) -> Type[Any]:
         '__post_init__',
         '__prog__',
         '__special_options__',
+        '__short_alias_clusters__',
         '__validate__',
         '__version__',
     }

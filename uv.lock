@@ -599,6 +599,7 @@ provides-extras = ["all", "docs", "linting", "optional", "tests", "ubelt", "yaml
 [package.metadata.requires-dev]
 dev = [
     { name = "coverage" },
+    { name = "flake8", specifier = ">=5.0.0" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pyyaml", specifier = ">=6.0" },

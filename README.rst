@@ -1,12 +1,13 @@
-kwconf
-======
+kwconf - Keyword Configuration
+==============================
 
 |Pypi| |PypiDownloads| |ReadTheDocs| |GithubActions| |Codecov| |GitlabCIPipeline| |GitlabCICoverage|
 
-``kwconf`` defines small configuration objects that work from Python kwargs,
-command line arguments, environment variables, and JSON/YAML files. It is the
-successor to `scriptconfig <https://pypi.org/project/scriptconfig>`_, with the
-same small-script ergonomics and a clearer parser model.
+Kitware's keyword configuration module: ``kwconf`` defines small configuration
+objects that work from Python kwargs, command line arguments, environment
+variables, and JSON/YAML files. It is the successor to `scriptconfig
+<https://pypi.org/project/scriptconfig>`_, with the same small-script
+ergonomics and a clearer parser model.
 
 +-----------------+-----------------------------------------+
 | Read the Docs   | http://kwconf.readthedocs.io/en/latest/ |
@@ -105,6 +106,41 @@ A parser tells a field how to read a CLI/env string.
 that parser. See the `coercion manual
 <http://kwconf.readthedocs.io/en/latest/manual/coercion_and_cli.html>`_ for
 the detailed parser contract.
+
+Flags and bare options
+----------------------
+
+Kwconf deliberately lets flags be written both conveniently and explicitly.
+For example, ``--flag`` means the flag's bare value while ``--flag=false`` or
+``--flag false`` records an explicit false value on the command line. This is a
+core kwconf feature: explicit configurations do not need to delete false-valued
+keys.
+
+``bare=`` generalizes the same idea to non-boolean values:
+
+.. code-block:: python
+
+    class ArchiveConfig(kwconf.Config):
+        patch = kwconf.Value(None, bare='auto', short_alias=['p'])
+        verbose = kwconf.Value(0, isflag='counter', short_alias=['v'])
+
+
+    assert ArchiveConfig.cli(argv=['--patch']).patch == 'auto'
+    assert ArchiveConfig.cli(argv=['--patch=base.tar']).patch == 'base.tar'
+    assert ArchiveConfig.cli(argv=['-pv']).patch == 'auto'
+    assert ArchiveConfig.cli(argv=['-pv']).verbose == 1
+
+Bare-capable short aliases are clusterable. They intentionally do not accept
+undelimited attached values: use ``-p=file`` or ``-p file``, not ``-pfile``.
+Ordinary required-value aliases continue to accept argparse's ``-kVALUE``
+syntax. Use ``--`` when a token following a bare option must be positional,
+for example ``prog --flag -- input.txt``.
+
+The lexical conveniences can be disabled independently with
+``__fuzzy_hyphens__ = False`` and ``__short_alias_clusters__ = False``. See the
+`coercion and CLI contract
+<http://kwconf.readthedocs.io/en/latest/manual/coercion_and_cli.html>`_ for the
+full grammar.
 
 Growing a script
 ----------------
@@ -230,7 +266,8 @@ Like ``kwconf``, these derive a parser from a class of typed fields (most via
 
 * `pydantic <https://pypi.org/project/pydantic/>`_ /
   `pydantic-settings <https://pypi.org/project/pydantic-settings/>`_ --
-  validated data models and layered settings (env, dotenv, secrets).
+  validated data models, layered settings sources, and model-derived CLIs; see
+  the comparison below.
 * `pydantic-cli <https://pypi.org/project/pydantic-cli/>`_ -- an argparse CLI
   built from a pydantic model.
 * `simple-parsing <https://pypi.org/project/simple-parsing/>`_ -- adds
@@ -238,6 +275,69 @@ Like ``kwconf``, these derive a parser from a class of typed fields (most via
 * `tyro <https://github.com/brentyi/tyro>`_ -- typed CLIs from dataclasses,
   functions, and unions.
 * `typer <https://typer.tiangolo.com/>`_ -- ``click``-based CLIs from type hints.
+
+Pydantic and pydantic-settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+`Pydantic <https://docs.pydantic.dev/latest/concepts/models/>`_ ``BaseModel``
+classes use type annotations for runtime validation and coercion, serialization,
+and JSON Schema generation. `pydantic-settings
+<https://docs.pydantic.dev/latest/concepts/pydantic_settings/>`_ adds settings
+sources including environment variables, dotenv files, secrets, and command-line
+arguments.
+
+``pydantic-settings`` can construct CLIs from ``BaseSettings`` and ordinary
+Pydantic ``BaseModel`` classes. Its command-line support includes nested models,
+lists and dictionaries, literals and enums, aliases, positional arguments,
+subcommands, mutually exclusive groups, boolean flags, unknown-argument handling,
+kebab-case names, shortcuts, argument serialization, and integration with an
+existing argparse parser.
+
+The main API differences are:
+
+* ``kwconf.Config`` is a mutable mapping with attribute access. Pydantic
+  ``BaseModel`` is a model object and exports mappings with ``model_dump()``.
+* ``kwconf`` permits fields declared as ordinary class defaults and adds
+  annotations or ``Value`` metadata as needed. Pydantic model fields are
+  annotation-based.
+* ``kwconf.Value(parser=...)`` controls parsing of text inputs. Pydantic applies
+  field and model validation at the model boundary.
+* ``kwconf`` includes mapping, environment, config-file, and argv ingestion,
+  together with opt-in ``--config``, ``--dump``, and ``--dumps`` options.
+  ``pydantic-settings`` provides configurable settings sources and source
+  precedence.
+* ``kwconf`` has no required runtime dependencies. Pydantic and
+  ``pydantic-settings`` are separate runtime packages.
+
+Migrating a kwconf Config to Pydantic
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``Config.port_to_pydantic()`` generates Pydantic 2 ``BaseModel`` source::
+
+    class TrainConfig(kwconf.Config):
+        workers: int = kwconf.Value(
+            4,
+            alias=['num_workers'],
+            help='Number of workers',
+            tags=['perf_param'],
+        )
+
+    print(TrainConfig().port_to_pydantic())
+
+The generated source translates field annotations, defaults, importable
+``default_factory`` callables, help text, long aliases, JSON-compatible tags,
+and simple nested ``SubConfig`` models. Long aliases use Pydantic validation
+aliases. Tags are stored in ``json_schema_extra['kwconf_tags']``.
+
+The generator emits ``REVIEW(kwconf-port)`` comments for kwconf metadata without
+a direct field-level translation: custom parsers, positional layout, counters,
+``nargs``, short aliases, argument groups, mutex groups, choices not expressed by
+the annotation, dynamic ``SubConfig`` selectors, and class-level CLI policies.
+CLI and settings-source migration to ``pydantic-settings`` is not generated.
+
+Source generation does not import Pydantic and does not add a Pydantic runtime
+dependency to ``kwconf``.
+
 
 CLI frameworks
 ~~~~~~~~~~~~~~~

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import pprint
 import re
 from collections.abc import MutableMapping, Sequence
@@ -164,6 +165,15 @@ class _Value(NiceRepr):
             argparse ``nargs`` for this option (e.g. ``'+'``, ``'*'``, ``'?'``,
             or an integer count).
 
+        bare (Any):
+            Value used when this option appears without an explicit value.
+            Supplying ``bare=...`` gives the option a kwconf *bare form* and
+            implies ``nargs='?'``. Explicit values remain available with
+            ``--option=value`` / ``--option value`` and ``-o=value`` /
+            ``-o value``. Bare-capable short options do not accept the
+            undelimited ``-oVALUE`` spelling when short-alias clustering is
+            enabled.
+
         required (bool):
             If True, the CLI requires this option to be supplied.
 
@@ -213,6 +223,7 @@ class _Value(NiceRepr):
         mutex_group: Optional[str] = None,
         tags: Optional[Any] = None,
         *,
+        bare: Any = NoParam,
         default_factory: Callable[[], Any] | None = None,
         parser: Any = None,
         validate: Optional[Union[bool, str]] = None,
@@ -229,6 +240,18 @@ class _Value(NiceRepr):
                 '`type`, not both.'
             )
 
+        if bare is not NoParam:
+            if isflag:
+                raise ValueError(
+                    'Value(bare=...) is for non-flag values; Flag and counter '
+                    'fields already define their own bare behavior.'
+                )
+            if nargs not in {None, '?'}:
+                raise ValueError(
+                    "Value(bare=...) implies nargs='?' and is incompatible "
+                    f'with nargs={nargs!r}'
+                )
+
         # Whether the user explicitly passed ``type=`` (deprecated). The
         # metaclass also populates ``self.type`` from a field annotation, so we
         # capture user intent here, before that happens, to decide whether
@@ -242,6 +265,7 @@ class _Value(NiceRepr):
         self.alias = alias
         self.position = position
         self.isflag = isflag
+        self.bare = bare
         self.parsekw: dict[str, Any] = {
             'help': help,
             'type': type,
@@ -384,9 +408,14 @@ class _Value(NiceRepr):
         return value
 
     def copy(self) -> '_Value':
-        import copy
-
-        return copy.copy(self)
+        # _Value is an internal plain Python metadata object. copy.copy()
+        # reaches the same shallow-copy result through generic reconstruction
+        # machinery; cloning __dict__ directly is substantially cheaper when
+        # configs contain hundreds of fields.
+        cls = type(self)
+        new = cls.__new__(cls)
+        new.__dict__ = self.__dict__.copy()
+        return new
 
     def clone_default(
         self, *, context: str = 'configuration default'
@@ -427,6 +456,10 @@ class _Value(NiceRepr):
         }
         value_kw.pop('parsekw', None)
         value_kw.update(value.parsekw)
+        if value.bare is not NoParam:
+            # ``bare`` may intentionally be falsy (None / False / 0), so it
+            # cannot rely on the truthiness filter above.
+            value_kw['bare'] = value.bare
         if orig_help is None:
             # Do not emit a redundant help=None kwarg.
             value_kw.pop('help', None)
@@ -444,6 +477,7 @@ class _Value(NiceRepr):
         _order_keys = {
             'value',
             'nargs',
+            'bare',
             'type',
             'isflag',
             'position',
@@ -509,9 +543,23 @@ class _Value(NiceRepr):
         )
         short_alias: list[str] = [a for a in short_alias_seen if a != key]
 
+        action_type = action.type
+        if isinstance(action_type, _SmartValueCoercer):
+            # A live kwconf parser uses an internal coercer as argparse's
+            # ``type`` callable so all text-boundary conversion still routes
+            # through the originating Value.  That implementation detail is
+            # not part of the parser's portable configuration surface.  When
+            # porting the parser back to a Value, recover the original
+            # argparse-facing type instead of serializing the internal
+            # coercer object.
+            template = action_type.template
+            action_type = (
+                None if template is None else template.parsekw.get('type')
+            )
+
         real_value_kw = {
             'default': action.default,
-            'type': action.type,
+            'type': action_type,
             'alias': alias,
             'short_alias': short_alias,
             'required': action.required,
@@ -525,7 +573,14 @@ class _Value(NiceRepr):
             real_value_kw['isflag'] = 'counter'
         else:
             real_value_kw.pop('isflag', None)
-            if action.nargs is not None:
+            if action.option_strings and action.nargs == '?':
+                # Argparse expresses an option with a meaningful bare form as
+                # ``nargs='?'`` plus ``const=...``. Port that pair into
+                # kwconf's semantic spelling instead of preserving the lower-
+                # level argparse representation. ``const=None`` is meaningful
+                # and therefore intentionally becomes ``bare=None``.
+                real_value_kw['bare'] = action.const
+            elif action.nargs is not None:
                 real_value_kw['nargs'] = action.nargs
         action_id = id(action)
         if action_id in actionid_to_groupkey:
@@ -580,6 +635,7 @@ def Value(
     mutex_group: Optional[str] = ...,
     tags: Optional[Any] = ...,
     *,
+    bare: Any = ...,
     default_factory: None = ...,
     parser: Any = ...,
     validate: Optional[Union[bool, str]] = ...,
@@ -600,6 +656,7 @@ def Value(
     group: Optional[str] = ...,
     mutex_group: Optional[str] = ...,
     tags: Optional[Any] = ...,
+    bare: Any = ...,
     parser: Any = ...,
     validate: Optional[Union[bool, str]] = ...,
 ) -> _T: ...
@@ -618,6 +675,7 @@ def Value(
     mutex_group: Optional[str] = None,
     tags: Optional[Any] = None,
     *,
+    bare: Any = NoParam,
     default_factory: Optional[Callable[[], Any]] = None,
     parser: Any = None,
     validate: Optional[Union[bool, str]] = None,
@@ -676,6 +734,13 @@ def Value(
         tags (Any):
             Free-form metadata for external program use.
 
+        bare (Any):
+            Define the field's CLI *bare form*. When the option appears without
+            an explicit value, use this value. ``bare=...`` implies
+            ``nargs='?'``. For example ``Value(None, bare='auto')`` accepts
+            ``--key`` as ``'auto'`` while ``--key=file`` and ``--key file``
+            remain explicit assignments.
+
         default_factory (Callable[[], T] | None):
             Zero-argument callable producing the default; mutually exclusive with
             ``default``. Use for mutable defaults (e.g. ``default_factory=list``).
@@ -721,6 +786,7 @@ def Value(
         group=group,
         mutex_group=mutex_group,
         tags=tags,
+        bare=bare,
         default_factory=default_factory,
         parser=parser,
         validate=validate,
@@ -742,9 +808,16 @@ def Flag(
     validate: Optional[Union[bool, str]] = None,
 ) -> bool:
     """
-    Declare a boolean flag field: like :func:`Value` but with flag semantics
-    (supports both ``--flag`` and ``--flag=value`` on the CLI). Typed to return
-    ``bool``. See :func:`Value` for the shared keyword arguments.
+    Declare a boolean flag field: like :func:`Value` but with flag semantics.
+
+    A flag always has a *bare form*: ``--flag`` means true (and ``--no-flag``
+    means false), while explicit assignment remains available as
+    ``--flag=false`` / ``--flag false`` and ``-f=false`` / ``-f false``. This
+    explicit-assignment property is intentional kwconf behavior, not ordinary
+    ``argparse`` ``store_true`` semantics.
+
+    Typed to return ``bool``. See :func:`Value` for the shared keyword
+    arguments.
     """
     return cast(
         bool,
@@ -792,7 +865,9 @@ def _value_argument_invocations(
 
     argkw['help'] = argkw.get('help') or ''
     argkw['default'] = value
-    argkw['action'] = _maker_smart_parse_action(template)
+    argkw['action'] = _SmartParseAction
+    if not portable and not isflag:
+        argkw['_kwconf_template'] = template
 
     if not isflag and not portable:
         # ParseAction routes conversion through Value.coerce, so argparse's
@@ -806,8 +881,12 @@ def _value_argument_invocations(
             (name,),
             argkw.copy(),
         )
-
-    option_kw = argkw.copy()
+        # Positional and key/value variants need independent kwargs because
+        # the option path mutates its dictionary below.
+        option_kw = argkw.copy()
+    else:
+        # The common non-positional case owns this kwargs dictionary already.
+        option_kw = argkw
     option_kw['dest'] = name
     option_strings = tuple(_resolve_alias(name, template, fuzzy_hyphens))
 
@@ -820,6 +899,11 @@ def _value_argument_invocations(
             option_kw['action'] = argparse_ext.CounterOrKeyValAction
         else:
             option_kw['action'] = argparse_ext.BooleanFlagOrKeyValAction
+    elif template is not None and template.bare is not NoParam:
+        # ``bare`` is the public semantic abstraction over argparse's
+        # ``nargs='?'`` + ``const=...`` pair.
+        option_kw['nargs'] = '?'
+        option_kw['const'] = template.bare
 
     if option_kw.get('nargs') is not None and option_kw.get('type') in {
         list,
@@ -915,6 +999,17 @@ def _resolve_alias(
     else:
         aliases = _value.alias
         short_aliases = _value.short_alias
+
+    # Most fields have only their canonical long name. Avoid allocating the
+    # general alias-normalization sets/lists for that common case.
+    if not aliases and not short_aliases:
+        canonical = '--' + name
+        if fuzzy_hyphens and '_' in name:
+            fuzzy_name = name.replace('_', '-')
+            if fuzzy_name != name:
+                return [canonical, '--' + fuzzy_name]
+        return [canonical]
+
     if isinstance(aliases, str):
         aliases = [aliases]
     if isinstance(short_aliases, str):
@@ -937,57 +1032,73 @@ def _resolve_alias(
     return option_strings
 
 
-def _maker_smart_parse_action(template):
-    import argparse
+class _SmartValueCoercer:
+    """Per-field callable used by the shared argparse action.
 
-    class ParseAction(argparse.Action):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            # with script config nothing should be required by default
-            # (unless specified) all positional arguments should have
-            # keyword arg variants Setting required=False here will prevent
-            # positional args from erroring if they are not specified. I
-            # dont think there are other side effects, but we should make
-            # sure that is actually the case.
-            self.required = False  # hack
+    This deliberately does not retain a reference to the action itself.
+    ``argparse.Action.__repr__`` includes the public ``type`` attribute; using
+    a bound action method there makes the action recursively repr itself.
+    """
 
-            if self.type is None:
-                # Route conversion through the field's coerce(). argparse calls
-                # the converter once per token; for nargs fields it then collects
-                # the per-token results into a list (the uniform "apply the
-                # parser to each value" rule).
-                def _smart_type(value):
-                    if template is None:
-                        return value
-                    if self.nargs is not None:
-                        from kwconf import coerce as _coerce_mod
+    __slots__ = ('template', 'nargs')
 
-                        # With an explicit parser, apply it per token (csv ->
-                        # list, yaml -> value); argparse collects the results.
-                        if getattr(template, '_parser_spec', None) is not None:
-                            return template.coerce(value)
-                        # Otherwise coerce each token as the container's element
-                        # type rather than the (container) field annotation.
-                        elem = _coerce_mod.element_annotation(
-                            getattr(template, '_annotation', None)
-                        )
-                        return _coerce_mod.auto(value, elem)
-                    return template.coerce(value)
+    def __init__(self, template, nargs):
+        self.template = template
+        self.nargs = nargs
 
-                self.type = _smart_type
+    def __call__(self, value):
+        template = self.template
+        if template is None:
+            return value
+        if self.nargs is not None:
+            from kwconf import coerce as _coerce_mod
 
-        def __call__(action, parser, namespace, values, option_string=None):
-            # No flattening: under nargs we apply the parser to each token and
-            # collect the results verbatim (the uniform rule). A list-producing
-            # parser like csv therefore yields a list-of-lists -- intended; the
-            # old concat hack is gone (it created ambiguity for structured
-            # tokens, e.g. csv 1,2 3,4 -> [1,2,3,4] vs [[1,2],[3,4]]).
-            setattr(namespace, action.dest, values)
-            from kwconf.argparse_ext import mark_explicit
+            # With an explicit parser, apply it per token (csv -> list, yaml ->
+            # value); argparse collects the results.
+            if getattr(template, '_parser_spec', None) is not None:
+                return template.coerce(value)
+            # Otherwise coerce each token as the container's element type
+            # rather than the (container) field annotation.
+            elem = _coerce_mod.element_annotation(
+                getattr(template, '_annotation', None)
+            )
+            return _coerce_mod.auto(value, elem)
+        return template.coerce(value)
 
-            mark_explicit(parser, namespace, action.dest)
 
-    return ParseAction
+class _SmartParseAction(argparse.Action):
+    """Shared argparse action for ordinary kwconf values.
+
+    Keeping one action class for every field avoids creating a Python class per
+    parser argument. Besides reducing parser-construction work, the stable
+    action type lets CPython specialize argparse's schema-wide action loops.
+    Field-specific coercion state lives on the action instance instead.
+    """
+
+    def __init__(self, *args, _kwconf_template=None, **kwargs):
+        self._kwconf_template = _kwconf_template
+        super().__init__(*args, **kwargs)
+        # With script config nothing should be required by default (unless
+        # specified). Positional arguments also have keyword variants, so the
+        # positional action itself must not force presence.
+        self.required = False
+
+        if self.type is None:
+            # argparse calls the converter once per token; for nargs fields it
+            # then collects those per-token results into a list. Keep the
+            # converter separate from this action so Action.__repr__ cannot
+            # recurse through a bound method that points back at ``self``.
+            self.type = _SmartValueCoercer(self._kwconf_template, self.nargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        # No flattening: under nargs we apply the parser to each token and
+        # collect the results verbatim (the uniform rule). A list-producing
+        # parser like csv therefore yields a list-of-lists -- intended; the old
+        # concat hack created ambiguity for structured tokens.
+        setattr(namespace, self.dest, values)
+        from kwconf.argparse_ext import mark_explicit
+
+        mark_explicit(parser, namespace, self.dest)
 
 
 class CodeRepr(str):

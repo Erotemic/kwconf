@@ -238,9 +238,29 @@ counters:
 
 ```python
 class C(kwconf.Config):
-    dry_run = kwconf.Flag(False, help='print actions only')
+    dry_run = kwconf.Flag(False, help='print actions only', short_alias=['d'])
     verbose = kwconf.Value(0, isflag='counter', short_alias=['v'])
 ```
+
+Kwconf flags intentionally remain explicitly assignable. `--dry_run`,
+`--dry_run=false`, and `--dry_run false` are all supported. The first is the
+**bare** form; the latter two make the value explicit. Bare-capable short aliases
+cluster (`-dv`, `-vvv`) and do not use undelimited attached-value syntax: write
+`-d=false`, not `-dfalse`.
+
+For a non-boolean option that needs a bare form, use `bare=`:
+
+```python
+class C(kwconf.Config):
+    patch = kwconf.Value(None, bare='auto', short_alias=['p'])
+```
+
+This gives `--patch` / `-p` the value `'auto'` while retaining explicit
+`--patch=FILE`, `--patch FILE`, `-p=FILE`, and `-p FILE` forms. Use `--` before a
+positional token when a preceding bare-capable option must not consume it.
+
+Set `__short_alias_clusters__ = False` when migrating code that needs raw
+argparse interpretation of compact optional-value short tokens.
 
 Keep positional arguments as separate `Value(position=...)` fields.
 

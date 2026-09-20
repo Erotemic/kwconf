@@ -152,3 +152,63 @@ def test_fuzzy_hyphens_independent_of_allow_abbrev():
     parser.add_argument('--my-option', default='d')
     _, unknown = parser.parse_known_args(['--my=x'])
     assert '--my=x' in unknown
+
+
+def test_short_optional_value_clusters_are_lexically_normalized():
+    """The parser, not the action, owns kwconf's compact short grammar."""
+    from kwconf.argparse_ext import ExtendedArgumentParser
+
+    parser = ExtendedArgumentParser(exit_on_error=False)
+    parser.add_argument('-f', nargs='?', const='bare-f')
+    parser.add_argument('-v', nargs='?', const='bare-v')
+    parser.add_argument('-k')
+
+    ns, unknown = parser.parse_known_args(['-fv'])
+    assert vars(ns) == {'f': 'bare-f', 'v': 'bare-v', 'k': None}
+    assert unknown == []
+
+    ns, unknown = parser.parse_known_args(['-vkfoo'])
+    assert vars(ns) == {'f': None, 'v': 'bare-v', 'k': 'foo'}
+    assert unknown == []
+
+    # A bare-capable short alias cannot fall back to -fVALUE when the suffix
+    # is not a valid cluster.
+    ns, unknown = parser.parse_known_args(['-f3'])
+    assert ns.f is None
+    assert unknown == ['-f3']
+
+    parser._kwconf_short_alias_clusters = False
+    ns, unknown = parser.parse_known_args(['-fv'])
+    assert ns.f == 'v'
+    assert ns.v is None
+    assert unknown == []
+
+
+def test_fuzzy_option_index_is_reused_and_invalidated_by_schema_growth():
+    """Fuzzy spelling lookup should be cached across parses, but stay fresh."""
+    from kwconf import argparse_ext
+
+    parser = argparse_ext.ExtendedArgumentParser(allow_abbrev=False)
+    parser.add_argument('--alpha-beta')
+
+    got = argparse_ext._normalize_fuzzy_option_tokens(
+        parser, ['--alpha_beta=value']
+    )
+    assert got == ['--alpha-beta=value']
+    first_cache = parser._kwconf_fuzzy_option_index
+
+    got = argparse_ext._normalize_fuzzy_option_tokens(
+        parser, ['--alpha_beta=other']
+    )
+    assert got == ['--alpha-beta=other']
+    assert parser._kwconf_fuzzy_option_index is first_cache
+
+    # Parser schemas are normally built before parsing, but argparse permits
+    # later additions. The cache must notice those without requiring callers to
+    # manually invalidate kwconf internals.
+    parser.add_argument('--gamma-delta')
+    got = argparse_ext._normalize_fuzzy_option_tokens(
+        parser, ['--gamma_delta=value']
+    )
+    assert got == ['--gamma-delta=value']
+    assert parser._kwconf_fuzzy_option_index is not first_cache

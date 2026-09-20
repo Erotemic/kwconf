@@ -103,3 +103,56 @@ def test_positional_order_follows_position_not_declaration():
     cfg = C.cli(argv=['AAA', 'BBB'])
     assert cfg['first'] == 'AAA'
     assert cfg['second'] == 'BBB'
+
+
+def test_kwconf_ordinary_fields_share_one_argparse_action_class():
+    """Parser fields carry per-field state on instances, not dynamic classes."""
+    import kwconf
+    from kwconf import value as value_mod
+
+    class C(kwconf.Config):
+        count = kwconf.Value(0, parser=int)
+        name = kwconf.Value('', parser=str)
+
+    parser = C().argparse()
+    actions = {
+        action.dest: action
+        for action in parser._actions
+        if action.dest in {'count', 'name'}
+    }
+    assert type(actions['count']) is value_mod._SmartParseAction
+    assert type(actions['name']) is value_mod._SmartParseAction
+    assert actions['count']._kwconf_template is not actions['name']._kwconf_template
+    # The shared action's public ``type`` callable must not point back to the
+    # action itself. argparse includes ``type`` in Action.__repr__, so a bound
+    # action method would recurse forever here.
+    assert '_SmartParseAction' in repr(actions['count'])
+    assert '_SmartParseAction' in repr(actions['name'])
+
+    parsed = parser.parse_args(['--count=3', '--name=alice'])
+    assert parsed.count == 3
+    assert parsed.name == 'alice'
+
+
+def test_port_from_kwconf_parser_hides_internal_smart_coercer():
+    """Round-tripping a live kwconf parser must expose public field metadata."""
+    import kwconf
+
+    class C(kwconf.Config):
+        plain = kwconf.Value(None, group='group-a')
+        count = kwconf.Value(0, type=int, mutex_group='mutex-a')
+        other = kwconf.Value(None, mutex_group='mutex-a')
+
+    parser = C().argparse()
+    text = C.port_from_argparse(parser)
+
+    assert '_SmartValueCoercer' not in text
+    assert "plain = kwconf.Value(None" in text
+    assert "group=\"'group-a'\"" in text
+    assert 'count = kwconf.Value(0, type=int' in text
+
+    namespace = {}
+    exec(text, namespace, namespace)
+    Ported = namespace['MyConfig']
+    reparsed = Ported.cli(argv=['--count=3'])
+    assert reparsed.count == 3
