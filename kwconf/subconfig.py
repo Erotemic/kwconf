@@ -23,13 +23,9 @@ Example:
 
 from __future__ import annotations
 
-import argparse
-import inspect
-import typing
-import warnings
 from collections.abc import Mapping
-from typing import Any, cast
 
+from kwconf._typing_runtime import TYPE_CHECKING, Any, MutableMapping, cast
 from kwconf.config import Config, ConfigValidationError
 from kwconf.value import _Value as Value
 
@@ -43,7 +39,7 @@ __all__ = ['SubConfig']
 _SELECTOR_SUFFIX = '.__class__'
 _MISSING = object()
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from types import FrameType
 
 
@@ -64,6 +60,8 @@ def get_stack_frame(stacklevel: int = 0) -> FrameType:
         >>> print('frame_cur = %r' % (frame_cur,))
         >>> assert frame_cur.f_globals['frame_cur'] is frame_cur
     """
+    import inspect
+
     frame_cur: FrameType | None = inspect.currentframe()
     # Use stacklevel+1 to always skip the frame of this function.
     for ix in range(stacklevel + 1):
@@ -76,8 +74,8 @@ def get_stack_frame(stacklevel: int = 0) -> FrameType:
 
 
 def resolve_localns(
-    localns: typing.MutableMapping | None, stacklevel: int | None
-) -> typing.MutableMapping | None:
+    localns: MutableMapping | None, stacklevel: int | None
+) -> MutableMapping | None:
     """
     Resolve the namespace for selector evaluation, if needed.
 
@@ -99,37 +97,26 @@ def resolve_localns(
     return localns
 
 
-class _ForbiddenSelectorAction(argparse.Action):
-    """
-    argparse action that errors when subconfig selectors are disallowed.
-    """
-
-    def __init__(self, option_strings, dest, **kwargs):
-        self._message = kwargs.pop('_message', None)
-        super().__init__(option_strings, dest, **kwargs)
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        message = self._message or (
-            'SubConfig selection overrides require allow_subconfig_overrides=True'
-        )
-        parser.error(message)
-
-
 def add_forbidden_selector_args(parser, cfg):
-    """
-    Add selector options that always error when used.
+    """Add selector options that always error when used.
 
-    Example:
-        >>> import argparse
-        >>> import kwconf
-        >>> class Inner(kwconf.Config):
-        ...     __default__ = {'x': 1}
-        >>> class Outer(kwconf.Config):
-        ...     __default__ = {'inner': kwconf.SubConfig(Inner)}
-        >>> parser = argparse.ArgumentParser()
-        >>> add_forbidden_selector_args(parser, Outer())
-        >>> assert '--inner' in parser._option_string_actions
+    Argparse is imported only when the canonical nested fallback is actually
+    needed; merely declaring :class:`SubConfig` stays on the lightweight Rust
+    startup path.
     """
+    import argparse
+
+    class _ForbiddenSelectorAction(argparse.Action):
+        def __init__(self, option_strings, dest, **kwargs):
+            self._message = kwargs.pop('_message', None)
+            super().__init__(option_strings, dest, **kwargs)
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            message = self._message or (
+                'SubConfig selection overrides require allow_subconfig_overrides=True'
+            )
+            parser.error(message)
+
     message = (
         'SubConfig selection overrides require allow_subconfig_overrides=True'
     )
@@ -164,6 +151,10 @@ class SubConfig(Value):
         >>> assert isinstance(inst, Inner)
     """
 
+    # Private marker consumed by Config's flat fast path.  This avoids importing
+    # this module merely to test whether a Value is a SubConfig.
+    _kwconf_is_subconfig = True
+
     def __init__(
         self,
         default: Any,
@@ -173,7 +164,7 @@ class SubConfig(Value):
         help: str | None = None,
     ) -> None:
         default_inst: Any
-        if inspect.isclass(default):
+        if isinstance(default, type):
             if not issubclass(default, Config):
                 raise TypeError(
                     'SubConfig default must be a Config subclass or instance'
@@ -191,14 +182,14 @@ class SubConfig(Value):
         self.choices = dict(choices) if choices is not None else None
         if self.choices is not None:
             for key, cls in self.choices.items():
-                if not inspect.isclass(cls) or not issubclass(cls, Config):
+                if not isinstance(cls, type) or not issubclass(cls, Config):
                     raise TypeError(
                         f'SubConfig choices must map to Config subclasses. {key!r} -> {cls!r}'
                     )
 
     def __nice__(self):
         default_cls = (
-            self.value if inspect.isclass(self.value) else self.value.__class__
+            self.value if isinstance(self.value, type) else self.value.__class__
         )
         return f'{default_cls.__name__}'
 
@@ -216,7 +207,7 @@ class SubConfig(Value):
         """
         Return a fresh instance of the wrapped config.
         """
-        if inspect.isclass(self.value):
+        if isinstance(self.value, type):
             # __init__ validated that a class value is a Config subclass.
             subconfig_cls = cast(type[Config], self.value)
             instance = subconfig_cls(_dont_call_post_init=_dont_call_post_init)
@@ -263,6 +254,8 @@ def coerce_argv(cmdline: Any) -> tuple[list[str], bool]:
 
 def scan_config_path(argv: list[str]) -> str | None:
     """Extract ``--config`` using argparse's own option semantics."""
+    import argparse
+
     parser = argparse.ArgumentParser(
         add_help=False, allow_abbrev=False, exit_on_error=False
     )
@@ -271,7 +264,7 @@ def scan_config_path(argv: list[str]) -> str | None:
         namespace, _unknown = parser.parse_known_args(argv)
     except argparse.ArgumentError as ex:
         raise ValueError(str(ex)) from ex
-    return typing.cast(str | None, namespace.config)
+    return cast(str | None, namespace.config)
 
 
 def coerce_data_updates(data, mode=None, cfg=None):
@@ -397,6 +390,8 @@ def _report_structural_validation(mode, issues):
         return
     message = '\n'.join(issues)
     if mode == 'warn':
+        import warnings
+
         warnings.warn(message, UserWarning, stacklevel=4)
     else:
         raise ConfigValidationError(message)
@@ -404,6 +399,8 @@ def _report_structural_validation(mode, issues):
 
 def _selector_bootstrap_parser(cfg):
     """Build the tiny argparse parser used to realize the current tree."""
+    import argparse
+
     parser = argparse.ArgumentParser(
         add_help=False, allow_abbrev=False, exit_on_error=False
     )
@@ -462,6 +459,8 @@ def extract_selector_overrides(
     every pass.  Each pass recognizes only selectors exposed by the currently
     realized tree; applying those selectors may reveal another nested level.
     """
+    import argparse
+
     if stacklevel is not None:
         localns = resolve_localns(localns, stacklevel)
     working = list(argv)
@@ -541,12 +540,12 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
     """
     if meta.choices and spec in meta.choices:
         return meta.choices[spec]
-    if inspect.isclass(spec) and issubclass(spec, Config):
+    if isinstance(spec, type) and issubclass(spec, Config):
         return spec
     if isinstance(spec, str):
         if localns is not None and spec.isidentifier():
             candidate = localns.get(spec)
-            if inspect.isclass(candidate) and issubclass(candidate, Config):
+            if isinstance(candidate, type) and issubclass(candidate, Config):
                 return candidate
         import_allowed = (
             allow_import if meta.allow_import is None else meta.allow_import
@@ -556,7 +555,7 @@ def _resolve_class_spec(meta: SubConfig, spec, allow_import, localns=None):
                 f'Importing {spec!r} not allowed for this SubConfig'
             )
         cls = _import_selector_object(spec)
-        if not inspect.isclass(cls) or not issubclass(cls, Config):
+        if not isinstance(cls, type) or not issubclass(cls, Config):
             raise TypeError(f'Specified object {cls!r} is not a Config class')
         return cls
     raise ValueError(f'Unknown selector spec {spec!r}')

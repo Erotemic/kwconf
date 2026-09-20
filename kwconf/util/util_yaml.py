@@ -8,8 +8,7 @@ through here to get a consistent, actionable error when it is missing.
 
 from __future__ import annotations
 
-from typing import Any
-
+from kwconf._typing_runtime import Any
 
 def import_yaml(feature: str = 'YAML support') -> Any:
     """

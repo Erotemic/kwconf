@@ -1,0 +1,48 @@
+[package]
+name = "kwconf-python-accel"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+name = "_kwconf_rust"
+crate-type = ["cdylib"]
+
+[features]
+default = ["python-extension"]
+python-extension = ["dep:pyo3"]
+native-tools = []
+
+[dependencies]
+kwconf-cli-core = { path = "../kwconf_accel_core" }
+# Keep the shipping extension on the CPython Stable ABI. Python 3.10 is the
+# compatibility floor for this accelerator; do not replace abi3-py310 with a
+# version-specific pyo3 build merely for benchmark gains.
+pyo3 = { version = "0.29.2", features = ["extension-module", "abi3-py310"], optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "parser"
+harness = false
+
+[[bin]]
+name = "kwconf-accel-profile"
+path = "src/bin/profile_parser.rs"
+required-features = ["native-tools"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+# Keep production release artifacts stripped, but retain enough information for
+# perf/cargo-flamegraph to resolve native symbols in profiling builds.
+[profile.profiling]
+inherits = "release"
+debug = 2
+strip = "none"

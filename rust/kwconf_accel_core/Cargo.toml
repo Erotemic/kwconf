@@ -1,0 +1,11 @@
+[package]
+name = "kwconf-cli-core"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+description = "Python-independent CLI recognition/completion kernel shared by kwconf frontends"
+
+[lib]
+name = "kwconf_cli_core"
+path = "src/lib.rs"
