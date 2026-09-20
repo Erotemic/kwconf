@@ -1,6 +1,6 @@
 use kwconf_cli_core::{
-    CompletionCommandSpec, CompletionOptionSpec, CoreCompletionIndex, CoreFlatParser,
-    FieldSpec, KIND_COUNTER, KIND_FLAG, KIND_OPTIONAL, KIND_VALUE,
+    CompletionCommandSpec, CompletionOptionSpec, CoreCompletionIndex, CoreFlatParser, FieldSpec,
+    KIND_COUNTER, KIND_FLAG, KIND_OPTIONAL, KIND_VALUE,
 };
 use std::hint::black_box;
 
@@ -81,7 +81,8 @@ fn usage() -> ! {
 }
 
 fn parse_usize(text: Option<String>) -> usize {
-    text.and_then(|value| value.parse().ok()).unwrap_or_else(|| usage())
+    text.and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| usage())
 }
 
 fn main() {
@@ -147,9 +148,7 @@ fn main() {
             let index = CoreCompletionIndex::new(completion_specs(size), vec![]);
             for _ in 0..iterations {
                 let result = index.complete_values(black_box(&[]), black_box("--option-"));
-                checksum = checksum.wrapping_add(
-                    black_box(result.as_ref().map_or(0, Vec::len)),
-                );
+                checksum = checksum.wrapping_add(black_box(result.as_ref().map_or(0, Vec::len)));
             }
         }
         "complete-choice" => {
@@ -157,9 +156,7 @@ fn main() {
             let before = vec![format!("--option-{}", size.saturating_sub(1))];
             for _ in 0..iterations {
                 let result = index.complete_values(black_box(&before), black_box("b"));
-                checksum = checksum.wrapping_add(
-                    black_box(result.as_ref().map_or(0, Vec::len)),
-                );
+                checksum = checksum.wrapping_add(black_box(result.as_ref().map_or(0, Vec::len)));
             }
         }
         "route-modal" => {
@@ -167,9 +164,9 @@ fn main() {
             let argv = vec![format!("command-{}", size.saturating_sub(1))];
             for _ in 0..iterations {
                 let result = index.route(black_box(&argv));
-                checksum = checksum.wrapping_add(
-                    black_box(result.as_ref().map_or(0, |(_, consumed)| *consumed)),
-                );
+                checksum = checksum.wrapping_add(black_box(
+                    result.as_ref().map_or(0, |(_, consumed)| *consumed),
+                ));
             }
         }
         "fallback" => {

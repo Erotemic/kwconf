@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
-import inspect
 import os
 import sys
-from typing import Any
+
+from kwconf._typing_runtime import Any
 
 NOT_HANDLED = object()
+
+
+def _has_named_parameter(func: Any, name: str) -> bool:
+    """Check a normal Python callable without importing inspect.
+
+    Modal Config.main methods are ordinary Python functions/classmethods in the
+    common path.  Fall back to inspect only for exotic callables without a
+    code object so compatibility is preserved without paying inspect's import
+    cost on every accelerated modal invocation.
+    """
+    target = getattr(func, '__func__', func)
+    code = getattr(target, '__code__', None)
+    if code is not None:
+        count = code.co_argcount + code.co_kwonlyargcount
+        return name in code.co_varnames[:count]
+
+    import inspect
+
+    return name in inspect.signature(func).parameters
 
 
 def _normalize_modal_argv(argv):
@@ -117,7 +136,6 @@ def try_modal_main(
     explicit = getattr(parsed, '_explicit_argv_keys', frozenset())
     explicit_kw = {key: parsed[key] for key in explicit if key in parsed}
     sub_main = metadata['main_func']
-    main_sig = inspect.signature(sub_main)
-    control_kw = {'argv': False} if 'argv' in main_sig.parameters else {}
+    control_kw = {'argv': False} if _has_named_parameter(sub_main, 'argv') else {}
     ret = sub_main(**control_kw, **explicit_kw)
     return 0 if ret is None else ret

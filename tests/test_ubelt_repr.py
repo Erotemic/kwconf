@@ -14,14 +14,18 @@ REPO_DPATH = Path(__file__).resolve().parents[1]
 
 
 def _run_fresh(code: str) -> None:
-    pytest.importorskip('ubelt')
+    ubelt = pytest.importorskip('ubelt')
     env = os.environ.copy()
     old_pythonpath = env.get('PYTHONPATH')
-    env['PYTHONPATH'] = (
-        str(REPO_DPATH)
-        if not old_pythonpath
-        else str(REPO_DPATH) + os.pathsep + old_pythonpath
-    )
+    # ``-S`` intentionally skips site initialization, so explicitly expose
+    # the site-packages root that contains the already-importable ubelt.  This
+    # preserves the clean-interpreter property without making installed
+    # optional dependencies disappear inside the child process.
+    ubelt_site = Path(ubelt.__file__).resolve().parent.parent
+    pythonpath_parts = [str(REPO_DPATH), str(ubelt_site)]
+    if old_pythonpath:
+        pythonpath_parts.append(old_pythonpath)
+    env['PYTHONPATH'] = os.pathsep.join(pythonpath_parts)
     proc = subprocess.run(
         [sys.executable, '-S', '-c', code],
         cwd=REPO_DPATH,

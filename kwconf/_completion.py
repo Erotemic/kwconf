@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any
+
+from kwconf._typing_runtime import Any
 
 
 def _active_argcomplete(autocomplete: bool | str) -> bool:

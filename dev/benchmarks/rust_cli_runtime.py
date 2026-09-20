@@ -175,7 +175,6 @@ def _warm_cases(
         auto_cls = _kwconf_class(size, 'auto')
         py_config = py_cls()
         rust_config = rust_cls()
-        auto_config = auto_cls()
         typed_py_cls = _kwconf_typed_class(size, 'python')
         typed_rust_cls = _kwconf_typed_class(size, 'rust')
         typed_auto_cls = _kwconf_typed_class(size, 'auto')

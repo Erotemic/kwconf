@@ -256,6 +256,23 @@ def test_modal_rust_success_path_routes_without_argparse(monkeypatch):
     assert seen == {'argv': False, 'kwargs': {'value': 3}}
 
 
+def test_modal_named_parameter_probe_matches_common_signatures():
+    from kwconf import _modal_rust
+
+    def positional(argv=None):
+        return argv
+
+    def keyword_only(*, argv=None):
+        return argv
+
+    def kwargs_only(**kwargs):
+        return kwargs
+
+    assert _modal_rust._has_named_parameter(positional, 'argv')
+    assert _modal_rust._has_named_parameter(keyword_only, 'argv')
+    assert not _modal_rust._has_named_parameter(kwargs_only, 'argv')
+
+
 def test_python_backend_does_not_claim_native_completion(monkeypatch):
     from kwconf import _completion
     from kwconf import _rust

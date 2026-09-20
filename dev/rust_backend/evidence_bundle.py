@@ -151,6 +151,24 @@ class Collector:
         print(f'  -> {code}: {log.relative_to(self.root)}', flush=True)
         return code
 
+    def skip(self, label: str, reason: str, *, required: bool = False) -> None:
+        self.counter += 1
+        slug = ''.join(ch if ch.isalnum() or ch in '-_' else '-' for ch in label).strip('-')
+        log = self.commands / f'{self.counter:02d}-{slug}.log'
+        log.write_text(f'[SKIP] {reason}\n')
+        self.rows.append(
+            {
+                'label': label,
+                'required': required,
+                'returncode': None,
+                'status': 'SKIP',
+                'log': str(log.relative_to(self.root)),
+                'command': [],
+                'reason': reason,
+            }
+        )
+        print(f'  -> SKIP: {label}: {reason}', flush=True)
+
     def write_summary(self) -> None:
         lines = [
             '# kwconf Rust backend evidence bundle',
@@ -159,12 +177,17 @@ class Collector:
             '| --- | --- | --- | --- |',
         ]
         for row in self.rows:
-            status = 'PASS' if row['returncode'] == 0 else f"FAIL({row['returncode']})"
+            if row.get('status') == 'SKIP':
+                status = 'SKIP'
+            else:
+                status = 'PASS' if row['returncode'] == 0 else f"FAIL({row['returncode']})"
             lines.append(
                 f"| {status} | {row['required']} | `{row['label']}` | `{row['log']}` |"
             )
         required_failures = [
-            row for row in self.rows if row['required'] and row['returncode'] != 0
+            row
+            for row in self.rows
+            if row['required'] and row.get('status') != 'SKIP' and row['returncode'] != 0
         ]
         lines.extend(
             [
@@ -226,8 +249,11 @@ def _capture_source_snapshot(bundle: Path) -> None:
         'kwconf/_completion.py',
         'kwconf/_modal_rust.py',
         'kwconf/_config_cold.py',
+        'kwconf/_typing_runtime.py',
+        'kwconf/_typing_runtime.pyi',
         'kwconf/_value_cold.py',
         'dev/benchmarks/README.md',
+        'dev/benchmarks/cli_runtime.py',
         'dev/benchmarks/cli_startup.py',
         'dev/benchmarks/rust_cli_runtime.py',
         'dev/benchmarks/completion_runtime.py',
@@ -236,6 +262,7 @@ def _capture_source_snapshot(bundle: Path) -> None:
         'tests/test_rust_backend.py',
         'tests/test_rust_completion.py',
         'tests/test_rust_optional_ecosystem.py',
+        'tests/test_ubelt_repr.py',
     ]
     trees = [
         'dev/rust_backend',
@@ -397,6 +424,7 @@ def main() -> None:
                 'tests/test_rust_backend.py',
                 'tests/test_rust_completion.py',
                 'tests/test_rust_optional_ecosystem.py',
+        'tests/test_ubelt_repr.py',
                 'tests/test_import.py',
                 'tests/test_subconfig_behavior.py',
             ],
@@ -512,6 +540,14 @@ def main() -> None:
             'importtime-rust-extension',
             [sys.executable, '-X', 'importtime', '-c', 'import _kwconf_rust; print(_kwconf_rust.__file__)'],
         )
+        collector.run(
+            'importtime-modal',
+            [sys.executable, '-X', 'importtime', '-c', 'import kwconf.modal'],
+        )
+        collector.run(
+            'importtime-completion',
+            [sys.executable, '-X', 'importtime', '-c', 'import kwconf._completion'],
+        )
 
         if shutil.which('cargo'):
             collector.run(
@@ -544,7 +580,7 @@ def main() -> None:
                         '--',
                         '--check',
                     ],
-                    required=False,
+                    required=True,
                     timeout=120,
                 )
                 collector.run(
@@ -560,79 +596,128 @@ def main() -> None:
                         '-D',
                         'warnings',
                     ],
-                    required=False,
+                    required=True,
+                    timeout=600,
+                )
+                collector.run(
+                    'cargo-fmt-core-check',
+                    [
+                        'cargo',
+                        'fmt',
+                        '--manifest-path',
+                        'rust/kwconf_accel_core/Cargo.toml',
+                        '--',
+                        '--check',
+                    ],
+                    required=True,
+                    timeout=120,
+                )
+                collector.run(
+                    'cargo-clippy-core',
+                    [
+                        'cargo',
+                        'clippy',
+                        '--manifest-path',
+                        'rust/kwconf_accel_core/Cargo.toml',
+                        '--all-targets',
+                        '--',
+                        '-D',
+                        'warnings',
+                    ],
+                    required=True,
                     timeout=600,
                 )
         if shutil.which('perf') and not args.quick:
-            collector.run(
-                'perf-stat-native',
-                [
-                    sys.executable,
-                    'dev/rust_backend/profile_backend.py',
-                    'perf-stat',
-                    '--workload',
-                    'parse-mixed',
-                    '--schema-size',
-                    '256',
-                    '--repeat',
-                    '3',
-                ],
-                required=False,
-                timeout=300,
+            perf_probe = subprocess.run(
+                [shutil.which('perf'), 'stat', '-e', 'task-clock', '--', 'true'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
             )
-            collector.run(
-                'perf-python-rust-bridge',
-                [
-                    sys.executable,
-                    'dev/rust_backend/profile_backend.py',
-                    'perf-python',
-                    '--workload',
-                    'rust-bridge',
-                    '--schema-size',
-                    '256',
-                    '--iterations',
-                    '200000',
-                    '--output',
-                    str(bundle / 'perf-python-rust-bridge.data'),
-                ],
-                required=False,
-                timeout=300,
-            )
-            collector.run(
-                'perf-stat-native-completion',
-                [
-                    sys.executable,
-                    'dev/rust_backend/profile_backend.py',
-                    'perf-stat',
-                    '--workload',
-                    'complete-options',
-                    '--schema-size',
-                    '256',
-                    '--repeat',
-                    '3',
-                ],
-                required=False,
-                timeout=300,
-            )
-            collector.run(
-                'perf-python-completion',
-                [
-                    sys.executable,
-                    'dev/rust_backend/profile_backend.py',
-                    'perf-python',
-                    '--workload',
-                    'completion-pyo3',
-                    '--schema-size',
-                    '256',
-                    '--iterations',
-                    '100000',
-                    '--output',
-                    str(bundle / 'perf-python-completion.data'),
-                ],
-                required=False,
-                timeout=300,
-            )
-
+            if perf_probe.returncode != 0:
+                reason_lines = perf_probe.stdout.strip().splitlines()
+                reason = (
+                    reason_lines[0]
+                    if reason_lines
+                    else f'perf probe returned {perf_probe.returncode}'
+                )
+                for label in [
+                    'perf-stat-native',
+                    'perf-python-rust-bridge',
+                    'perf-stat-native-completion',
+                    'perf-python-completion',
+                ]:
+                    collector.skip(label, f'perf unavailable: {reason}')
+            else:
+                collector.run(
+                    'perf-stat-native',
+                    [
+                        sys.executable,
+                        'dev/rust_backend/profile_backend.py',
+                        'perf-stat',
+                        '--workload',
+                        'parse-mixed',
+                        '--schema-size',
+                        '256',
+                        '--repeat',
+                        '3',
+                    ],
+                    required=False,
+                    timeout=300,
+                )
+                collector.run(
+                    'perf-python-rust-bridge',
+                    [
+                        sys.executable,
+                        'dev/rust_backend/profile_backend.py',
+                        'perf-python',
+                        '--workload',
+                        'rust-bridge',
+                        '--schema-size',
+                        '256',
+                        '--iterations',
+                        '200000',
+                        '--output',
+                        str(bundle / 'perf-python-rust-bridge.data'),
+                    ],
+                    required=False,
+                    timeout=300,
+                )
+                collector.run(
+                    'perf-stat-native-completion',
+                    [
+                        sys.executable,
+                        'dev/rust_backend/profile_backend.py',
+                        'perf-stat',
+                        '--workload',
+                        'complete-options',
+                        '--schema-size',
+                        '256',
+                        '--repeat',
+                        '3',
+                    ],
+                    required=False,
+                    timeout=300,
+                )
+                collector.run(
+                    'perf-python-completion',
+                    [
+                        sys.executable,
+                        'dev/rust_backend/profile_backend.py',
+                        'perf-python',
+                        '--workload',
+                        'completion-pyo3',
+                        '--schema-size',
+                        '256',
+                        '--iterations',
+                        '100000',
+                        '--output',
+                        str(bundle / 'perf-python-completion.data'),
+                    ],
+                    required=False,
+                    timeout=300,
+                )
         if not args.quick:
             collector.run(
                 'python-cprofile-rust-bridge',
@@ -674,12 +759,16 @@ def main() -> None:
             collector.run(
                 'full-pytest',
                 [sys.executable, '-m', 'pytest', '-q', '-o', 'addopts=', 'tests'],
-                required=False,
+                required=True,
                 timeout=300,
             )
 
             if shutil.which('ruff'):
-                collector.run('ruff-check', ['ruff', 'check', 'kwconf', 'tests/test_rust_completion.py', 'dev/rust_backend', 'dev/benchmarks'], required=False)
+                collector.run(
+                    'ruff-check',
+                    ['ruff', 'check', 'kwconf', 'tests', 'dev/rust_backend', 'dev/benchmarks'],
+                    required=True,
+                )
 
         if kwconf_rs is not None:
             rs = kwconf_rs

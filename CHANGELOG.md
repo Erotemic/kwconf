@@ -76,6 +76,13 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   preserves reset/default-factory and provenance semantics before committing
   accelerated results. Top-level lazy API resolution also uses the builtin
   importer directly rather than importing ``importlib`` on first access.
+* Static completion and ModalCLI startup no longer eagerly import stdlib
+  ``typing``, ``pprint``, or ``inspect``. Type-only names reuse kwconf's small
+  runtime typing shim, diagnostic pretty-printing imports ``pprint`` only when
+  debugging is enabled, and normal Python/classmethod modal entry points inspect
+  their code object directly with a lazy ``inspect.signature`` fallback for
+  exotic callables. This removes fixed Python import cost from the paths where
+  the Rust completion/router is intended to beat argparse.
 
 ### Fixed
 * The Rust evidence campaign now accepts Maturin's normal pure-Rust wrapper
@@ -96,6 +103,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   callbacks and object-valued choices before speculative parsing. This prevents
   a later argparse fallback from executing user callback/equality code twice;
   builtin scalar coercers and kwconf's own named parsers remain accelerated.
+* The optional-ubelt fresh-interpreter tests now explicitly expose the detected
+  ubelt site-packages root when running children with ``python -S``; ``-S`` no
+  longer makes an installed optional dependency disappear and create a false
+  full-suite failure. The full Rust evidence campaign now gates cargo formatting,
+  clippy, Ruff, and the complete pytest suite, while kernel-restricted ``perf``
+  is reported as unavailable instead of as four failed profiling commands.
 
 
 ## Version 0.12.0 - Released 2026-09-19

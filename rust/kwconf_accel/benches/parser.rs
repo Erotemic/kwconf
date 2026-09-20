@@ -1,8 +1,8 @@
-use kwconf_cli_core::{
-    CompletionCommandSpec, CompletionOptionSpec, CoreCompletionIndex, CoreFlatParser,
-    FieldSpec, KIND_COUNTER, KIND_FLAG, KIND_OPTIONAL, KIND_VALUE,
-};
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
+use kwconf_cli_core::{
+    CompletionCommandSpec, CompletionOptionSpec, CoreCompletionIndex, CoreFlatParser, FieldSpec,
+    KIND_COUNTER, KIND_FLAG, KIND_OPTIONAL, KIND_VALUE,
+};
 use std::hint::black_box;
 
 const SCHEMA_SIZES: &[usize] = &[1, 16, 64, 256, 1024];

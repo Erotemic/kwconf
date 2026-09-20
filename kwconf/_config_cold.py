@@ -5,27 +5,50 @@ conversion, or argparse-construction helpers. Keeping those function code
 objects out of :mod:`kwconf.config` reduces fresh-process startup while this
 module preserves the exact public methods on demand.
 """
+
 from __future__ import annotations
 
-from kwconf._typing_runtime import Any, Dict
+import os
+import sys
+
+from kwconf._typing_runtime import (
+    Any,
+    Dict,
+    IO,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+)
+from kwconf.config import (
+    Config,
+    ConfigData,
+    _coerce_argv_common,
+    _coerce_data_to_dict,
+    _diagnostic_enabled,
+    _normalize_validation_mode,
+    _rust_extension_present,
+    _structural_validation_mode,
+    define,
+)
 from kwconf.util.util_misc import import_ubelt, iterable
 from kwconf.util.util_text import codeblock as _codeblock
 from kwconf.util.util_text import indent as _indent
 from kwconf.value import _Value as Value
 
-# Safe circular import: this module is imported only through _LazyConfigMethod
-# after kwconf.config has finished defining Config and define.
-from kwconf.config import (
-    define,
-    _coerce_argv_common,
-    _coerce_data_to_dict,
-    _diagnostic_enabled,
-    _normalize_validation_mode,
-    _structural_validation_mode,
-    _rust_extension_present,
-)
-import os
-import sys
+
+class _ArgparseTypeProxy:
+    """Resolve argparse annotation types only if runtime introspection asks."""
+
+    def __getattr__(self, key):
+        import argparse
+
+        return getattr(argparse, key)
+
+
+argparse_mod = _ArgparseTypeProxy()
+
 
 def demo(cls) -> 'Config':
     """

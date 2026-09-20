@@ -55,9 +55,8 @@ REPO_DPATH = Path(__file__).resolve().parents[2]
 if str(REPO_DPATH) not in sys.path:
     sys.path.insert(0, str(REPO_DPATH))
 
-import timerit
-
 import kwconf
+import timerit
 from kwconf import argparse_ext
 
 

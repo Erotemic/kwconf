@@ -79,11 +79,10 @@ Note:
 from __future__ import annotations
 
 import os
-import pprint
 import sys
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from kwconf import diagnostics
+from kwconf._typing_runtime import Any, Dict, List, Optional, Sequence, Tuple, Union
 from kwconf.util.util_class import class_or_instancemethod
 from kwconf.util.util_repr import NiceRepr
 from kwconf.util.util_text import codeblock, paragraph
@@ -92,6 +91,13 @@ from kwconf.util.util_text import codeblock, paragraph
 
 
 DEFAULT_GROUP = 'commands'
+
+
+def _pformat(data: Any) -> str:
+    """Import pprint only for diagnostic-only formatting paths."""
+    import pprint
+
+    return pprint.pformat(data)
 
 
 _RUNTIME_METADATA_KEYS = {
@@ -990,12 +996,12 @@ class ModalCLI(metaclass=MetaModalCLI):
         if diagnostics.DEBUG_MODAL:
             print(
                 f'[kwconf.modal.ModalCLI.main] Modal main {self} parsed arguments: '
-                + pprint.pformat(kw)
+                + _pformat(kw)
             )
             if unknown_args:
                 print(
                     f'[kwconf.modal.ModalCLI.main] Modal main {self} unknown args: '
-                    + pprint.pformat(unknown_args)
+                    + _pformat(unknown_args)
                 )
 
         __opaque_main__ = kw.pop('__opaque_main__', None)

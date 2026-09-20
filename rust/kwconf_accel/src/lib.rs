@@ -1,7 +1,7 @@
 #[cfg(feature = "python-extension")]
 use kwconf_cli_core::{
-    CompletionCommandSpec, CompletionOptionSpec, CompletionResult,
-    CoreCompletionIndex, CoreFlatParser, FieldSpec, ParseOutput,
+    CompletionCommandSpec, CompletionOptionSpec, CompletionResult, CoreCompletionIndex,
+    CoreFlatParser, FieldSpec, ParseOutput,
 };
 #[cfg(feature = "python-extension")]
 use pyo3::exceptions::PyValueError;
@@ -53,19 +53,11 @@ impl CompletionIndex {
         }
     }
 
-    fn complete(
-        &self,
-        args_before: Vec<String>,
-        prefix: String,
-    ) -> Option<CompletionResult> {
+    fn complete(&self, args_before: Vec<String>, prefix: String) -> Option<CompletionResult> {
         self.core.complete(&args_before, &prefix)
     }
 
-    fn complete_values(
-        &self,
-        args_before: Vec<String>,
-        prefix: String,
-    ) -> Option<Vec<String>> {
+    fn complete_values(&self, args_before: Vec<String>, prefix: String) -> Option<Vec<String>> {
         self.core.complete_values(&args_before, &prefix)
     }
 
