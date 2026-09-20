@@ -7,7 +7,7 @@ from collections.abc import MutableMapping
 from kwconf import value as _value_mod
 from kwconf._typing_runtime import Any, Callable, Optional, Union, cast
 from kwconf.util.util_misc import NoParam
-from kwconf.value import _Value, _resolve_alias, normalize_option_str
+from kwconf.value import _resolve_alias, _Value, normalize_option_str
 
 # This cold module is imported only after kwconf.value is fully initialized.
 

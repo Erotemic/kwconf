@@ -20,10 +20,20 @@ from __future__ import annotations
 import sys
 from collections.abc import (
     Callable as ABCCallable,
+)
+from collections.abc import (
     Iterable as Iterable,
+)
+from collections.abc import (
     Iterator as Iterator,
+)
+from collections.abc import (
     Mapping as Mapping,
+)
+from collections.abc import (
     MutableMapping as MutableMapping,
+)
+from collections.abc import (
     Sequence as Sequence,
 )
 

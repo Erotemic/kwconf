@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_DPATH = Path(__file__).resolve().parents[1]
 EVIDENCE_PATH = REPO_DPATH / 'dev' / 'rust_backend' / 'evidence_bundle.py'
 
