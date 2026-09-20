@@ -5,3 +5,4 @@ include CHANGELOG.md
 include README.rst
 include LICENSE
 include requirements/*.txt
+recursive-include kwconf *.pyi py.typed

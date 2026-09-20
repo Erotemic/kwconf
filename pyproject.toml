@@ -88,6 +88,10 @@ dynamic.version.attr = "kwconf.__version__"
 package-data."*" = [
   "requirements/*.txt",
 ]
+package-data.kwconf = [
+  "py.typed",
+  "*.pyi",
+]
 packages.find.where = [
   ".",
 ]
