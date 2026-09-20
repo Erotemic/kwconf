@@ -72,49 +72,36 @@ from __future__ import annotations
 import os
 import sys
 from abc import ABCMeta as _ABCMeta
+from collections.abc import Mapping, Sequence
+from collections.abc import Mapping as _ABCMapping
 
 from kwconf._typing_runtime import (
     IO,
     Any,
     Dict,
-    Iterable,
     Iterator,
     List,
     Optional,
     Tuple,
     Type,
-    TYPE_CHECKING,
     cast,
 )
-
-if TYPE_CHECKING:
-    import argparse as argparse_mod
-from collections.abc import Mapping, Sequence
-from collections.abc import Mapping as _ABCMapping
-
-from kwconf.annotations import (
-    choices_from_annotation as _choices_from_annotation,
-)
-from kwconf.annotations import (
-    format_annotation as _format_annotation,
-)
+from kwconf.annotations import _is_any as _annotation_is_any
+from kwconf.annotations import choices_from_annotation as _choices_from_annotation
+from kwconf.annotations import format_annotation as _format_annotation
 from kwconf.annotations import (
     get_class_namespace_annotations as _get_class_namespace_annotations,
 )
 from kwconf.annotations import is_classvar_annotation as _is_classvar_annotation
-from kwconf.annotations import _is_any as _annotation_is_any
 from kwconf.annotations import (
     runtime_type_from_annotation as _runtime_type_from_annotation,
 )
 from kwconf.annotations import (
     value_matches_annotation as _value_matches_annotation,
 )
-from kwconf.util.util_misc import copy_value, import_ubelt, iterable
+from kwconf.util.util_misc import copy_value, iterable
 from kwconf.util.util_repr import NiceRepr
 from kwconf.value import _Value as Value
-
-# from kwconf.util.util_class import class_or_instancemethod
-
 
 _DIAGNOSTIC_TRUE = frozenset({'true', 'on', 'yes', '1'})
 _DEBUG_DEFAULT = os.environ.get('KWCONF_DEBUG', '').lower() in _DIAGNOSTIC_TRUE
@@ -124,6 +111,7 @@ _DIAGNOSTIC_DEFAULTS = {
     'DEBUG_META_CONFIG': _DEBUG_DEFAULT
     or os.environ.get('KWCONF_DEBUG_META_CONFIG', '').lower() in _DIAGNOSTIC_TRUE,
 }
+
 
 def _diagnostic_enabled(name: str) -> bool:
     """Read diagnostic flags without importing :mod:`kwconf.diagnostics`."""

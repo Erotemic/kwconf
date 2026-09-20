@@ -87,9 +87,6 @@ from kwconf.util.util_class import class_or_instancemethod
 from kwconf.util.util_repr import NiceRepr
 from kwconf.util.util_text import codeblock, paragraph
 
-# from kwconf.config import MetaConfig
-
-
 DEFAULT_GROUP = 'commands'
 
 

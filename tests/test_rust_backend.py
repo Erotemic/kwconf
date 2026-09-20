@@ -9,7 +9,6 @@ import pytest
 
 import kwconf
 
-
 REPO_DPATH = Path(__file__).resolve().parents[1]
 
 

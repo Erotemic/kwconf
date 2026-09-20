@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from kwconf._typing_runtime import Any
 
+
 def import_yaml(feature: str = 'YAML support') -> Any:
     """
     Import ``yaml``, raising an actionable error if PyYAML is not installed.

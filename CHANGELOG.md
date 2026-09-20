@@ -83,6 +83,13 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   their code object directly with a lazy ``inspect.signature`` fallback for
   exotic callables. This removes fixed Python import cost from the paths where
   the Rust completion/router is intended to beat argparse.
+* Static ModalCLI routing now builds only command-routing metadata instead of
+  compiling completion schemas for every leaf before selecting a command.
+  Command-name completion likewise avoids leaf schema compilation, while
+  option completion materializes only the selected leaf. This reduces modal
+  orchestration overhead without changing the Rust ABI, routing semantics, or
+  canonical fallback behavior. The release evidence gates also enforce clean
+  Rust formatting and Python linting for the accelerator campaign.
 
 ### Fixed
 * The Rust evidence campaign now accepts Maturin's normal pure-Rust wrapper

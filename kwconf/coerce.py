@@ -45,14 +45,12 @@ route here, and the deprecated ``type=`` kwarg is mapped onto it.
 
 from __future__ import annotations
 
-import types
 import warnings
 
 from kwconf._typing_runtime import Any, Callable
+from kwconf.annotations import _is_literal_origin, _is_union_origin
 from kwconf.annotations import _args as _annotation_args
 from kwconf.annotations import _is_any as _annotation_is_any
-from kwconf.annotations import _is_literal_origin
-from kwconf.annotations import _is_union_origin
 from kwconf.annotations import _origin as _annotation_origin
 from kwconf.annotations import _typing_module as _annotation_typing_module
 

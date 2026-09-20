@@ -29,8 +29,7 @@ def test_nested_schema_description_flattens_realized_subconfig():
 
 
 def test_static_completion_protocol_uses_argcomplete_output_contract(monkeypatch):
-    from kwconf import _completion
-    from kwconf import _rust
+    from kwconf import _completion, _rust
 
     class FakeIndex:
         def complete(self, argv_before, prefix):
@@ -140,8 +139,7 @@ def test_completion_context_matches_argcomplete_program_offset(monkeypatch):
 
 
 def test_static_completion_declines_dynamic_value(monkeypatch):
-    from kwconf import _completion
-    from kwconf import _rust
+    from kwconf import _completion, _rust
 
     class FakeIndex:
         def complete(self, argv_before, prefix):
@@ -160,8 +158,7 @@ def test_static_completion_declines_dynamic_value(monkeypatch):
 
 
 def test_modal_static_model_fuzzy_aliases_and_opaque_fallback():
-    from kwconf import _completion
-    from kwconf import _rust
+    from kwconf import _completion, _rust
 
     class Root(kwconf.ModalCLI):
         class TrainModel(kwconf.Config):
@@ -205,8 +202,7 @@ def test_nested_rust_schema_is_not_class_cached(monkeypatch):
 
 
 def test_modal_rust_success_path_routes_without_argparse(monkeypatch):
-    from kwconf import _modal_rust
-    from kwconf import _rust
+    from kwconf import _modal_rust, _rust
 
     seen = {}
 
@@ -238,13 +234,14 @@ def test_modal_rust_success_path_routes_without_argparse(monkeypatch):
     monkeypatch.setattr(_rust, 'make_completion_index', lambda *a, **kw: FakeIndex())
     monkeypatch.setattr(_rust, 'try_parse_config', lambda *a, **kw: Probe())
 
-    class Parsed(dict):
-        _explicit_argv_keys = frozenset({'value'})
-
     monkeypatch.setattr(
         Command,
         'cli',
-        classmethod(lambda cls, **kw: Parsed(value=3)),
+        classmethod(
+            lambda cls, **kw: (_ for _ in ()).throw(
+                AssertionError('modal Rust routing must not re-run Config.cli')
+            )
+        ),
     )
     result = _modal_rust.try_modal_main(
         Root(),
@@ -255,6 +252,103 @@ def test_modal_rust_success_path_routes_without_argparse(monkeypatch):
     assert result == 7
     assert seen == {'argv': False, 'kwargs': {'value': 3}}
 
+
+
+def test_modal_route_model_skips_leaf_completion_schema(monkeypatch):
+    from kwconf import _completion, _rust
+
+    class Root(kwconf.ModalCLI):
+        class Train(kwconf.Config):
+            __command__ = 'train'
+            epochs: int = 1
+
+            @classmethod
+            def main(cls, argv=False, **kwargs):
+                return 0
+
+    monkeypatch.setattr(
+        _rust,
+        'completion_specs_for_config',
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError('routing must not compile leaf completion schemas')
+        ),
+    )
+    options, commands, leaves = _completion._modal_route_model(Root())
+    assert any(path == [] and name == 'train' for path, name, *_ in commands)
+    assert ('train',) in leaves
+    assert any(path == [] and '--help' in names for path, names, *_ in options)
+
+
+def test_modal_command_completion_does_not_compile_unselected_leaf(monkeypatch):
+    from kwconf import _completion, _rust
+
+    class Root(kwconf.ModalCLI):
+        class Train(kwconf.Config):
+            __command__ = 'train'
+            epochs: int = 1
+
+            @classmethod
+            def main(cls, argv=False, **kwargs):
+                return 0
+
+        class Test(kwconf.Config):
+            __command__ = 'test'
+            verbose: bool = False
+
+            @classmethod
+            def main(cls, argv=False, **kwargs):
+                return 0
+
+    monkeypatch.setattr(
+        _rust,
+        'completion_specs_for_config',
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError('root command completion must not compile leaf schemas')
+        ),
+    )
+    options, commands = _completion._modal_completion_specs_for_context(
+        Root(), ([], 'tr')
+    )
+    assert any(path == [] and name == 'train' for path, name, *_ in commands)
+    assert not any(path for path, *_ in options)
+
+
+def test_modal_leaf_completion_compiles_only_selected_leaf(monkeypatch):
+    from kwconf import _completion, _rust
+
+    class Root(kwconf.ModalCLI):
+        class Train(kwconf.Config):
+            __command__ = 'train'
+            epochs: int = 1
+
+            @classmethod
+            def main(cls, argv=False, **kwargs):
+                return 0
+
+        class Test(kwconf.Config):
+            __command__ = 'test'
+            verbose: bool = False
+
+            @classmethod
+            def main(cls, argv=False, **kwargs):
+                return 0
+
+    seen = []
+
+    def fake_specs(config, **kwargs):
+        seen.append(type(config).__name__)
+        return [([], ['--leaf-option'], False, [], '')]
+
+    monkeypatch.setattr(_rust, 'completion_selector_spellings', lambda cfg: [])
+    monkeypatch.setattr(_rust, 'completion_specs_for_config', fake_specs)
+    options, _commands = _completion._modal_completion_specs_for_context(
+        Root(), (['train'], '--')
+    )
+    assert seen == ['Train']
+    assert any(
+        path == ['train'] and '--leaf-option' in names
+        for path, names, *_ in options
+    )
 
 def test_modal_named_parameter_probe_matches_common_signatures():
     from kwconf import _modal_rust
@@ -274,8 +368,7 @@ def test_modal_named_parameter_probe_matches_common_signatures():
 
 
 def test_python_backend_does_not_claim_native_completion(monkeypatch):
-    from kwconf import _completion
-    from kwconf import _rust
+    from kwconf import _completion, _rust
 
     class C(kwconf.Config):
         __cli_backend__ = 'python'
@@ -386,8 +479,7 @@ def test_double_dash_completion_delegates_to_argcomplete():
 
 
 def test_subconfig_completion_exposes_selector_names_but_delegates_after_use(monkeypatch):
-    from kwconf import _completion
-    from kwconf import _rust
+    from kwconf import _completion, _rust
 
     class Inner(kwconf.Config):
         depth: int = 1
@@ -413,8 +505,7 @@ def test_subconfig_completion_exposes_selector_names_but_delegates_after_use(mon
 
 
 def test_modal_completion_with_subconfig_selector_delegates():
-    from kwconf import _completion
-    from kwconf import _rust
+    from kwconf import _completion, _rust
 
     class Inner(kwconf.Config):
         depth: int = 1
@@ -443,8 +534,7 @@ def test_shell_sensitive_option_alias_delegates_completion():
 
 
 def test_shell_sensitive_modal_command_delegates_completion():
-    from kwconf import _completion
-    from kwconf import _rust
+    from kwconf import _completion, _rust
 
     class Root(kwconf.ModalCLI):
         class Weird(kwconf.Config):

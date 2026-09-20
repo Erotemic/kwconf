@@ -1,13 +1,15 @@
 """Cold argparse / code-generation helpers for :mod:`kwconf.value`."""
+
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from kwconf._typing_runtime import Any, Optional, Union, cast
-from kwconf.util.util_misc import NoParam
 
 # Imported lazily after kwconf.value is fully initialized.
 from kwconf import value as _value_mod
+from kwconf._typing_runtime import Any, Callable, Optional, Union, cast
+from kwconf.util.util_misc import NoParam
 from kwconf.value import _Value, _resolve_alias, normalize_option_str
+
 
 def _value_to_value_kw(self) -> MutableMapping[str, Any]:
     """

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from kwconf._typing_runtime import Any
 
+
 class _NoParamType:
     """
     Singleton sentinel for "no parameter given", distinct from ``None``.

@@ -12,9 +12,9 @@ import os
 import sys
 
 from kwconf._typing_runtime import (
+    IO,
     Any,
     Dict,
-    IO,
     Iterable,
     List,
     Mapping,

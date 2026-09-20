@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import MutableMapping, Sequence
+from collections.abc import Sequence
 
 from kwconf._typing_runtime import (
     Any,
@@ -11,7 +11,6 @@ from kwconf._typing_runtime import (
     cast,
     overload,
 )
-
 from kwconf.util.util_misc import NoParam, copy_value
 from kwconf.util.util_repr import NiceRepr
 
@@ -587,7 +586,7 @@ def Value(
     validate: Optional[Union[bool, str]] = ...,
 ) -> _T: ...
 @overload
-def Value(
+def Value(  # noqa: F811
     *,
     default_factory: Callable[[], _T],
     type: Any = ...,
@@ -606,7 +605,7 @@ def Value(
     parser: Any = ...,
     validate: Optional[Union[bool, str]] = ...,
 ) -> _T: ...
-def Value(
+def Value(  # noqa: F811
     default: Any = NoParam,
     type: Any = None,
     help: Optional[str] = None,

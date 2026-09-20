@@ -67,9 +67,10 @@ impl CoreCompletionIndex {
     }
 
     fn find_option<'a>(&'a self, path: &[String], spelling: &str) -> Option<&'a CompletionOption> {
-        self.options.get(path)?.iter().find(|item| {
-            item.spellings.iter().any(|candidate| candidate == spelling)
-        })
+        self.options
+            .get(path)?
+            .iter()
+            .find(|item| item.spellings.iter().any(|candidate| candidate == spelling))
     }
 
     fn active_path(&self, args: &[String]) -> Vec<String> {
@@ -92,7 +93,8 @@ impl CoreCompletionIndex {
             let mut matched = None;
             if let Some(items) = self.commands.get(&path) {
                 for command in items {
-                    if token == &command.name || command.aliases.iter().any(|alias| alias == token) {
+                    if token == &command.name || command.aliases.iter().any(|alias| alias == token)
+                    {
                         matched = Some(command.name.clone());
                         break;
                     }
@@ -345,13 +347,9 @@ impl CoreFlatParser {
                 continue;
             }
 
-            if let Err(reason) = self.consume_short_cluster(
-                option_text,
-                inline,
-                args,
-                &mut index,
-                &mut assignments,
-            ) {
+            if let Err(reason) =
+                self.consume_short_cluster(option_text, inline, args, &mut index, &mut assignments)
+            {
                 return (assignments, unknown, Some(reason));
             }
             index += 1;
@@ -386,19 +384,11 @@ impl CoreFlatParser {
             }
             KIND_OPTIONAL => {
                 if let Some(value) = inline {
-                    assignments.push((
-                        entry.field,
-                        OP_VALUE,
-                        Some((value.to_owned(), false)),
-                    ));
+                    assignments.push((entry.field, OP_VALUE, Some((value.to_owned(), false))));
                 } else if let Some(next) = args.get(*index + 1) {
                     if !next.starts_with('-') {
                         *index += 1;
-                        assignments.push((
-                            entry.field,
-                            OP_VALUE,
-                            Some((next.clone(), false)),
-                        ));
+                        assignments.push((entry.field, OP_VALUE, Some((next.clone(), false))));
                     } else {
                         assignments.push((entry.field, OP_OPTIONAL_BARE, None));
                     }
@@ -558,9 +548,7 @@ impl CoreFlatParser {
                             OP_COUNTER_BARE,
                             Some((String::new(), entry.negative)),
                         )),
-                        KIND_OPTIONAL => {
-                            assignments.push((entry.field, OP_OPTIONAL_BARE, None))
-                        }
+                        KIND_OPTIONAL => assignments.push((entry.field, OP_OPTIONAL_BARE, None)),
                         _ => unreachable!(),
                     }
                     pos += 1;
@@ -581,7 +569,7 @@ impl CoreFlatParser {
                         };
                         if next.starts_with('-') {
                             return Err(
-                                "dash-prefixed required clustered value needs argparse".to_owned(),
+                                "dash-prefixed required clustered value needs argparse".to_owned()
                             );
                         }
                         *index += 1;

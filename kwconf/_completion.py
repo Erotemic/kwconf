@@ -245,11 +245,14 @@ def try_config_argcomplete(
     )
 
 
-def _modal_static_model(modal: Any):
-    """Build the static modal model shared by routing and completion.
+def _modal_route_model(modal: Any):
+    """Build only the static metadata needed to route a ModalCLI invocation.
 
-    Returns option specs, command specs, and a map from canonical command path
-    to the leaf metadata that ModalCLI would otherwise install on argparse.
+    Unlike :func:`_modal_static_model`, this deliberately does *not* compile
+    every leaf Config's option schema.  Routing only needs the command tree.
+    ``_update_metadata`` is still used so command/alias/main semantics and the
+    parser-stage Config materialization remain identical to the canonical
+    ModalCLI path.
     """
     from kwconf import _rust
 
@@ -301,8 +304,11 @@ def _modal_static_model(modal: Any):
             command, aliases = fuzzy_names(
                 metadata['command'], metadata.get('alias') or [], fuzzy
             )
-            help_text = metadata.get('parserkw', {}).get('help') or ''
-            command_specs.append((list(path), command, aliases, help_text))
+            # Bash candidate-only completion and routing do not consume help
+            # descriptions. Keep the shared Rust command index compact here;
+            # descriptive shell protocols delegate to argcomplete before this
+            # model is built.
+            command_specs.append((list(path), command, aliases, ''))
             next_path = path + (command,)
             if metadata.get('is_modal'):
                 walk(
@@ -314,48 +320,11 @@ def _modal_static_model(modal: Any):
             else:
                 child = metadata['subconfig']
                 child_own_fuzzy = bool(getattr(child, '__fuzzy_hyphens__', 1))
-                child_effective_fuzzy = (
-                    child_own_fuzzy if fuzzy else False
-                )
+                child_effective_fuzzy = child_own_fuzzy if fuzzy else False
                 child_own_short = bool(
                     getattr(child, '__short_alias_clusters__', True)
                 )
-                child_effective_short = (
-                    child_own_short if short_clusters else False
-                )
-                # A Modal leaf with SubConfig selectors can change its own
-                # option grammar after the command has already been routed.
-                # Keep that richer multipass completion exact by delegating the
-                # modal request to argcomplete.  Static/modal leaves without
-                # selectors remain native.
-                if _rust.completion_selector_spellings(child):
-                    raise _rust.UnsupportedSchema(
-                        'modal leaf with SubConfig selectors requires canonical argcomplete'
-                    )
-                child_options = _rust.completion_specs_for_config(
-                    child,
-                    special_options=False,
-                    fuzzy_hyphens=child_effective_fuzzy,
-                )
-                for _, spellings, takes_value, choices, field_help in child_options:
-                    option_specs.append(
-                        (
-                            list(next_path),
-                            spellings,
-                            takes_value,
-                            choices,
-                            field_help,
-                        )
-                    )
-                option_specs.append(
-                    (
-                        list(next_path),
-                        ['-h', '--help'],
-                        False,
-                        [],
-                        'show this help message and exit',
-                    )
-                )
+                child_effective_short = child_own_short if short_clusters else False
                 leaf_by_path[next_path] = {
                     'metadata': metadata,
                     'effective_fuzzy': child_effective_fuzzy,
@@ -366,8 +335,116 @@ def _modal_static_model(modal: Any):
     return option_specs, command_specs, leaf_by_path
 
 
+def _modal_static_model(modal: Any):
+    """Build the complete static modal model for compatibility/debugging.
+
+    The hot routing and ordinary command-name completion paths use the lighter
+    :func:`_modal_route_model`. This full model remains available for callers
+    that need every leaf option at once.
+    """
+    from kwconf import _rust
+
+    option_specs, command_specs, leaf_by_path = _modal_route_model(modal)
+    for path, leaf_info in leaf_by_path.items():
+        child = leaf_info['metadata']['subconfig']
+        # A Modal leaf with SubConfig selectors can change its own option
+        # grammar after the command has already been routed. The complete model
+        # cannot represent all selector-dependent grammars simultaneously.
+        if _rust.completion_selector_spellings(child):
+            raise _rust.UnsupportedSchema(
+                'modal leaf with SubConfig selectors requires canonical argcomplete'
+            )
+        child_options = _rust.completion_specs_for_config(
+            child,
+            special_options=False,
+            fuzzy_hyphens=leaf_info['effective_fuzzy'],
+        )
+        for _, spellings, takes_value, choices, field_help in child_options:
+            option_specs.append(
+                (list(path), spellings, takes_value, choices, field_help)
+            )
+        option_specs.append(
+            (
+                list(path),
+                ['-h', '--help'],
+                False,
+                [],
+                'show this help message and exit',
+            )
+        )
+    return option_specs, command_specs, leaf_by_path
+
+
 def _modal_completion_specs(modal: Any):
     option_specs, command_specs, _ = _modal_static_model(modal)
+    return option_specs, command_specs
+
+
+def _route_modal_context(command_specs, argv_before):
+    """Resolve completed command tokens to a canonical modal path in Python.
+
+    This only guides which *single* leaf option schema must be compiled for
+    completion. Rust still owns the actual candidate matching/output.
+    """
+    choices = {}
+    for path, command, aliases, _help in command_specs:
+        table = choices.setdefault(tuple(path), {})
+        table[command] = command
+        for alias in aliases:
+            table[alias] = command
+
+    path = ()
+    consumed = 0
+    for token in argv_before:
+        if token.startswith('-'):
+            break
+        canonical = choices.get(path, {}).get(token)
+        if canonical is None:
+            break
+        path = path + (canonical,)
+        consumed += 1
+    return path, consumed
+
+
+def _modal_completion_specs_for_context(modal: Any, context):
+    """Build modal completion metadata, compiling at most one leaf schema."""
+    from kwconf import _rust
+
+    option_specs, command_specs, leaf_by_path = _modal_route_model(modal)
+    argv_before, _prefix = context
+    path, consumed = _route_modal_context(command_specs, argv_before)
+    leaf_info = leaf_by_path.get(path)
+    if leaf_info is None:
+        return option_specs, command_specs
+
+    child = leaf_info['metadata']['subconfig']
+    leaf_argv = argv_before[consumed:]
+    selectors = set(_rust.completion_selector_spellings(child))
+    if selectors and any(
+        token in selectors
+        or any(token.startswith(spelling + '=') for spelling in selectors)
+        for token in leaf_argv
+    ):
+        return None
+
+    child_options = _rust.completion_specs_for_config(
+        child,
+        special_options=False,
+        fuzzy_hyphens=leaf_info['effective_fuzzy'],
+    )
+    for _, spellings, takes_value, choices, field_help in child_options:
+        option_specs.append(
+            (list(path), spellings, takes_value, choices, field_help)
+        )
+    option_specs.append(
+        (
+            list(path),
+            ['-h', '--help'],
+            False,
+            [],
+            'show this help message and exit',
+        )
+    )
     return option_specs, command_specs
 
 
@@ -400,7 +477,10 @@ def try_modal_argcomplete(
     try:
         from kwconf import _rust
 
-        option_specs, command_specs = _modal_completion_specs(modal)
+        specs = _modal_completion_specs_for_context(modal, context)
+        if specs is None:
+            return False
+        option_specs, command_specs = specs
         index = _rust.make_completion_index(option_specs, command_specs)
     except Exception:
         return False

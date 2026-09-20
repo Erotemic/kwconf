@@ -71,11 +71,11 @@ def try_modal_main(
 
         if backend == 'auto' and not _rust.extension_available():
             return NOT_HANDLED
-        option_specs, command_specs, leaf_by_path = _completion._modal_static_model(
+        _option_specs, command_specs, leaf_by_path = _completion._modal_route_model(
             modal
         )
-        # Reuse the same compact Rust command index as completion. Options are
-        # not needed for routing; leaf Config.cli() owns the remaining argv.
+        # Reuse the same compact Rust command index as completion. Leaf option
+        # schemas are intentionally not compiled until a command is selected.
         index = _rust.make_completion_index([], command_specs)
         routed = index.route(args)
     except Exception:
@@ -126,15 +126,15 @@ def try_modal_main(
     if native_probe is None:
         return NOT_HANDLED
 
-    parsed = leaf_cls.cli(
-        argv=remaining,
-        strict=strict,
-        autocomplete=False,
-        special_options=False,
-    )
-
-    explicit = getattr(parsed, '_explicit_argv_keys', frozenset())
-    explicit_kw = {key: parsed[key] for key in explicit if key in parsed}
+    # Canonical ModalCLI parses the selected command once, then forwards only
+    # explicitly supplied values to its ``main`` method. Do the same here:
+    # constructing a second parsed Config would run an extra Config lifecycle
+    # that argparse ModalCLI never performs and needlessly duplicate work.
+    explicit_kw = {
+        key: native_probe.values[key]
+        for key in native_probe.explicit_keys
+        if key in native_probe.values
+    }
     sub_main = metadata['main_func']
     control_kw = {'argv': False} if _has_named_parameter(sub_main, 'argv') else {}
     ret = sub_main(**control_kw, **explicit_kw)
