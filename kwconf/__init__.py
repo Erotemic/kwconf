@@ -32,7 +32,7 @@ Ignore:
     mkinit ~/code/kwconf/kwconf/__init__.py --nomods --relative -w
 """
 
-__version__ = '0.11.1'
+__version__ = '0.12.0'
 
 __submodules__ = {
     'modal': ['ModalCLI', 'ModalValue'],

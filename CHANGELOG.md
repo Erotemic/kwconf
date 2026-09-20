@@ -3,7 +3,7 @@ We [keep a changelog](https://keepachangelog.com/en/1.0.0/).
 We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## Version 0.11.1 - Unreleased
+## Version 0.12.0 - Unreleased
 
 ### Added
 * ``Config.port_to_pydantic()`` generates Pydantic 2 ``BaseModel`` source. It
