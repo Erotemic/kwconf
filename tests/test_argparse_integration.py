@@ -122,7 +122,10 @@ def test_kwconf_ordinary_fields_share_one_argparse_action_class():
     }
     assert type(actions['count']) is value_mod._SmartParseAction
     assert type(actions['name']) is value_mod._SmartParseAction
-    assert actions['count']._kwconf_template is not actions['name']._kwconf_template
+    assert (
+        actions['count']._kwconf_template
+        is not actions['name']._kwconf_template
+    )
     # The shared action's public ``type`` callable must not point back to the
     # action itself. argparse includes ``type`` in Action.__repr__, so a bound
     # action method would recurse forever here.
@@ -147,8 +150,8 @@ def test_port_from_kwconf_parser_hides_internal_smart_coercer():
     text = C.port_from_argparse(parser)
 
     assert '_SmartValueCoercer' not in text
-    assert "plain = kwconf.Value(None" in text
-    assert "group=\"'group-a'\"" in text
+    assert 'plain = kwconf.Value(None' in text
+    assert 'group="\'group-a\'"' in text
     assert 'count = kwconf.Value(0, type=int' in text
 
     namespace = {}

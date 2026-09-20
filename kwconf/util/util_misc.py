@@ -4,8 +4,7 @@ Misc small helpers vendored to keep kwconf dependency-free at runtime.
 
 from __future__ import annotations
 
-import copy
-from typing import Any
+from kwconf._typing_runtime import Any
 
 
 class _NoParamType:
@@ -46,6 +45,24 @@ NoParam = _NoParamType()
 
 
 _ATOMIC_IMMUTABLE_TYPES = (type(None), bool, int, float, complex, str, bytes)
+
+
+class _LazyCopyModule:
+    """Compatibility proxy that keeps :mod:`copy` off the cold path.
+
+    ``util_misc.copy`` existed as a module attribute historically and a few
+    downstream tests/tools monkeypatch ``copy.deepcopy`` through it.  Keeping
+    a proxy preserves that surface without importing the stdlib module merely
+    to construct scalar configurations.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        import copy as copy_module
+
+        return getattr(copy_module, name)
+
+
+copy = _LazyCopyModule()
 
 
 def copy_value(value: Any, *, context: str = 'configuration default') -> Any:

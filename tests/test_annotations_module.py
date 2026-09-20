@@ -74,3 +74,17 @@ def test_choices_union_of_literals_combines():
 
     annotation = typing.Literal['a'] | typing.Literal['b']
     assert ann.choices_from_annotation(annotation) == ('a', 'b')
+
+
+def test_pep585_generic_alias_origin_precedes_type_shortcut():
+    """Parameterized builtin aliases must normalize before plain-type logic.
+
+    Python 3.10 can report ``isinstance(list[int], type)`` differently than
+    newer interpreters.  These assertions describe the cross-version contract
+    kwconf needs rather than relying on that implementation detail.
+    """
+    assert ann._origin(list[int]) is list
+    assert ann._args(list[int]) == (int,)
+    assert ann.runtime_type_from_annotation(list[int]) is list
+    assert ann.value_matches_annotation([1, 2], list[int])
+    assert not ann.value_matches_annotation(['1'], list[int])

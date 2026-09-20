@@ -151,3 +151,15 @@ In particular, the expected scaling properties are:
 The benchmark forces Matplotlib's non-interactive `Agg` backend when writing
 plots. This intentionally ignores interactive backends selected by a user
 Matplotlib rc file (for example `QtAgg`), so `uv run` does not need Qt bindings.
+
+## Cold Python CLI checks
+
+The retained cold benchmarks compare canonical kwconf against stdlib argparse
+without optional backends. They are intended to keep startup, parser-build, and
+one-shot parse regressions visible while preserving the Python-side startup
+optimizations discovered during the native-backend experiment.
+
+```bash
+python dev/benchmarks/realistic_cli_runtime.py --cold-only
+python dev/benchmarks/cli_runtime.py --quick
+```

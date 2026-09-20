@@ -144,7 +144,9 @@ def test_port_to_pydantic_does_not_require_pydantic_to_generate(monkeypatch):
 
     def guarded_import(name, *args, **kwargs):
         if name == 'pydantic' or name.startswith('pydantic.'):
-            raise AssertionError('kwconf imported pydantic while generating source')
+            raise AssertionError(
+                'kwconf imported pydantic while generating source'
+            )
         return real_import(name, *args, **kwargs)
 
     class Demo(kwconf.Config):
