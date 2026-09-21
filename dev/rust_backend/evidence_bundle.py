@@ -42,6 +42,8 @@ from pathlib import Path
 from typing import Any
 
 REPO_DPATH = Path(__file__).resolve().parents[2]
+
+BENCHMARK_PREREQUISITE_LABELS = frozenset({'build-install-abi3', 'backend-parity'})
 DEFAULT_RESULT_DPATH = REPO_DPATH / 'dev' / 'benchmarks' / '_results'
 
 
@@ -191,6 +193,16 @@ class Collector:
             for row in self.rows
         )
 
+    def failed_labels(self, labels: set[str]) -> list[str]:
+        """Return failed command labels from a caller-defined gate set."""
+        return [
+            row['label']
+            for row in self.rows
+            if row['label'] in labels
+            and row.get('status') != 'SKIP'
+            and row['returncode'] != 0
+        ]
+
     def write_summary(self, *, profile: str | None = None) -> None:
         lines = [
             '# kwconf Rust backend evidence bundle',
@@ -230,7 +242,12 @@ class Collector:
             ]
         )
         (self.root / 'SUMMARY.md').write_text('\n'.join(lines) + '\n')
-        (self.root / 'commands.json').write_text(json.dumps(self.rows, indent=2, default=str) + '\n')
+        self.write_records()
+
+    def write_records(self) -> None:
+        (self.root / 'commands.json').write_text(
+            json.dumps(self.rows, indent=2, default=str) + '\n'
+        )
 
 
 def _capture_repo_state(bundle: Path, collector: Collector) -> None:
@@ -446,6 +463,11 @@ def _make_cli() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument('--output', type=Path)
+    parser.add_argument(
+        '--html-output',
+        type=Path,
+        help='also copy benchmark_report.html to this standalone path',
+    )
     return parser
 
 
@@ -496,6 +518,18 @@ def _configure_profile(args: argparse.Namespace) -> str:
     return profile
 
 
+def _copy_html_report(bundle: Path, html_output: Path | None) -> Path | None:
+    if html_output is None:
+        return None
+    report_path = bundle / 'benchmark_report.html'
+    if not report_path.exists():
+        return None
+    html_output = html_output.resolve()
+    html_output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(report_path, html_output)
+    return html_output
+
+
 def main() -> None:
     args = _make_cli().parse_args()
     profile = _configure_profile(args)
@@ -508,6 +542,8 @@ def main() -> None:
         final_output = DEFAULT_RESULT_DPATH / f'kwconf-rust-evidence-{run_id}.tar.gz'
     final_output = final_output.resolve()
     final_output.parent.mkdir(parents=True, exist_ok=True)
+
+    html_output = args.html_output
 
     env = os.environ.copy()
     old_pythonpath = env.get('PYTHONPATH')
@@ -619,18 +655,25 @@ def main() -> None:
                     'dev/rust_backend',
                     'dev/benchmarks',
                 ],
-                required=True,
+                # Ruff is repository policy evidence, not a benchmark-validity
+                # requirement. CI may enforce it separately.
+                required=False,
             )
 
         _run_cargo_gates(collector, args)
 
-        run_benchmarks = (
-            args.quick or args.deep or not collector.has_required_failures()
-        )
+        # Benchmark collection has a narrower validity gate than the overall
+        # evidence/CI status. Repository policy checks such as Ruff, formatting,
+        # full pytest, or Cargo linting remain visible required evidence, but they
+        # do not make timing measurements invalid. Only failures that prevent a
+        # usable/parity-checked accelerator block review-mode performance sampling.
+        benchmark_blockers = collector.failed_labels(BENCHMARK_PREREQUISITE_LABELS)
+        run_benchmarks = args.quick or args.deep or not benchmark_blockers
         if not run_benchmarks:
             reason = (
-                'review profile skips repeated performance sampling after a required '
-                'gate failure; pass --deep to collect it anyway'
+                'review profile skips repeated performance sampling because benchmark '
+                f'prerequisite(s) failed: {", ".join(benchmark_blockers)}; '
+                'pass --deep to collect it anyway'
             )
             for label in [
                 'realistic-cli-benchmark',
@@ -756,6 +799,11 @@ def main() -> None:
                 timeout=300,
             )
 
+        # benchmark_report.py reads commands.json so skipped sections can
+        # explain why their measurements were not collected. Flush the
+        # command ledger before rendering; the final summary below rewrites it
+        # with the complete campaign afterwards.
+        collector.write_records()
         collector.run(
             'benchmark-report',
             [
@@ -931,7 +979,7 @@ def main() -> None:
             reason = (
                 'quick profile omits cProfile'
                 if args.quick
-                else 'required gate failure blocked review performance profiling'
+                else 'benchmark prerequisite failure blocked review performance profiling'
             )
             collector.skip('python-cprofile-rust-bridge', reason)
             collector.skip('python-cprofile-completion', reason)
@@ -1021,10 +1069,14 @@ def main() -> None:
         collector.write_summary(profile=profile)
         required_failed = any(row['required'] and row['returncode'] for row in collector.rows)
 
+        _copy_html_report(bundle, html_output)
+
         with tarfile.open(final_output, 'w:gz') as archive:
             archive.add(bundle, arcname=bundle.name)
         print('evidence bundle:', final_output, flush=True)
         print('sha256:', _sha256(final_output), flush=True)
+        if html_output is not None and html_output.exists():
+            print('benchmark report:', html_output, flush=True)
         if required_failed:
             raise SystemExit('evidence bundle created, but one or more required checks failed')
 

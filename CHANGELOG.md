@@ -44,6 +44,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   snapshots, and every command log into one tarball.
 
 ### Changed
+* Rust evidence reports now flush the command ledger before HTML rendering, so
+  benchmark sections that were skipped after a failed gate explain why instead
+  of appearing as unexplained missing data.
 * The optional native accelerator now ships as a separate ``kwconf-rust``
   distribution maintained in the same repository. The normal ``kwconf``
   package remains pure Python and has no binary dependency; installing

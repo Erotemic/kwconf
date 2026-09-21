@@ -165,7 +165,9 @@ forcing arbitrary Python callbacks into a Rust API.
 Use the review-quality evaluation campaign for normal handoffs:
 
 ```bash
-python dev/rust_backend/evidence_bundle.py
+python dev/rust_backend/evidence_bundle.py \
+    --output ~/Downloads/kwconf-rust-evidence.tar.gz \
+    --html-output ~/Downloads/kwconf-benchmark-report.html
 # minimal edit/test-loop diagnostic
 python dev/rust_backend/evidence_bundle.py --quick
 # exhaustive release-performance/profiling campaign
@@ -184,8 +186,11 @@ cProfile, perf, and the separate ``kwconf-rs`` test run move to ``--deep``.
 Required correctness failures are collected before the expensive repeated
 benchmarks. In review mode a failed gate causes those timing campaigns to be
 recorded as skipped; use ``--deep`` when performance evidence is still wanted
-from a failing tree. Every command row records elapsed time in ``commands.json``
-and ``SUMMARY.md`` so the collector's own runtime can be audited.
+from a failing tree. ``--html-output`` copies the self-contained benchmark report
+to the requested standalone path before the collector returns, including when a
+required gate makes the overall command return nonzero. Every command row records
+elapsed time in ``commands.json`` and ``SUMMARY.md`` so the collector's own
+runtime can be audited.
 
 The bundle also contains the exact changed source snapshot, generated benchmark
 programs, raw observations, wheel metadata/hash, and every command log. When a

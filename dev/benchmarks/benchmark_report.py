@@ -28,6 +28,21 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(file))
 
 
+def _command_skip_reason(evidence: Path, label: str) -> str | None:
+    rows = _read_json(evidence / 'commands.json', [])
+    for row in rows:
+        if row.get('label') == label and row.get('status') == 'SKIP':
+            return row.get('reason') or 'the campaign skipped this measurement'
+    return None
+
+
+def _missing_message(evidence: Path, label: str, fallback: str) -> str:
+    reason = _command_skip_reason(evidence, label)
+    if reason:
+        return f'Not collected: {html.escape(str(reason))}.'
+    return fallback
+
+
 def _extract_snippet(text: str, name: str) -> str:
     start = f'# REPORT_SNIPPET_{name}_START'
     end = f'# REPORT_SNIPPET_{name}_END'
@@ -81,10 +96,13 @@ def _render_realistic(evidence: Path) -> str:
 <section><h3>kwconf</h3><pre><code>{k}</code></pre></section>
 </div>'''
     if not data:
+        if source:
+            fallback = 'No measured realistic-CLI row was found in this evidence bundle.'
+        else:
+            fallback = 'This evidence bundle predates the realistic-CLI benchmark.'
+        message = _missing_message(evidence, 'realistic-cli-benchmark', fallback)
         return f'''<section id="realistic"><h2>Realistic CLI comparison</h2>
-<p>The report generator supports the normal-sized CLI benchmark in
-<code>examples/09_argparse_comparison.py</code>. This evidence bundle predates
-that benchmark, so no measured realistic-CLI row is available yet.</p>{snippets}</section>'''
+<p>{message}</p>{snippets}</section>'''
 
     cold_a = float(data['cold']['argparse']['median_ns'])
     cold_k = float(data['cold']['kwconf']['median_ns'])
@@ -113,7 +131,8 @@ that benchmark, so no measured realistic-CLI row is available yet.</p>{snippets}
 def _render_startup(evidence: Path) -> str:
     rows = _read_csv(evidence / 'startup' / 'summary.csv')
     if not rows:
-        return '<section><h2>Cold startup</h2><p>No startup results.</p></section>'
+        message = _missing_message(evidence, 'real-cli-startup', 'No startup results were found.')
+        return f'<section><h2>Cold startup</h2><p>{message}</p></section>'
     by_size: dict[int, dict[str, dict[str, str]]] = {}
     for row in rows:
         by_size.setdefault(int(row['schema_size']), {})[row['method']] = row
@@ -142,7 +161,12 @@ def _render_startup(evidence: Path) -> str:
 def _render_components(evidence: Path) -> str:
     rows = _read_csv(evidence / 'components' / 'rust_cli_runtime.csv')
     if not rows:
-        return '<section><h2>In-process runtime</h2><p>No component results.</p></section>'
+        message = _missing_message(
+            evidence,
+            'python-pyo3-benchmark',
+            'No in-process component results were found.',
+        )
+        return f'<section><h2>In-process runtime</h2><p>{message}</p></section>'
     wanted = ['hot_parse', 'warm_end_to_end', 'one_shot_end_to_end', 'schema_build']
     blocks = []
     for family in wanted:
@@ -188,6 +212,13 @@ def _render_components(evidence: Path) -> str:
 def _render_completion(evidence: Path) -> str:
     data = _read_json(evidence / 'completion' / 'summary.json', {})
     cases = data.get('cases', [])
+    if not cases:
+        message = _missing_message(
+            evidence,
+            'completion-benchmark',
+            'No completion benchmark results were found.',
+        )
+        return f'<section id="completion"><h2>Completion</h2><p>{message}</p></section>'
     native = [c for c in cases if c.get('expected_ownership') == 'native']
     delegated = [c for c in cases if c.get('expected_ownership') == 'delegated']
     ratios = []
@@ -209,16 +240,37 @@ def _render_modal_help(evidence: Path) -> str:
     modal = _read_json(evidence / 'modal' / 'summary.json', {})
     help_data = _read_json(evidence / 'help' / 'summary.json', {})
     trs = []
-    for case in modal.get('cases', []):
+    modal_cases = modal.get('cases', [])
+    for case in modal_cases:
         m = case['methods'].get('kwconf_rust')
         if m:
             ratio = float(m['ratio'])
             trs.append(f'<tr><td>{case["commands"]}</td><td>{m["median_ms"]:.2f} ms</td><td class="{_ratio_class(ratio)}">{_ratio(ratio)}</td></tr>')
+    if modal_cases:
+        modal_body = f'<table><thead><tr><th>Commands</th><th>Rust median</th><th>vs argparse</th></tr></thead><tbody>{"".join(trs)}</tbody></table>'
+    else:
+        modal_message = _missing_message(
+            evidence,
+            'modal-benchmark',
+            'No ModalCLI benchmark results were found.',
+        )
+        modal_body = f'<p>{modal_message}</p>'
+
     help_cases = help_data.get('cases', [])
-    help_parity = all(bool(c.get('exact_output_parity')) for c in help_cases) if help_cases else False
+    if help_cases:
+        help_parity = all(bool(c.get('exact_output_parity')) for c in help_cases)
+        help_body = f'<div class="metric"><span>Help/color cases</span><strong>{len(help_cases)}</strong><small>stdlib, Rich, forced color, NO_COLOR</small></div><div class="metric"><span>Exact output parity</span><strong>{str(help_parity).lower()}</strong><small>canonical formatter output</small></div>'
+    else:
+        help_message = _missing_message(
+            evidence,
+            'help-color-benchmark',
+            'No help/color benchmark results were found.',
+        )
+        help_body = f'<p>{help_message}</p>'
+
     return f'''<section id="surface"><h2>Modal routing and help/color</h2>
-<div class="two-col"><div><h3>ModalCLI cold routing</h3><table><thead><tr><th>Commands</th><th>Rust median</th><th>vs argparse</th></tr></thead><tbody>{''.join(trs)}</tbody></table></div>
-<div><h3>Presentation parity</h3><div class="metric"><span>Help/color cases</span><strong>{len(help_cases)}</strong><small>stdlib, Rich, forced color, NO_COLOR</small></div><div class="metric"><span>Exact output parity</span><strong>{str(help_parity).lower()}</strong><small>canonical formatter output</small></div></div></div></section>'''
+<div class="two-col"><div><h3>ModalCLI cold routing</h3>{modal_body}</div>
+<div><h3>Presentation parity</h3>{help_body}</div></div></section>'''
 
 
 def _render_ownership(evidence: Path) -> str:
