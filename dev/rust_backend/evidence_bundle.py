@@ -237,14 +237,14 @@ def _capture_repo_state(bundle: Path, collector: Collector) -> None:
     for label, command in [
         ('git-status', ['git', '-c', f'safe.directory={REPO_DPATH}', 'status', '--short']),
         ('git-revision', ['git', '-c', f'safe.directory={REPO_DPATH}', 'rev-parse', 'HEAD']),
-        ('git-diff-stat', ['git', '-c', f'safe.directory={REPO_DPATH}', 'diff', '--stat']),
-        ('git-diff-check', ['git', '-c', f'safe.directory={REPO_DPATH}', 'diff', '--check']),
+        ('git-diff-stat', ['git', '-c', f'safe.directory={REPO_DPATH}', 'diff', 'HEAD', '--stat']),
+        ('git-diff-check', ['git', '-c', f'safe.directory={REPO_DPATH}', 'diff', 'HEAD', '--check']),
     ]:
         collector.run(label, command, required=(label == 'git-diff-check'))
     patch = bundle / 'repo.diff'
     try:
         proc = subprocess.run(
-            ['git', '-c', f'safe.directory={REPO_DPATH}', 'diff', '--binary'],
+            ['git', '-c', f'safe.directory={REPO_DPATH}', 'diff', 'HEAD', '--binary'],
             cwd=REPO_DPATH,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -256,64 +256,44 @@ def _capture_repo_state(bundle: Path, collector: Collector) -> None:
 
 
 def _capture_source_snapshot(bundle: Path) -> None:
-    """Copy the implementation under review into the evidence bundle.
+    """Copy the exact tracked + untracked working source into the bundle.
 
-    ``git diff`` does not include untracked files, which is exactly where most
-    experimental accelerator files live during this campaign.  Keep a compact
-    source snapshot so a returned bundle is sufficient to reproduce/debug the
-    result without asking for another archive.
+    Use Git as the source of truth so staged and untracked files that actually
+    participated in the campaign are preserved as well. Generated benchmark
+    outputs and build products remain excluded through normal .gitignore rules.
     """
     destination = bundle / 'source_snapshot'
     destination.mkdir()
-    files = [
-        '.gitignore',
-        'CHANGELOG.md',
-        'MANIFEST.in',
-        'pyproject.toml',
-        'kwconf/__init__.py',
-        'kwconf/config.py',
-        'kwconf/modal.py',
-        'kwconf/value.py',
-        'kwconf/subconfig.py',
-        'kwconf/_rust.py',
-        'kwconf/_completion.py',
-        'kwconf/_modal_rust.py',
-        'kwconf/_config_cold.py',
-        'kwconf/_typing_runtime.py',
-        'kwconf/_typing_runtime.pyi',
-        'kwconf/_value_cold.py',
-        'dev/benchmarks/README.md',
-        'dev/benchmarks/cli_runtime.py',
-        'dev/benchmarks/cli_startup.py',
-        'dev/benchmarks/rust_cli_runtime.py',
-        'dev/benchmarks/completion_runtime.py',
-        'dev/benchmarks/help_runtime.py',
-        'dev/benchmarks/modal_runtime.py',
-        'tests/test_rust_backend.py',
-        'tests/test_rust_completion.py',
-        'tests/test_rust_optional_ecosystem.py',
-        'tests/test_ubelt_repr.py',
+    command = [
+        'git',
+        '-c',
+        f'safe.directory={REPO_DPATH}',
+        'ls-files',
+        '--cached',
+        '--others',
+        '--exclude-standard',
+        '-z',
     ]
-    trees = [
-        'dev/rust_backend',
-        'rust/kwconf_accel',
-        'rust/kwconf_accel_core',
-    ]
-    for rel in files:
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=REPO_DPATH,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return
+    for raw in proc.stdout.split(b'\0'):
+        if not raw:
+            continue
+        rel = Path(os.fsdecode(raw))
         src = REPO_DPATH / rel
-        if not src.exists():
+        if not src.is_file():
             continue
         dst = destination / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
-    ignore = shutil.ignore_patterns(
-        'target', 'dist', '__pycache__', '*.pyc', '.pytest_cache',
-        '_results', '_profiles', 'criterion',
-    )
-    for rel in trees:
-        src = REPO_DPATH / rel
-        if src.exists():
-            shutil.copytree(src, destination / rel, dirs_exist_ok=True, ignore=ignore)
 
 
 def _capture_wheel(bundle: Path) -> None:
@@ -455,6 +435,8 @@ def _make_cli() -> argparse.ArgumentParser:
     parser.add_argument('--delegated-completion-trials', type=int)
     parser.add_argument('--modal-trials', type=int)
     parser.add_argument('--help-trials', type=int)
+    parser.add_argument('--realistic-trials', type=int)
+    parser.add_argument('--realistic-warm-loops', type=int)
     parser.add_argument(
         '--kwconf-rs',
         default='auto',
@@ -477,6 +459,8 @@ def _configure_profile(args: argparse.Namespace) -> str:
             'delegated_completion_trials': 2,
             'modal_trials': 2,
             'help_trials': 1,
+            'realistic_trials': 2,
+            'realistic_warm_loops': 1000,
         }
     elif args.deep:
         # These match the historical full campaign. Keep this mode available
@@ -488,6 +472,8 @@ def _configure_profile(args: argparse.Namespace) -> str:
             'delegated_completion_trials': 50,
             'modal_trials': 50,
             'help_trials': 30,
+            'realistic_trials': 50,
+            'realistic_warm_loops': 30000,
         }
     else:
         # Review mode keeps every correctness/parity dimension but spends
@@ -499,6 +485,8 @@ def _configure_profile(args: argparse.Namespace) -> str:
             'delegated_completion_trials': 2,
             'modal_trials': 15,
             'help_trials': 3,
+            'realistic_trials': 15,
+            'realistic_warm_loops': 10000,
         }
     for name, value in defaults.items():
         if getattr(args, name) is None:
@@ -538,6 +526,8 @@ def main() -> None:
             'delegated_completion_trials': args.delegated_completion_trials,
             'modal_trials': args.modal_trials,
             'help_trials': args.help_trials,
+            'realistic_trials': args.realistic_trials,
+            'realistic_warm_loops': args.realistic_warm_loops,
         }
         (bundle / 'campaign.json').write_text(json.dumps(campaign, indent=2) + '\n')
         print('campaign profile:', profile, campaign, flush=True)
@@ -643,6 +633,7 @@ def main() -> None:
                 'gate failure; pass --deep to collect it anyway'
             )
             for label in [
+                'realistic-cli-benchmark',
                 'real-cli-startup',
                 'python-pyo3-benchmark',
                 'completion-benchmark',
@@ -652,6 +643,24 @@ def main() -> None:
                 collector.skip(label, reason, required=True)
 
         if run_benchmarks:
+            realistic = bundle / 'realistic'
+            realistic.mkdir()
+            collector.run(
+                'realistic-cli-benchmark',
+                [
+                    sys.executable,
+                    'dev/benchmarks/realistic_cli_runtime.py',
+                    '--trials',
+                    str(args.realistic_trials),
+                    '--warm-loops',
+                    str(args.realistic_warm_loops),
+                    '--output-json',
+                    str(realistic / 'summary.json'),
+                ],
+                required=True,
+                timeout=180,
+            )
+
             startup = bundle / 'startup'
             startup.mkdir()
             startup_cmd = [
@@ -746,6 +755,19 @@ def main() -> None:
                 required=True,
                 timeout=300,
             )
+
+        collector.run(
+            'benchmark-report',
+            [
+                sys.executable,
+                'dev/benchmarks/benchmark_report.py',
+                str(bundle),
+                '--output',
+                str(bundle / 'benchmark_report.html'),
+            ],
+            required=True,
+            timeout=60,
+        )
 
         import_dir = bundle / 'importtime'
         import_dir.mkdir()

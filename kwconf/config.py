@@ -485,12 +485,18 @@ def _maybe_apply_annotation_to_value(key, value, annotations):
     # Plain runtime classes dominate typed Config declarations. Avoid two
     # generic annotation-dispatch calls for that case; unions/Literal/generics
     # still go through the centralized annotation helpers below.
-    if isinstance(annotation, type) and not _annotation_is_any(annotation):
-        runtime_type = annotation
+    runtime_type = _runtime_type_from_annotation(annotation)
+    if (
+        runtime_type is annotation
+        and isinstance(annotation, type)
+        and not _annotation_is_any(annotation)
+    ):
+        # Ordinary classes dominate typed Config declarations.  The identity
+        # check is important on Python 3.10 where ``list[int]`` can also satisfy
+        # ``isinstance(annotation, type)`` but normalizes to runtime type list.
         choices = None
         has_annotation = True
     else:
-        runtime_type = _runtime_type_from_annotation(annotation)
         choices = _choices_from_annotation(annotation)
         # A string annotation could not be resolved; there is nothing usable
         # to stash (validation handles richer forms from real objects).
@@ -1274,7 +1280,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         values: Dict[str, Any] = {}
         for key, template in self._default.items():
             if getattr(template, '_kwconf_is_subconfig', False):
-                values[key] = template.instantiate(
+                subconfig_template: Any = template
+                values[key] = subconfig_template.instantiate(
                     _dont_call_post_init=_dont_call_post_init
                 )
             elif isinstance(template, Value):

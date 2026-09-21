@@ -59,7 +59,7 @@ else:
         """Use the collections.abc generic when annotations are evaluated."""
 
         def __class_getitem__(cls, item):
-            return ABCCallable[item]
+            return ABCCallable.__class_getitem__(item)
 
     class _OptionalRuntime:
         """PEP 604 equivalent of ``typing.Optional`` for runtime evaluation."""

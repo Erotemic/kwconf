@@ -1506,7 +1506,7 @@ def load(
         for key in unknown_keys:
             user_config.pop(key, None)
 
-    if has_subconfigs:
+    if _subcfg_mod is not None:
         localns = _subcfg_mod.resolve_localns(localns, stacklevel)
     if _reset:
         self._reset_data_from_defaults(
@@ -1516,7 +1516,7 @@ def load(
     # when argv=False so reusing a Config cannot satisfy required fields
     # with stale history from a prior parse. Flat configs can update the
     # root directly without importing the nested-config implementation.
-    if has_subconfigs:
+    if _subcfg_mod is not None:
         _subcfg_mod.distribute_explicit_argv_keys(self, set())
         _subcfg_mod.distribute_provided_keys(self, set())
     else:
@@ -1524,7 +1524,7 @@ def load(
         self._provided_keys = frozenset()
     provided_keys: set[str] = set()
     pending_updates = None
-    if has_subconfigs:
+    if _subcfg_mod is not None:
         if argv:
             # Preserve the original mapping shape until the canonical
             # SubConfig update boundary. Pre-flattening here discards the
@@ -1568,14 +1568,14 @@ def load(
         read_argv_kwargs['argv'] = argv
         provided_keys.update(self._read_argv(**read_argv_kwargs))
 
-    if has_subconfigs:
+    if _subcfg_mod is not None:
         _subcfg_mod.distribute_provided_keys(self, provided_keys)
     else:
         self._provided_keys = frozenset(provided_keys)
 
     if not _dont_call_post_init:
         self._validate_required_fields()
-        if has_subconfigs:
+        if _subcfg_mod is not None:
             _subcfg_mod.finalize_post_init(self)
         else:
             self.__post_init__()

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from kwconf._typing_runtime import TYPE_CHECKING, Any, MutableMapping, cast
+from kwconf._typing_runtime import TYPE_CHECKING, Any, cast
 from kwconf.config import Config, ConfigValidationError
 from kwconf.value import _Value as Value
 
@@ -74,8 +74,8 @@ def get_stack_frame(stacklevel: int = 0) -> FrameType:
 
 
 def resolve_localns(
-    localns: MutableMapping | None, stacklevel: int | None
-) -> MutableMapping | None:
+    localns: Mapping | None, stacklevel: int | None
+) -> Mapping | None:
     """
     Resolve the namespace for selector evaluation, if needed.
 

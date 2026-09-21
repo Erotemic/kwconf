@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+
 REPO_DPATH = Path(__file__).resolve().parents[1]
 EVIDENCE_PATH = REPO_DPATH / 'dev' / 'rust_backend' / 'evidence_bundle.py'
 
@@ -31,6 +32,8 @@ def test_evidence_campaign_profiles():
     assert review.delegated_completion_trials == 2
     assert review.modal_trials == 15
     assert review.help_trials == 3
+    assert review.realistic_trials == 15
+    assert review.realistic_warm_loops == 10000
 
     quick = parser.parse_args(['--quick'])
     assert module._configure_profile(quick) == 'quick'
@@ -39,6 +42,8 @@ def test_evidence_campaign_profiles():
     assert quick.delegated_completion_trials == 2
     assert quick.modal_trials == 2
     assert quick.help_trials == 1
+    assert quick.realistic_trials == 2
+    assert quick.realistic_warm_loops == 1000
 
     deep = parser.parse_args(['--deep'])
     assert module._configure_profile(deep) == 'deep'
@@ -47,6 +52,8 @@ def test_evidence_campaign_profiles():
     assert deep.delegated_completion_trials == 50
     assert deep.modal_trials == 50
     assert deep.help_trials == 30
+    assert deep.realistic_trials == 50
+    assert deep.realistic_warm_loops == 30000
 
 
 def test_evidence_profile_explicit_trials_win():
@@ -63,6 +70,10 @@ def test_evidence_profile_explicit_trials_win():
             '9',
             '--help-trials',
             '5',
+            '--realistic-trials',
+            '6',
+            '--realistic-warm-loops',
+            '7000',
         ]
     )
     assert module._configure_profile(args) == 'review'
@@ -71,6 +82,8 @@ def test_evidence_profile_explicit_trials_win():
     assert args.delegated_completion_trials == 4
     assert args.modal_trials == 9
     assert args.help_trials == 5
+    assert args.realistic_trials == 6
+    assert args.realistic_warm_loops == 7000
 
 
 def test_evidence_profiles_are_mutually_exclusive():

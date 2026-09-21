@@ -6,6 +6,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 ## Version 0.12.1 - Unreleased
 
 ### Added
+* A normal-sized argparse-vs-kwconf comparison example and self-contained
+  HTML benchmark report now present cold startup, warm invocation, component,
+  completion, ModalCLI, help/color, and native-vs-delegated evidence together.
+  The Rust evidence bundle emits the report automatically.
 * An experimental optional Rust-backed CLI accelerator can bypass argparse
   schema construction for common scalar/flag/counter/bare-option parses, fixed
   realized SubConfig leaves, static completion, and static ModalCLI routing,
@@ -97,6 +101,11 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   delegated paths still build the same parser stack when needed.
 
 ### Fixed
+* Annotation introspection now normalizes PEP 585 generic aliases before the
+  plain-runtime-class fast path. This restores Python 3.10 behavior for
+  ``list[T]`` / optional-container coercion and validation while retaining the
+  lazy ``typing`` import optimization. Cold SubConfig and runtime-typing shim
+  annotations are also explicit enough for the static checker.
 * The Rust evidence campaign now accepts Maturin's normal pure-Rust wrapper
   layout, uses at least two startup/completion observations in ``--quick`` mode,
   instantiates ``Config`` before exercising the instance ``argparse()`` API, and

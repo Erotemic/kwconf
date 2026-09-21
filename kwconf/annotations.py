@@ -54,9 +54,29 @@ def _typing_module():
 
 
 def _origin(annotation):
-    """Fast ``typing.get_origin`` equivalent for the forms kwconf needs."""
+    """Fast ``typing.get_origin`` equivalent for the forms kwconf needs.
+
+    Python 3.10 can report parameterized PEP 585 aliases such as ``list[int]``
+    as instances of ``type``.  Therefore the ordinary-class fast path must not
+    run until after checking ``__origin__``.  Newer interpreters do not all
+    share that quirk, which is why this needs to be normalized here rather than
+    at individual call sites.
+    """
     if isinstance(annotation, _UNION_TYPE):
         return _UNION_TYPE
+
+    direct_origin = getattr(annotation, '__origin__', None)
+    if direct_origin is not None:
+        # When typing is already loaded, prefer its public normalization.  This
+        # matters for forms such as Annotated whose raw ``__origin__`` is not
+        # necessarily the value returned by typing.get_origin().
+        typing_mod = _typing_if_loaded()
+        if typing_mod is not None:
+            normalized = typing_mod.get_origin(annotation)
+            if normalized is not None:
+                return normalized
+        return direct_origin
+
     # Ordinary classes dominate kwconf schemas and can never have a typing
     # origin. Short-circuit before consulting an already-imported ``typing``
     # module; ``typing.get_origin(str)`` is surprisingly visible when hundreds
@@ -66,17 +86,23 @@ def _origin(annotation):
     typing_mod = _typing_if_loaded()
     if typing_mod is not None:
         return typing_mod.get_origin(annotation)
-    return getattr(annotation, '__origin__', None)
+    return None
 
 
 def _args(annotation):
     """Fast ``typing.get_args`` equivalent without forcing a typing import."""
+    direct_args = getattr(annotation, '__args__', None)
+    if direct_args is not None:
+        typing_mod = _typing_if_loaded()
+        if typing_mod is not None:
+            return typing_mod.get_args(annotation)
+        return direct_args
     if isinstance(annotation, type):
         return ()
     typing_mod = _typing_if_loaded()
     if typing_mod is not None:
         return typing_mod.get_args(annotation)
-    return getattr(annotation, '__args__', ())
+    return ()
 
 
 def _is_any(annotation):
@@ -238,11 +264,12 @@ def runtime_type_from_annotation(annotation):
     # versions, so it must be recognized before the ordinary-class shortcut.
     if _is_any(annotation):
         return None
-    # Plain classes are by far the most common schema annotation and need no
-    # typing machinery at all.
-    if isinstance(annotation, type):
-        return annotation
     origin = _origin(annotation)
+    # Plain classes are by far the most common schema annotation and need no
+    # typing machinery at all.  Check the origin first because Python 3.10 may
+    # also consider ``list[int]`` and similar aliases to be instances of type.
+    if origin is None and isinstance(annotation, type):
+        return annotation
     if _is_literal_origin(origin):
         choice_types = {type(arg) for arg in _args(annotation)}
         if len(choice_types) == 1:
@@ -264,9 +291,11 @@ def runtime_type_from_annotation(annotation):
 
 def choices_from_annotation(annotation):
     """Return choices implied by ``Literal`` annotations and unions."""
-    if annotation is None or isinstance(annotation, (str, type)):
+    if annotation is None or isinstance(annotation, str):
         return None
     origin = _origin(annotation)
+    if origin is None and isinstance(annotation, type):
+        return None
     if _is_literal_origin(origin):
         return _args(annotation)
     if _is_union_origin(origin):

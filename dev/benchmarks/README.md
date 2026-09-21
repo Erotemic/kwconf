@@ -272,3 +272,21 @@ summary.
 The command always creates one ``kwconf-rust-evidence-*.tar.gz`` bundle. It
 keeps logs even when a required check fails, so the archive can be handed to a
 reviewer without rerunning individual diagnostics.
+
+## Static benchmark report
+
+`examples/09_argparse_comparison.py` contains equivalent normal-sized argparse
+and kwconf implementations. Benchmark it directly with:
+
+```bash
+python dev/benchmarks/realistic_cli_runtime.py --output-json /tmp/realistic.json
+```
+
+The Rust evidence collector runs this comparison and writes a self-contained
+`benchmark_report.html` that combines the realistic example with cold startup,
+in-process parsing, completion, ModalCLI, help/color, and feature-ownership
+results. An existing evidence directory can be rendered manually:
+
+```bash
+python dev/benchmarks/benchmark_report.py /path/to/evidence-directory
+```
