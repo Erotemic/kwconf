@@ -206,11 +206,13 @@ It separates the cheap top-level ``import kwconf`` from first realization of
 the lazy ``kwconf.Config`` API, then measures actual Config subclass definition,
 Config-instance materialization, backend construction, the parser engine itself,
 the canonical reset, the Rust compatibility reparse, and final value
-application. Rust backend construction is further split into bridge import,
-extension/protocol loading, normalized-schema extraction, and native
-``FlatParser`` construction. This avoids mislabeling one-time Python module
-loading as metaclass/schema-definition work and shows how much of the remaining
-cold cost is actual native compilation versus loading the bridge. The public
+application. For the common flat Rust path, the tiny bridge is already resident
+in ``config.py``; backend construction is therefore split into extension/protocol
+loading, normalized-schema extraction, and native ``FlatParser`` construction,
+with a zero bridge-import phase. Richer schemas still delegate to the full
+``kwconf._rust`` bridge. This avoids mislabeling one-time Python module loading
+as metaclass/schema-definition work and shows how much of the remaining cold
+cost is actual native compilation versus extension loading. The public
 cold-start totals remain authoritative; phase attribution is diagnostic and is
 not forced into false symmetry (argparse's ``add_argument`` calls already
 construct its backend).

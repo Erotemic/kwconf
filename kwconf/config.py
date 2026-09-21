@@ -103,9 +103,10 @@ from kwconf.annotations import (
 from kwconf.annotations import (
     value_matches_annotation as _value_matches_annotation,
 )
-from kwconf.util.util_misc import copy_value, iterable
+from kwconf.util.util_misc import NoParam, copy_value, iterable
 from kwconf.util.util_repr import NiceRepr
 from kwconf.value import _Value as Value
+from kwconf.value import _resolve_alias
 
 _DIAGNOSTIC_TRUE = frozenset({'true', 'on', 'yes', '1'})
 _DEBUG_DEFAULT = os.environ.get('KWCONF_DEBUG', '').lower() in _DIAGNOSTIC_TRUE
@@ -254,25 +255,288 @@ ConfigData = Mapping[str, Any] | str | os.PathLike[str] | IO[Any] | None
 
 
 _RUST_EXTENSION_PROBE: bool | None = None
+_RUST_EXTENSION = None
+_RUST_EXTENSION_ERROR: str | None = None
+_RUST_PROTOCOL = ('kwconf-cli-core', 3)
+_RUST_DIRECT_CACHE_GENERATION = 0
+_RUST_DIRECT_CACHE_ATTR = '_kwconf_rust_direct_compiled_schema'
+_RUST_DIRECT_UNSUPPORTED_ATTR = '_kwconf_rust_direct_unsupported_schema'
+
+# Tiny private FFI shared with the optional accelerator.  Keeping this hot
+# subset in config.py avoids importing the much larger completion/diagnostics
+# bridge for an ordinary flat Config.cli() invocation.
+_RK_VALUE = 0
+_RK_FLAG = 1
+_RK_COUNTER = 2
+_RK_OPTIONAL = 3
+_ROP_VALUE = 0
+_ROP_FLAG_BARE = 1
+_ROP_FLAG_VALUE = 2
+_ROP_COUNTER_BARE = 3
+_ROP_COUNTER_VALUE = 4
+_ROP_OPTIONAL_BARE = 5
+_RUST_SAFE_CALLABLE_PARSERS = frozenset({str, int, float, complex, bool})
+_RUST_SAFE_NAMED_PARSERS = frozenset({'auto', 'yaml', 'csv'})
+_RUST_SAFE_CHOICE_TYPES = (type(None), bool, int, float, complex, str, bytes)
+
+
+class _DirectRustCompiled:
+    """Compiled common-case Rust CLI record kept on the Config class."""
+
+    __slots__ = ('parser', 'keys', 'templates', 'mutex_groups', 'required_keys')
+
+    def __init__(self, parser, keys, templates, mutex_groups, required_keys):
+        self.parser = parser
+        self.keys = keys
+        self.templates = templates
+        self.mutex_groups = mutex_groups
+        self.required_keys = required_keys
+
+
+def _load_direct_rust_extension(*, required: bool):
+    """Import and protocol-check the accelerator without the Python bridge."""
+    global _RUST_EXTENSION_PROBE, _RUST_EXTENSION, _RUST_EXTENSION_ERROR
+    if _RUST_EXTENSION_PROBE is None:
+        try:
+            candidate = __import__('_kwconf_rust')
+        except ImportError as ex:
+            _RUST_EXTENSION_PROBE = False
+            _RUST_EXTENSION = None
+            _RUST_EXTENSION_ERROR = f'extension import failed: {ex}'
+        else:
+            try:
+                actual = tuple(candidate.backend_info())
+            except Exception as ex:
+                _RUST_EXTENSION_PROBE = False
+                _RUST_EXTENSION = None
+                _RUST_EXTENSION_ERROR = (
+                    'extension does not expose a usable backend_info(): '
+                    f'{type(ex).__name__}: {ex}'
+                )
+            else:
+                if actual != _RUST_PROTOCOL:
+                    _RUST_EXTENSION_PROBE = False
+                    _RUST_EXTENSION = None
+                    _RUST_EXTENSION_ERROR = (
+                        'extension protocol mismatch: '
+                        f'expected {_RUST_PROTOCOL!r}, got {actual!r}'
+                    )
+                else:
+                    _RUST_EXTENSION_PROBE = True
+                    _RUST_EXTENSION = candidate
+                    _RUST_EXTENSION_ERROR = None
+    if _RUST_EXTENSION is None and required:
+        detail = f' ({_RUST_EXTENSION_ERROR})' if _RUST_EXTENSION_ERROR else ''
+        raise ImportError(
+            'The kwconf Rust CLI backend is unavailable or incompatible'
+            f'{detail}. Install the matching optional accelerator with: '
+            'python -m pip install kwconf-rust'
+        )
+    return _RUST_EXTENSION
 
 
 def _rust_extension_present() -> bool:
-    """Probe the optional extension without importing the Python bridge.
+    """Probe the optional accelerator without importing ``kwconf._rust``."""
+    return _load_direct_rust_extension(required=False) is not None
 
-    ``auto`` is the default backend policy. On pure-Python installations a
-    failed extension import is cached, so the fallback path pays only one
-    normal import miss per process and never imports ``kwconf._rust``.
-    """
-    global _RUST_EXTENSION_PROBE
-    if _RUST_EXTENSION_PROBE is None:
-        try:
-            __import__('_kwconf_rust')
-        except ImportError:
-            _RUST_EXTENSION_PROBE = False
+
+def _clear_direct_rust_cache() -> None:
+    """Invalidate direct class-local caches in O(1)."""
+    global _RUST_DIRECT_CACHE_GENERATION
+    _RUST_DIRECT_CACHE_GENERATION += 1
+
+
+def _direct_rust_cache_get(cls: type, attr: str):
+    item = cls.__dict__.get(attr)
+    if item is None:
+        return None
+    generation, value = item
+    if generation != _RUST_DIRECT_CACHE_GENERATION:
+        return None
+    return value
+
+
+def _direct_rust_cache_set(cls: type, attr: str, value) -> None:
+    setattr(cls, attr, (_RUST_DIRECT_CACHE_GENERATION, value))
+
+
+def _direct_rust_class_cached(cls: type) -> bool:
+    return _direct_rust_cache_get(cls, _RUST_DIRECT_CACHE_ATTR) is not None
+
+
+def _direct_rust_field_safe(template, key: str) -> bool:
+    """Conservatively admit fields that can fall back without side effects."""
+    if not template.isflag:
+        parser_spec = getattr(template, '_parser_spec', None)
+        if parser_spec is not None:
+            if callable(parser_spec):
+                if parser_spec not in _RUST_SAFE_CALLABLE_PARSERS:
+                    return False
+            elif (
+                not isinstance(parser_spec, str)
+                or parser_spec not in _RUST_SAFE_NAMED_PARSERS
+            ):
+                return False
+        elif getattr(template, '_user_gave_type', False):
+            if template.type not in _RUST_SAFE_CALLABLE_PARSERS:
+                return False
+
+        choices = template.parsekw.get('choices')
+        if choices is not None:
+            try:
+                if not all(
+                    isinstance(choice, _RUST_SAFE_CHOICE_TYPES)
+                    for choice in choices
+                ):
+                    return False
+            except TypeError:
+                return False
+    return True
+
+
+def _direct_rust_schema_description(config):
+    """Build the common flat schema without importing ``kwconf._rust``."""
+    if getattr(config, '_has_subconfigs', False):
+        return None
+    if not getattr(config, '__short_alias_clusters__', True):
+        return None
+
+    specs = []
+    templates = []
+    mutex_lut = {}
+    required_keys = []
+    fuzzy_hyphens = bool(getattr(config, '__fuzzy_hyphens__', 1))
+    for key in config._argument_key_order():
+        template = config._default[key]
+        if not _direct_rust_field_safe(template, key):
+            return None
+        if template.position is not None:
+            return None
+
+        nargs = template.parsekw.get('nargs')
+        if template.isflag == 'counter':
+            kind = _RK_COUNTER
+        elif template.isflag:
+            kind = _RK_FLAG
+        elif template.bare is not NoParam or nargs == '?':
+            kind = _RK_OPTIONAL
         else:
-            _RUST_EXTENSION_PROBE = True
-    return _RUST_EXTENSION_PROBE
+            kind = _RK_VALUE
+        if not template.isflag and kind != _RK_OPTIONAL and nargs is not None:
+            return None
+        if kind == _RK_OPTIONAL and nargs not in {None, '?'}:
+            return None
 
+        specs.append((key, _resolve_alias(key, template, fuzzy_hyphens), kind))
+        templates.append(template)
+        if template.required:
+            required_keys.append(key)
+        if template.mutex_group is not None:
+            mutex_lut.setdefault(str(template.mutex_group), []).append(key)
+
+    metadata = (
+        tuple(spec[0] for spec in specs),
+        tuple(templates),
+        tuple(tuple(group) for group in mutex_lut.values()),
+        tuple(required_keys),
+    )
+    return specs, metadata
+
+
+def _direct_rust_build_compiled(extension, specs, metadata):
+    """Construct the native parser from an already-normalized flat schema."""
+    try:
+        parser = extension.FlatParser(specs)
+    except (TypeError, ValueError):
+        return None
+    keys, templates, mutex_groups, required_keys = metadata
+    return _DirectRustCompiled(
+        parser, keys, templates, mutex_groups, required_keys
+    )
+
+
+def _direct_rust_compile(config, extension):
+    """Compile/cache the common flat schema; return None for richer shapes."""
+    cls = type(config)
+    cacheable = not getattr(config, '_rust_schema_mutated', False)
+    if cacheable:
+        cached = _direct_rust_cache_get(cls, _RUST_DIRECT_CACHE_ATTR)
+        if cached is not None:
+            return cached
+        unsupported = _direct_rust_cache_get(cls, _RUST_DIRECT_UNSUPPORTED_ATTR)
+        if unsupported:
+            return None
+
+    description = _direct_rust_schema_description(config)
+    if description is None:
+        if cacheable:
+            _direct_rust_cache_set(cls, _RUST_DIRECT_UNSUPPORTED_ATTR, True)
+        return None
+    specs, metadata = description
+    compiled = _direct_rust_build_compiled(extension, specs, metadata)
+    if compiled is None:
+        if cacheable:
+            _direct_rust_cache_set(cls, _RUST_DIRECT_UNSUPPORTED_ATTR, True)
+        return None
+    if cacheable:
+        _direct_rust_cache_set(cls, _RUST_DIRECT_CACHE_ATTR, compiled)
+    return compiled
+
+
+def _direct_rust_infer_scalar(text):
+    # Preserve the existing explicit flag/counter value contract. Most scalar
+    # CLI parses never import argparse_ext through this branch.
+    from kwconf.argparse_ext import _infer_scalar
+
+    return _infer_scalar(text)
+
+
+def _direct_rust_parse(config, compiled, argv, *, strict: bool):
+    """Parse one common flat argv request; None delegates diagnostics."""
+    assignments, unknown, fallback_reason = compiled.parser.parse(argv)
+    if fallback_reason is not None or (strict and unknown):
+        return None
+
+    current = {}
+    explicit = set()
+    for field_index, op, raw in assignments:
+        key = compiled.keys[field_index]
+        template = compiled.templates[field_index]
+        try:
+            if op == _ROP_VALUE:
+                value = template.coerce(raw[0])
+            elif op == _ROP_OPTIONAL_BARE:
+                value = None if template.bare is NoParam else template.bare
+            elif op == _ROP_FLAG_BARE:
+                value = not bool(raw[1])
+            elif op == _ROP_FLAG_VALUE:
+                value = _direct_rust_infer_scalar(raw[0])
+                value = (not value) if raw[1] else value
+            elif op == _ROP_COUNTER_BARE:
+                previous = current.get(key, config._data[key])
+                if previous is None:
+                    previous = 0
+                value = previous + (0 if raw[1] else 1)
+            elif op == _ROP_COUNTER_VALUE:
+                value = _direct_rust_infer_scalar(raw[0])
+                value = (not value) if raw[1] else value
+            else:  # pragma: no cover - protocol contract
+                return None
+        except Exception:
+            return None
+
+        choices = template.parsekw.get('choices')
+        if not template.isflag and choices is not None and value not in choices:
+            return None
+        current[key] = value
+        explicit.add(key)
+
+    for group in compiled.mutex_groups:
+        if sum(key in explicit for key in group) > 1:
+            return None
+    if any(key not in explicit for key in compiled.required_keys):
+        return None
+    return current, frozenset(explicit), tuple(unknown)
 
 def _normalize_validation_mode(mode: bool | str | None) -> bool | str | None:
     """Normalize the public runtime-validation policy."""
@@ -368,22 +632,34 @@ def _try_direct_rust_cli(
         )
     if backend_mode == 'python':
         return False
-    if backend_mode == 'auto' and not _rust_extension_present():
+
+    extension = _load_direct_rust_extension(required=(backend_mode == 'rust'))
+    if extension is None:
         return False
 
     normalized_argv = _coerce_argv_common(argv, expand_vars=True)
-    from kwconf import _rust as _rust_mod
-
     if '--' in normalized_argv:
         return False
-    compiled = _rust_mod.try_compile_config(
-        self, required_extension=(backend_mode == 'rust')
-    )
-    if compiled is None:
-        return False
-    parse_result = _rust_mod.parse_compiled(
-        self, compiled, normalized_argv, strict=strict
-    )
+
+    compiled = _direct_rust_compile(self, extension)
+    direct_parse = compiled is not None
+    if direct_parse:
+        parse_result = _direct_rust_parse(
+            self, compiled, normalized_argv, strict=strict
+        )
+    else:
+        # Richer/nested schemas retain the full accelerator bridge. The common
+        # flat path above is intentionally only a conservative subset.
+        from kwconf import _rust as _rust_mod
+
+        compiled = _rust_mod.try_compile_config(
+            self, required_extension=(backend_mode == 'rust')
+        )
+        if compiled is None:
+            return False
+        parse_result = _rust_mod.parse_compiled(
+            self, compiled, normalized_argv, strict=strict
+        )
     if parse_result is None:
         return False
 
@@ -393,22 +669,32 @@ def _try_direct_rust_cli(
     # copy implementations.  Re-running after reset also preserves counter
     # semantics when a reset recipe changes the initial counter value.
     self._reset_data_from_defaults(_dont_call_post_init=True)
-    parse_result = _rust_mod.parse_compiled(
-        self, compiled, normalized_argv, strict=strict
-    )
+    if direct_parse:
+        parse_result = _direct_rust_parse(
+            self, compiled, normalized_argv, strict=strict
+        )
+    else:
+        parse_result = _rust_mod.parse_compiled(
+            self, compiled, normalized_argv, strict=strict
+        )
     if parse_result is None:  # pragma: no cover - same schema/argv just passed
         raise RuntimeError(
             'kwconf Rust fast path became ineligible after resetting defaults'
         )
 
     validation_mode = _normalize_validation_mode(validate)
-    explicit_keys = set(parse_result.explicit_keys)
+    if direct_parse:
+        parsed_values, parsed_explicit, _unknown_args = parse_result
+        explicit_keys = set(parsed_explicit)
+    else:
+        parsed_values = parse_result.values
+        explicit_keys = set(parse_result.explicit_keys)
     if getattr(self, '_has_subconfigs', False):
         from kwconf import subconfig as _subcfg_mod
 
         _subcfg_mod.apply_dot_updates(
             self,
-            parse_result.values,
+            parsed_values,
             allow_import=False,
             localns=None,
             stacklevel=None,
@@ -422,7 +708,7 @@ def _try_direct_rust_cli(
     else:
         for key in explicit_keys:
             self._setitem(
-                key, parse_result.values[key], validation_mode=validation_mode
+                key, parsed_values[key], validation_mode=validation_mode
             )
         provided = frozenset(explicit_keys)
         self._explicit_argv_keys = provided

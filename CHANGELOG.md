@@ -44,6 +44,15 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   snapshots, and every command log into one tarball.
 
 ### Changed
+* Common flat Rust-backed ``Config.cli()`` invocations now use a tiny direct
+  bridge that lives in the already-loaded ``config.py`` hot path. They import
+  and protocol-check ``_kwconf_rust`` directly, normalize the conservative flat
+  schema, and construct ``FlatParser`` without importing the larger
+  ``kwconf._rust`` completion/diagnostics bridge. Unsupported, nested, or richer
+  schemas immediately delegate to the existing full bridge, so canonical
+  fallback and the broader accelerator surface are unchanged. ``.argparse()``
+  still constructs and returns the real Python ``ExtendedArgumentParser`` when
+  explicitly requested.
 * Cold-start evidence now separates the cheap package import, first realization
   of the lazy ``Config`` API, actual Config subclass definition, instance/default
   materialization, backend construction, the parser engine itself, canonical

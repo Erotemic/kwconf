@@ -35,10 +35,11 @@ def test_generated_backend_phase_scripts_are_explicit():
     assert 'class CLI(_Config):' in python_text
     assert '_cfg._argparse(special_options=False)' in python_text
     assert '_argparse_ext.parse_result' in python_text
-    assert '_rust_mod._load_extension(required=True)' in rust_text
-    assert '_rust_mod._schema_description(_cfg)' in rust_text
-    assert '_extension.FlatParser(_specs)' in rust_text
-    assert '_rust_mod.parse_compiled' in rust_text
+    assert '_config_mod._load_direct_rust_extension(required=True)' in rust_text
+    assert '_config_mod._direct_rust_schema_description(_cfg)' in rust_text
+    assert '_config_mod._direct_rust_build_compiled' in rust_text
+    assert '_config_mod._direct_rust_parse' in rust_text
+    assert '_rust_bridge_start = _rust_bridge_end' in rust_text
     assert '_cfg._reset_data_from_defaults' in rust_text
     assert module.MARKER in rust_text
 

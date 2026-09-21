@@ -237,7 +237,7 @@ def _render_backend_phases(evidence: Path) -> str:
         cards.append(
             '<div class="metric"><span>Rust load overhead</span>'
             f'<strong>{_duration_ns(rust_bridge + rust_extension)}</strong>'
-            '<small>Python bridge + extension/protocol load</small></div>'
+            '<small>direct hot core + extension/protocol load</small></div>'
         )
         rust_parse = _metric_median(rust_method, 'parse_ns')
         cards.append(
@@ -255,7 +255,7 @@ def _render_backend_phases(evidence: Path) -> str:
     rust_detail_rows = []
     if rust_method:
         for label, metric_name in [
-            ('Import <code>kwconf._rust</code> bridge', 'rust_bridge_ns'),
+            ('Import common Rust bridge (0 when resident in <code>config.py</code>)', 'rust_bridge_ns'),
             ('Import/check <code>_kwconf_rust</code> extension', 'extension_ns'),
             ('Extract normalized kwconf schema', 'schema_ns'),
             ('Construct/cache <code>FlatParser</code>', 'parser_build_ns'),
@@ -273,7 +273,7 @@ def _render_backend_phases(evidence: Path) -> str:
 <div class="metric-grid">{''.join(cards)}</div>
 <table><thead><tr><th>Implementation</th><th>kwconf API realization</th><th>Schema/parser definition</th><th>Config instance</th><th>Backend materialization</th><th>Parser engine</th><th>Canonical reset</th><th>Compatibility reparse</th><th>Apply/finalize</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
-<p class="note">For kwconf Python, backend materialization constructs the real <code>ExtendedArgumentParser</code>. For kwconf Rust it imports the bridge/extension and compiles <code>FlatParser</code>; it never constructs argparse on the successful fast path. The public <code>.argparse()</code> API remains available and intentionally constructs a Python parser when explicitly requested.</p>
+<p class="note">For kwconf Python, backend materialization constructs the real <code>ExtendedArgumentParser</code>. For the common kwconf Rust path, the tiny bridge is already resident in <code>config.py</code>; backend materialization therefore imports only the extension and compiles <code>FlatParser</code>. Richer shapes still delegate to the full <code>kwconf._rust</code> bridge. It never constructs argparse on the successful native fast path. The public <code>.argparse()</code> API remains available and intentionally constructs a Python parser when explicitly requested.</p>
 <details><summary>Show Rust backend materialization breakdown</summary><table><thead><tr><th>Phase</th><th>Median</th></tr></thead><tbody>{''.join(rust_detail_rows)}</tbody></table></details>
 </section>'''
 

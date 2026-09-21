@@ -146,6 +146,12 @@ def clear_cache() -> None:
     _CACHE_GENERATION += 1
     _CACHED_SCHEMA_COUNT = 0
     _UNSUPPORTED_SCHEMA_COUNT = 0
+    # The ordinary flat Config.cli() path has an even smaller class-local cache
+    # in config.py so it can avoid importing this bridge. Keep both generations
+    # aligned when diagnostics/tests explicitly request invalidation.
+    from kwconf import config as _config_mod
+
+    _config_mod._clear_direct_rust_cache()
 
 
 def _class_cache_get(cls: type, attr: str) -> Any:
@@ -669,9 +675,12 @@ def backend_status(config: Any | None = None) -> dict[str, Any]:
     }
     if config is not None:
         cls = type(config)
-        info['class_cached'] = (
-            _class_cache_get(cls, _SCHEMA_CACHE_ATTR) is not None
-        )
+        from kwconf import config as _config_mod
+
+        direct_cached = _config_mod._direct_rust_class_cached(cls)
+        bridge_cached = _class_cache_get(cls, _SCHEMA_CACHE_ATTR) is not None
+        info['class_cached'] = direct_cached or bridge_cached
+        info['direct_class_cached'] = direct_cached
         info['class_unsupported_reason'] = _class_cache_get(
             cls, _UNSUPPORTED_CACHE_ATTR
         )

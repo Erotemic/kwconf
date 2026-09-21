@@ -42,10 +42,13 @@ assert '_kwconf_rust' not in sys.modules
 
 
 def test_auto_backend_falls_back_when_extension_is_missing(monkeypatch):
-    from kwconf import _rust
+    from kwconf import config as config_mod
 
-    monkeypatch.setattr(_rust, '_EXTENSION', None)
-    monkeypatch.setattr(_rust, '_EXTENSION_TRIED', True)
+    monkeypatch.setattr(config_mod, '_RUST_EXTENSION_PROBE', False)
+    monkeypatch.setattr(config_mod, '_RUST_EXTENSION', None)
+    monkeypatch.setattr(
+        config_mod, '_RUST_EXTENSION_ERROR', 'test: extension unavailable'
+    )
 
     class C(kwconf.Config):
         __cli_backend__ = 'auto'
@@ -396,27 +399,27 @@ def test_rust_build_helper_requires_abi3_wheel():
 
 
 def test_direct_rust_cli_skips_generic_load(monkeypatch):
-    """The flat success path should not need the cold argparse lifecycle."""
-    from kwconf import _rust
+    """The common flat success path should stay inside config.py."""
+    from kwconf import config as config_mod
 
     calls = []
-
     compiled = object()
 
     def fake_parse(config, got_compiled, argv, *, strict):
         assert got_compiled is compiled
         calls.append((tuple(argv), dict(config._data)))
-        return _rust.FastParseResult(
-            values={'value': 7},
-            explicit_keys=frozenset({'value'}),
-            unknown_args=(),
-        )
+        return {'value': 7}, frozenset({'value'}), ()
 
     def fail_load(*args, **kwargs):
         raise AssertionError('generic load path should not run')
 
-    monkeypatch.setattr(_rust, 'try_compile_config', lambda *a, **kw: compiled)
-    monkeypatch.setattr(_rust, 'parse_compiled', fake_parse)
+    monkeypatch.setattr(
+        config_mod, '_load_direct_rust_extension', lambda **kw: object()
+    )
+    monkeypatch.setattr(
+        config_mod, '_direct_rust_compile', lambda *a, **kw: compiled
+    )
+    monkeypatch.setattr(config_mod, '_direct_rust_parse', fake_parse)
     monkeypatch.setattr(kwconf.Config, '_load', fail_load)
 
     class C(kwconf.Config):
@@ -435,7 +438,7 @@ def test_direct_rust_cli_skips_generic_load(monkeypatch):
 
 
 def test_direct_rust_cli_preserves_default_factory_reset_semantics(monkeypatch):
-    from kwconf import _rust
+    from kwconf import config as config_mod
 
     factory_calls = []
 
@@ -447,12 +450,15 @@ def test_direct_rust_cli_preserves_default_factory_reset_semantics(monkeypatch):
 
     def fake_parse(config, got_compiled, argv, *, strict):
         assert got_compiled is compiled
-        return _rust.FastParseResult(
-            values={}, explicit_keys=frozenset(), unknown_args=()
-        )
+        return {}, frozenset(), ()
 
-    monkeypatch.setattr(_rust, 'try_compile_config', lambda *a, **kw: compiled)
-    monkeypatch.setattr(_rust, 'parse_compiled', fake_parse)
+    monkeypatch.setattr(
+        config_mod, '_load_direct_rust_extension', lambda **kw: object()
+    )
+    monkeypatch.setattr(
+        config_mod, '_direct_rust_compile', lambda *a, **kw: compiled
+    )
+    monkeypatch.setattr(config_mod, '_direct_rust_parse', fake_parse)
 
     class C(kwconf.Config):
         __cli_backend__ = 'rust'
@@ -467,6 +473,7 @@ def test_direct_rust_cli_preserves_default_factory_reset_semantics(monkeypatch):
 
 def test_direct_rust_cli_miss_is_side_effect_free_before_fallback(monkeypatch):
     from kwconf import _rust
+    from kwconf import config as config_mod
 
     factory_calls = []
 
@@ -474,6 +481,10 @@ def test_direct_rust_cli_miss_is_side_effect_free_before_fallback(monkeypatch):
         factory_calls.append(len(factory_calls))
         return []
 
+    monkeypatch.setattr(
+        config_mod, '_load_direct_rust_extension', lambda **kw: object()
+    )
+    monkeypatch.setattr(config_mod, '_direct_rust_compile', lambda *a, **kw: None)
     monkeypatch.setattr(_rust, 'try_compile_config', lambda *a, **kw: None)
 
     class C(kwconf.Config):
@@ -485,3 +496,84 @@ def test_direct_rust_cli_miss_is_side_effect_free_before_fallback(monkeypatch):
     # canonical Python/argparse fallback performs its normal reset.
     assert factory_calls == [0, 1]
     assert got.payload == []
+
+
+def test_common_rust_cli_does_not_import_python_bridge():
+    _require_extension()
+
+    code = r"""
+import sys
+import kwconf
+class C(kwconf.Config):
+    __cli_backend__ = 'rust'
+    value: int = 0
+result = C.cli(argv=['--value=3'], autocomplete=False, special_options=False)
+assert result.value == 3
+assert 'kwconf._rust' not in sys.modules
+assert 'argparse' not in sys.modules
+assert 'kwconf.argparse_ext' not in sys.modules
+"""
+    env = os.environ.copy()
+    old_pythonpath = env.get('PYTHONPATH')
+    env['PYTHONPATH'] = (
+        str(REPO_DPATH)
+        if not old_pythonpath
+        else str(REPO_DPATH) + os.pathsep + old_pythonpath
+    )
+    proc = subprocess.run(
+        [sys.executable, '-c', code],
+        cwd=REPO_DPATH,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_direct_rust_cache_clear_tracks_bridge_clear_cache():
+    _require_extension()
+    from kwconf import _rust
+    from kwconf import config as config_mod
+
+    class C(kwconf.Config):
+        __cli_backend__ = 'rust'
+        value: int = 0
+
+    got = C.cli(argv=['--value=5'], autocomplete=False, special_options=False)
+    assert got.value == 5
+    assert config_mod._direct_rust_class_cached(C)
+
+    _rust.clear_cache()
+    assert not config_mod._direct_rust_class_cached(C)
+
+
+def test_direct_rust_protocol_mismatch_is_safe(monkeypatch):
+    import types
+
+    from kwconf import config as config_mod
+
+    fake = types.SimpleNamespace(backend_info=lambda: ('kwconf-cli-core', 999))
+    monkeypatch.setitem(sys.modules, '_kwconf_rust', fake)
+    monkeypatch.setattr(config_mod, '_RUST_EXTENSION_PROBE', None)
+    monkeypatch.setattr(config_mod, '_RUST_EXTENSION', None)
+    monkeypatch.setattr(config_mod, '_RUST_EXTENSION_ERROR', None)
+
+    class Auto(kwconf.Config):
+        __cli_backend__ = 'auto'
+        value: int = 0
+
+    # Auto mode treats a stale accelerator like a missing optional wheel.
+    got = Auto.cli(argv=['--value=6'], autocomplete=False, special_options=False)
+    assert got.value == 6
+
+    # Explicit rust mode reports the incompatibility instead of using unsafe FFI.
+    monkeypatch.setattr(config_mod, '_RUST_EXTENSION_PROBE', None)
+    monkeypatch.setattr(config_mod, '_RUST_EXTENSION', None)
+    monkeypatch.setattr(config_mod, '_RUST_EXTENSION_ERROR', None)
+
+    class Explicit(kwconf.Config):
+        __cli_backend__ = 'rust'
+        value: int = 0
+
+    with pytest.raises(ImportError, match='protocol mismatch'):
+        Explicit.cli(argv=['--value=6'], autocomplete=False, special_options=False)
