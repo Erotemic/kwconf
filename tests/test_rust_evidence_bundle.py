@@ -174,3 +174,4 @@ def test_evidence_campaign_uses_cold_breakdown_benchmark():
     assert 'realistic-warm-loops' not in text
     assert 'run_cprofile = args.deep' in text
     assert 'deep-only implementation microbenchmarks' in text
+    assert "str(completion / 'trials.csv')" in text

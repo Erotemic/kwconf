@@ -38,6 +38,19 @@ from pathlib import Path
 
 REPO_DPATH = Path(__file__).resolve().parents[2]
 MARKER = 'KWCONF_COLD_PHASES'
+PRELOAD_MARKER = 'KWCONF_PRELOADED_MODULES'
+PRELOAD_MODULES = (
+    'argparse',
+    'argcomplete',
+    're',
+    'gettext',
+    'shutil',
+    'typing',
+    'inspect',
+    'dataclasses',
+    'kwconf',
+    '_kwconf_rust',
+)
 
 
 def _csv_list(text: str) -> list[str]:
@@ -96,14 +109,31 @@ def _child_env(profile: str) -> dict[str, str]:
     return env
 
 
+def _probe_prelude() -> list[str]:
+    return [
+        'import sys as _sys',
+        'from time import perf_counter_ns as _clock',
+        f'_probe_names = {PRELOAD_MODULES!r}',
+        "_preloaded = ','.join(name for name in _probe_names if name in _sys.modules)",
+    ]
+
+
 def _baseline_script() -> str:
-    return f'''from time import perf_counter_ns as _clock\n_body_start = _clock()\n_body_end = _clock()\nprint("{MARKER}|{{}}|0|0|0".format(_body_end - _body_start))\n'''
+    lines = _probe_prelude()
+    lines.extend(
+        [
+            '_body_start = _clock()',
+            '_body_end = _clock()',
+            f"print('{PRELOAD_MARKER}|' + _preloaded)",
+            f"print('{MARKER}|{{}}|0|0|0'.format(_body_end - _body_start))",
+        ]
+    )
+    return '\n'.join(lines) + '\n'
 
 
 def _script_text(method: str, size: int) -> str:
     if method == 'argparse':
-        lines = [
-            'from time import perf_counter_ns as _clock',
+        lines = _probe_prelude() + [
             '_body_start = _clock()',
             '_import_start = _clock()',
             'import argparse',
@@ -131,8 +161,7 @@ def _script_text(method: str, size: int) -> str:
             'kwconf_python': 'python',
             'kwconf_rust': 'rust',
         }[method]
-        lines = [
-            'from time import perf_counter_ns as _clock',
+        lines = _probe_prelude() + [
             '_body_start = _clock()',
             '_import_start = _clock()',
             'import kwconf',
@@ -156,6 +185,7 @@ def _script_text(method: str, size: int) -> str:
     lines.extend(
         [
             '_body_end = _clock()',
+            f"print('{PRELOAD_MARKER}|' + _preloaded)",
             'print(',
             f"    '{MARKER}|{{}}|{{}}|{{}}|{{}}'.format(",
             '        _body_end - _body_start,',
@@ -190,7 +220,7 @@ def _command(profile: str, script: Path, argv_size: int, method: str) -> list[st
     return [sys.executable, *flags, str(script), *argv]
 
 
-def _run(command: list[str], env: dict[str, str]) -> dict[str, int]:
+def _run(command: list[str], env: dict[str, str]) -> dict[str, object]:
     start = time.perf_counter_ns()
     proc = subprocess.run(
         command,
@@ -209,12 +239,23 @@ def _run(command: list[str], env: dict[str, str]) -> dict[str, int]:
             f'  stdout:\n{proc.stdout}\n'
             f'  stderr:\n{proc.stderr}'
         )
+    output_lines = proc.stdout.splitlines()
     marker_line = next(
-        (line for line in reversed(proc.stdout.splitlines()) if line.startswith(MARKER + '|')),
+        (line for line in reversed(output_lines) if line.startswith(MARKER + '|')),
+        None,
+    )
+    preload_line = next(
+        (
+            line
+            for line in reversed(output_lines)
+            if line.startswith(PRELOAD_MARKER + '|')
+        ),
         None,
     )
     if marker_line is None:
         raise RuntimeError(f'child did not emit {MARKER!r}:\n{proc.stdout}')
+    if preload_line is None:
+        raise RuntimeError(f'child did not emit {PRELOAD_MARKER!r}:\n{proc.stdout}')
     fields = marker_line.split('|')
     if len(fields) != 5:
         raise RuntimeError(f'unexpected timing marker: {marker_line!r}')
@@ -222,6 +263,8 @@ def _run(command: list[str], env: dict[str, str]) -> dict[str, int]:
     phase_ns = import_ns + definition_ns + parse_ns
     other_body_ns = max(0, body_ns - phase_ns)
     process_envelope_ns = max(0, total_ns - body_ns)
+    preloaded_text = preload_line.split('|', 1)[1]
+    preloaded_modules = [name for name in preloaded_text.split(',') if name]
     return {
         'total_ns': total_ns,
         'body_ns': body_ns,
@@ -230,6 +273,7 @@ def _run(command: list[str], env: dict[str, str]) -> dict[str, int]:
         'definition_ns': definition_ns,
         'parse_ns': parse_ns,
         'other_body_ns': other_body_ns,
+        'preloaded_modules': preloaded_modules,
     }
 
 
@@ -365,6 +409,7 @@ def main() -> None:
         'warmups': args.warmups,
         'argv_size': args.argv_size,
         'site_paths_injected_for_no_site': _site_package_paths(),
+        'preload_probe_modules': list(PRELOAD_MODULES),
         'profiles': {},
     }
     metrics = [
@@ -394,6 +439,17 @@ def main() -> None:
                     metric: _summarize([int(row[metric]) for row in matching])
                     for metric in metrics
                 }
+                preload_states = {
+                    tuple(row['preloaded_modules']) for row in matching
+                }
+                method_data[method]['preloaded_modules_stable'] = (
+                    len(preload_states) == 1
+                )
+                method_data[method]['preloaded_modules'] = (
+                    list(next(iter(preload_states)))
+                    if len(preload_states) == 1
+                    else [list(state) for state in sorted(preload_states)]
+                )
             baseline_ns = method_data['python_baseline']['total_ns']['median_ns']
             for method, data in method_data.items():
                 data['delta_vs_python_baseline_ns'] = (
@@ -412,10 +468,15 @@ def main() -> None:
 
     if args.raw_output is not None:
         args.raw_output.parent.mkdir(parents=True, exist_ok=True)
+        raw_rows = []
+        for row in rows:
+            raw_row = dict(row)
+            raw_row['preloaded_modules'] = ','.join(row['preloaded_modules'])
+            raw_rows.append(raw_row)
         with args.raw_output.open('w', newline='') as file:
-            writer = csv.DictWriter(file, fieldnames=list(rows[0]))
+            writer = csv.DictWriter(file, fieldnames=list(raw_rows[0]))
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows(raw_rows)
     text = json.dumps(summary, indent=2) + '\n'
     if args.output_json is not None:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)

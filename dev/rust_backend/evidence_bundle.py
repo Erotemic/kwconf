@@ -759,6 +759,8 @@ def main() -> None:
                     str(args.delegated_completion_trials),
                     '--output-json',
                     str(completion / 'summary.json'),
+                    '--raw-output',
+                    str(completion / 'trials.csv'),
                     '--script-dir',
                     str(completion / 'scripts'),
                     *(['--schema-sizes', '1'] if args.quick else []),

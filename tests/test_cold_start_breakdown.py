@@ -33,6 +33,9 @@ def test_generated_scripts_measure_definition_and_parse():
     assert "__cli_backend__ = 'python'" in python_text
     assert "__cli_backend__ = 'rust'" in rust_text
     assert module.MARKER in rust_text
+    assert module.PRELOAD_MARKER in rust_text
+    assert 'argparse' in module.PRELOAD_MODULES
+    assert '_kwconf_rust' in module.PRELOAD_MODULES
 
 
 def test_argparse_cold_breakdown_smoke(tmp_path):
@@ -73,4 +76,7 @@ def test_argparse_cold_breakdown_smoke(tmp_path):
         assert row['total_ns']['median_ns'] > 0
         assert row['definition_ns']['median_ns'] > 0
         assert row['parse_ns']['median_ns'] > 0
+        assert row['preloaded_modules_stable'] is True
+        assert isinstance(row['preloaded_modules'], list)
+    assert data['preload_probe_modules']
     assert raw.exists()

@@ -200,7 +200,9 @@ The same campaign also runs a smaller controlled ``python -S`` sample while
 restoring the parent environment's site-packages paths through ``PYTHONPATH``.
 That is not a recommended deployment mode; it answers the engineering question
 of whether CLI definition/parse costs become material after ordinary ``site``
-initialization is removed.
+initialization is removed. The generated child also records a small probe of
+relevant ``sys.modules`` entries immediately before the timed CLI import so
+work shifted by ``-S`` can be distinguished from work that truly disappeared.
 
 `cli_startup.py` remains available for historical raw end-to-end startup
 comparisons and alternate declaration styles, but the evidence report uses the
@@ -230,9 +232,13 @@ Parsing speed is only one part of the CLI experience. The Rust campaign also
 measures the other features that distinguish kwconf:
 
 ```bash
-# Actual argcomplete environment protocol. When argcomplete is installed this
-# enforces candidate parity against argparse + argcomplete as well as timing it.
+# Actual argcomplete environment protocol. Every timing is a fresh completion
+# subprocess, i.e. what a user waits for after pressing Tab. When argcomplete
+# is installed this compares raw argparse+argcomplete, kwconf's Python backend
+# + argcomplete, and the kwconf Rust static fast path while enforcing exact
+# wire-output parity. Use --raw-output to retain every trial.
 python dev/benchmarks/completion_runtime.py --quick
+python dev/benchmarks/completion_runtime.py --trials 30 --raw-output /tmp/completion.csv
 
 # Fresh-process static modal dispatch versus argparse subparsers.
 python dev/benchmarks/modal_runtime.py --quick

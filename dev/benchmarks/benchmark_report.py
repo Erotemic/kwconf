@@ -210,6 +210,33 @@ def _render_no_site(evidence: Path) -> str:
             f'<td>{cli_share:.1f}%</td>'
             '</tr>'
         )
+
+    probe_modules = data.get('preload_probe_modules', [])
+    preload_rows = []
+    normal_probe = normal_methods.get('python_baseline', {})
+    stripped_probe = stripped_methods.get('python_baseline', {})
+    normal_loaded = set(normal_probe.get('preloaded_modules', []))
+    stripped_loaded = set(stripped_probe.get('preloaded_modules', []))
+    for name in probe_modules:
+        preload_rows.append(
+            '<tr>'
+            f'<td><code>{html.escape(str(name))}</code></td>'
+            f'<td>{"loaded" if name in normal_loaded else "—"}</td>'
+            f'<td>{"loaded" if name in stripped_loaded else "—"}</td>'
+            '</tr>'
+        )
+    preload_block = ''
+    if preload_rows:
+        preload_block = (
+            '<details><summary>Show modules already loaded before CLI timing</summary>'
+            '<p class="note">The probe runs after importing only <code>sys</code> and '
+            '<code>time.perf_counter_ns</code>, and before the timed CLI-library import. '
+            'Differences here explain work that <code>-S</code> shifts into later phases.</p>'
+            '<table><thead><tr><th>Module</th><th>Normal Python</th>'
+            '<th><code>python -S</code></th></tr></thead>'
+            f'<tbody>{"".join(preload_rows)}</tbody></table></details>'
+        )
+
     return f'''<section id="no-site">
 <h2>If Python startup were cheaper</h2>
 <p>This is a diagnostic, not the normal execution mode. It launches the same {size}-field programs with <code>python -S</code>, while explicitly restoring the parent environment's site-packages paths so kwconf and the Rust extension remain importable. This asks how much ordinary <code>site</code> initialization masks CLI work.</p>
@@ -220,6 +247,7 @@ def _render_no_site(evidence: Path) -> str:
 </div>
 <table><thead><tr><th>Implementation</th><th>Normal total</th><th><code>-S</code> total</th><th>Saved</th><th>Import</th><th>Definition</th><th>First parse</th><th>Definition + parse share</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
+{preload_block}
 </section>'''
 
 
@@ -390,24 +418,169 @@ def _render_completion(evidence: Path) -> str:
             'completion-benchmark',
             'No completion benchmark results were found.',
         )
-        return f'<section id="completion"><h2>Completion</h2><p>{message}</p></section>'
+        return (
+            '<section id="completion"><h2>Cold Tab-completion latency</h2>'
+            f'<p>{message}</p></section>'
+        )
+
     native = [case for case in cases if case.get('expected_ownership') == 'native']
     delegated = [
         case for case in cases if case.get('expected_ownership') == 'delegated'
     ]
-    ratios = []
-    parity = True
-    for case in native:
-        method = case.get('methods', {}).get('kwconf_rust', {})
-        if 'ratio' in method:
-            ratios.append(float(method['ratio']))
-        parity = parity and bool(method.get('exact_output_parity', False))
-    median_ratio = statistics.median(ratios) if ratios else float('nan')
-    return f'''<section id="completion"><h2>Completion</h2>
-<div class="metric-grid"><div class="metric"><span>Native cases</span><strong>{len(native)}</strong><small>static Rust-owned paths</small></div>
-<div class="metric"><span>Delegated cases</span><strong>{len(delegated)}</strong><small>canonical argcomplete paths</small></div>
-<div class="metric"><span>Native median ratio</span><strong class="{_ratio_class(median_ratio) if ratios else 'near'}">{_ratio(median_ratio) if ratios else '—'}</strong><small>kwconf rust / argparse+argcomplete</small></div>
-<div class="metric"><span>Exact native output parity</span><strong>{str(parity).lower()}</strong><small>wire output, not just candidate sets</small></div></div></section>'''
+    labels = {
+        'argparse_argcomplete': 'argparse + argcomplete',
+        'kwconf_python': 'kwconf Python + argcomplete',
+        'kwconf_rust': 'kwconf Rust native fast path',
+    }
+    labels.update(data.get('method_labels', {}))
+    method_order = ['argparse_argcomplete', 'kwconf_python', 'kwconf_rust']
+
+    def representative(scenario: str):
+        options = [
+            case
+            for case in native
+            if case.get('scenario') == scenario
+            and all(method in case.get('methods', {}) for method in method_order)
+        ]
+        if not options:
+            return None
+        return min(
+            options,
+            key=lambda case: (
+                abs(int(case.get('schema_size', 0)) - 64),
+                -int(case.get('schema_size', 0)),
+            ),
+        )
+
+    option_case = representative('options')
+    choice_case = representative('choices')
+    representative_case = option_case or choice_case
+    size = int(representative_case['schema_size']) if representative_case else None
+
+    cards = []
+    if option_case is not None:
+        python_ms = float(option_case['methods']['kwconf_python']['median_ms'])
+        rust_ms = float(option_case['methods']['kwconf_rust']['median_ms'])
+        saved = python_ms - rust_ms
+        saved_pct = 100.0 * saved / python_ms if python_ms else 0.0
+        cards.append(
+            '<div class="metric"><span>Option-name Tab</span>'
+            f'<strong>{saved:.2f} ms saved</strong>'
+            f'<small>Rust vs kwconf Python ({saved_pct:.1f}%)</small></div>'
+        )
+    if choice_case is not None:
+        python_ms = float(choice_case['methods']['kwconf_python']['median_ms'])
+        rust_ms = float(choice_case['methods']['kwconf_rust']['median_ms'])
+        saved = python_ms - rust_ms
+        saved_pct = 100.0 * saved / python_ms if python_ms else 0.0
+        cards.append(
+            '<div class="metric"><span>Choice-value Tab</span>'
+            f'<strong>{saved:.2f} ms saved</strong>'
+            f'<small>Rust vs kwconf Python ({saved_pct:.1f}%)</small></div>'
+        )
+
+    rust_native_methods = [
+        case.get('methods', {}).get('kwconf_rust')
+        for case in native
+        if 'kwconf_rust' in case.get('methods', {})
+    ]
+    rust_delegated_methods = [
+        case.get('methods', {}).get('kwconf_rust')
+        for case in delegated
+        if 'kwconf_rust' in case.get('methods', {})
+    ]
+    rust_native_parity = bool(rust_native_methods) and all(
+        bool(method.get('exact_output_parity')) for method in rust_native_methods
+    )
+    delegated_parity = bool(rust_delegated_methods) and all(
+        bool(method.get('exact_output_parity')) for method in rust_delegated_methods
+    )
+    cards.append(
+        '<div class="metric"><span>Exact native output parity</span>'
+        f'<strong>{str(rust_native_parity).lower()}</strong>'
+        '<small>same argcomplete wire output</small></div>'
+    )
+    cards.append(
+        '<div class="metric"><span>Delegated protocol cases</span>'
+        f'<strong>{len(delegated)}</strong>'
+        f'<small>exact parity: {str(delegated_parity).lower()}</small></div>'
+    )
+
+    representative_rows = []
+    for method in method_order:
+        option = option_case and option_case['methods'].get(method)
+        choice = choice_case and choice_case['methods'].get(method)
+        if option is None and choice is None:
+            continue
+        label = labels.get(method, method.replace('_', ' '))
+        option_text = f'{float(option["median_ms"]):.2f} ms' if option else '—'
+        choice_text = f'{float(choice["median_ms"]):.2f} ms' if choice else '—'
+        representative_rows.append(
+            '<tr>'
+            f'<td>{html.escape(label)}</td>'
+            f'<td>{option_text}</td>'
+            f'<td>{choice_text}</td>'
+            '</tr>'
+        )
+
+    scaling_blocks = []
+    for scenario, title in [
+        ('options', 'Option-name completion'),
+        ('choices', 'Choice-value completion'),
+    ]:
+        scenario_cases = sorted(
+            [
+                case
+                for case in native
+                if case.get('scenario') == scenario
+                and all(method in case.get('methods', {}) for method in method_order)
+            ],
+            key=lambda case: int(case['schema_size']),
+        )
+        rows = []
+        for case in scenario_cases:
+            methods = case['methods']
+            raw_ms = float(methods['argparse_argcomplete']['median_ms'])
+            python_ms = float(methods['kwconf_python']['median_ms'])
+            rust_ms = float(methods['kwconf_rust']['median_ms'])
+            rust_vs_python = rust_ms / python_ms if python_ms else float('nan')
+            rows.append(
+                '<tr>'
+                f'<td>{int(case["schema_size"])}</td>'
+                f'<td>{raw_ms:.2f} ms</td>'
+                f'<td>{python_ms:.2f} ms</td>'
+                f'<td><strong>{rust_ms:.2f} ms</strong></td>'
+                f'<td class="{_ratio_class(rust_vs_python)}">'
+                f'{_ratio(rust_vs_python)}</td>'
+                '</tr>'
+            )
+        if rows:
+            scaling_blocks.append(
+                f'<div class="subcard"><h3>{title}</h3>'
+                '<table><thead><tr><th>Fields</th>'
+                '<th>argparse + argcomplete</th>'
+                '<th>kwconf Python + argcomplete</th><th>kwconf Rust</th>'
+                '<th>Rust / Python</th></tr></thead>'
+                f'<tbody>{"".join(rows)}</tbody></table></div>'
+            )
+
+    representative_block = ''
+    if representative_rows and size is not None:
+        representative_block = (
+            f'<h3>Representative {size}-field CLI</h3>'
+            '<table><thead><tr><th>Implementation</th><th>Option name</th>'
+            '<th>Choice value</th></tr></thead>'
+            f'<tbody>{"".join(representative_rows)}</tbody></table>'
+        )
+
+    return f'''<section id="completion">
+<h2>Cold Tab-completion latency</h2>
+<p>These are fresh-process shell completion requests using argcomplete's real environment protocol: the time from launching the CLI completion process until candidates are written back to the shell. The raw baseline is stdlib argparse + argcomplete. The kwconf Python backend builds the canonical argparse parser and uses argcomplete; the Rust backend answers safe static requests through its native completion index without importing argparse/argcomplete, while dynamic and descriptive protocols still delegate.</p>
+<div class="metric-grid">{''.join(cards)}</div>
+{representative_block}
+{''.join(scaling_blocks)}
+<p class="note">All timing rows are end-to-end cold completion latency, not warmed candidate-generation loops. Exact output parity is checked independently against argparse + argcomplete.</p>
+</section>'''
 
 
 def _render_modal_help(evidence: Path) -> str:
@@ -485,13 +658,13 @@ def render(evidence: Path) -> str:
 :root{color-scheme:light dark;--bg:#f6f7f9;--card:#fff;--ink:#1d2430;--muted:#657080;--line:#d8dde5;--accent:#5a6bff;--good:#087a45;--warn:#946200;--bad:#b42318}*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink)}main{max-width:1180px;margin:auto;padding:40px 24px 80px}header{margin-bottom:28px}h1{font-size:42px;line-height:1.05;margin:0 0 8px}h2{margin-top:0;font-size:27px}h3{font-size:17px}p{color:var(--muted)}section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px;margin:18px 0;box-shadow:0 2px 10px #00000008}.hero{border-width:2px}.meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted)}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.metric{border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column}.metric strong{font-size:25px}.metric small,.metric span{color:var(--muted)}.metric code{font-size:.8em}.note{font-size:13px}.win{color:var(--good);font-weight:700}.near{color:var(--warn);font-weight:700}.loss{color:var(--bad);font-weight:700}.code-grid,.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}.code-grid section{padding:0;border:0;box-shadow:none;margin:0}.code-grid pre{background:#111827;color:#e5e7eb;padding:16px;border-radius:10px;overflow:auto;font-size:12px;line-height:1.4;max-height:620px}.chart{margin:18px 0}.bar-row{display:grid;grid-template-columns:95px 1fr 90px;align-items:center;gap:10px;margin:7px 0}.bar-track{height:18px;background:#dfe4ec;border-radius:999px;overflow:hidden}.bar-fill{height:100%;background:var(--accent);border-radius:999px}.bar-value{text-align:right;font-variant-numeric:tabular-nums}.subcard{margin:16px 0}details{margin-top:16px}summary{cursor:pointer;font-weight:700;color:var(--ink)}.ownership{columns:2;list-style:none;padding:0}.ownership li{padding:5px 0}@media(max-width:780px){.code-grid,.two-col{grid-template-columns:1fr}.ownership{columns:1}h1{font-size:34px}}@media(prefers-color-scheme:dark){:root{--bg:#10141b;--card:#171d27;--ink:#e7ebf1;--muted:#a3adba;--line:#303947;--accent:#8c98ff}.bar-track{background:#2b3442}}
 '''
     return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>kwconf cold-start benchmark report</title><style>{css}</style></head><body><main>
-<header><h1>kwconf cold-start performance</h1><p>Fresh-process latency first: Python startup, imports, CLI definition, and the first parse for argparse, kwconf Python, and kwconf Rust. Warm-loop throughput is diagnostic rather than headline evidence.</p><div class="meta"><span>profile: <strong>{html.escape(str(profile))}</strong></span><span>Python: <strong>{html.escape(str(python))}</strong></span></div></header>
+<header><h1>kwconf cold-start performance</h1><p>Fresh-process latency first: normal CLI invocation and shell Tab completion for argparse, kwconf Python, and kwconf Rust. Warm-loop throughput is diagnostic rather than headline evidence.</p><div class="meta"><span>profile: <strong>{html.escape(str(profile))}</strong></span><span>Python: <strong>{html.escape(str(python))}</strong></span></div></header>
 {_render_cold_breakdown(evidence)}
 {_render_no_site(evidence)}
 {_render_startup(evidence)}
 {_render_realistic(evidence)}
-{_render_components(evidence)}
 {_render_completion(evidence)}
+{_render_components(evidence)}
 {_render_modal_help(evidence)}
 {_render_ownership(evidence)}
 <footer><p>Generated by <code>dev/benchmarks/benchmark_report.py</code>. Headline timings are fresh-process measurements; in-process microbenchmarks are attribution diagnostics.</p></footer>

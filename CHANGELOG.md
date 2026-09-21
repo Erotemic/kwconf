@@ -7,9 +7,9 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 * A normal-sized argparse-vs-kwconf comparison example and self-contained
-  HTML benchmark report now present cold startup, warm invocation, component,
-  completion, ModalCLI, help/color, and native-vs-delegated evidence together.
-  The Rust evidence bundle emits the report automatically.
+  HTML benchmark report now present cold startup, cold Tab completion, ModalCLI,
+  help/color, native-vs-delegated evidence, and optional deep implementation
+  diagnostics together. The Rust evidence bundle emits the report automatically.
 * An experimental optional Rust-backed CLI accelerator can bypass argparse
   schema construction for common scalar/flag/counter/bare-option parses, fixed
   realized SubConfig leaves, static completion, and static ModalCLI routing,
@@ -44,6 +44,14 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   snapshots, and every command log into one tarball.
 
 ### Changed
+* The benchmark report now treats shell Tab completion as a user-facing cold-start
+  metric alongside normal invocation. It compares raw ``argparse + argcomplete``,
+  the kwconf Python backend using argcomplete, and the Rust static completion fast
+  path across schema sizes, retains raw completion trials, and keeps delegated
+  protocol parity separate from native timing.
+* The controlled ``python -S`` cold-start experiment now records relevant
+  ``sys.modules`` preload state before the timed CLI import, making it clear when
+  site initialization merely shifts import work into a later benchmark phase.
 * Rust benchmark evidence now treats fresh-process latency as the headline result.
   The report decomposes cold starts into process envelope, import, CLI definition,
   and first-parse time for argparse, the pure-Python kwconf backend, and the Rust

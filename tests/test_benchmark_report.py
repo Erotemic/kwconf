@@ -79,6 +79,8 @@ def test_report_leads_with_fresh_process_decomposition(tmp_path):
             'parse_ns': metric(parsed),
             'other_body_ns': metric(1000),
             'delta_vs_python_baseline_ns': 0,
+            'preloaded_modules_stable': True,
+            'preloaded_modules': ['re'],
         }
 
     default_methods = {
@@ -94,6 +96,7 @@ def test_report_leads_with_fresh_process_decomposition(tmp_path):
         'kwconf_rust': method(13_000_000, 11_000_000, 800_000, 300_000, 500_000),
     }
     payload = {
+        'preload_probe_modules': ['argparse', 're', 'kwconf'],
         'profiles': {
             'default': {'cases': [{'schema_size': 64, 'methods': default_methods}]},
             'no_site': {'cases': [{'schema_size': 64, 'methods': no_site_methods}]},
@@ -113,3 +116,77 @@ def test_report_leads_with_fresh_process_decomposition(tmp_path):
     assert 'If Python startup were cheaper' in rendered
     assert 'python -S' in rendered
     assert 'Warm parse' not in rendered
+    assert 'Show modules already loaded before CLI timing' in rendered
+
+
+def test_report_highlights_cold_tab_completion_three_way(tmp_path):
+    module = _load_report_module()
+    (tmp_path / 'campaign.json').write_text('{"profile": "review"}')
+    (tmp_path / 'environment.json').write_text('{"python": "3.13.13"}')
+    (tmp_path / 'feature_matrix.json').write_text('{"rows": []}')
+    (tmp_path / 'commands.json').write_text('[]')
+    completion = tmp_path / 'completion'
+    completion.mkdir()
+
+    def method(ms):
+        return {
+            'median_ms': ms,
+            'mean_ms': ms,
+            'p10_ms': ms,
+            'p90_ms': ms,
+            'min_ms': ms,
+            'ratio': 1.0,
+            'stable_output': True,
+            'candidates': ['x'],
+            'candidate_parity': True,
+            'exact_output_parity': True,
+        }
+
+    cases = []
+    for scenario, values in [
+        ('options', (48.0, 55.0, 46.0)),
+        ('choices', (47.0, 69.0, 45.0)),
+    ]:
+        cases.append(
+            {
+                'scenario': scenario,
+                'schema_size': 64,
+                'expected_ownership': 'native',
+                'methods': {
+                    'argparse_argcomplete': method(values[0]),
+                    'kwconf_python': method(values[1]),
+                    'kwconf_rust': method(values[2]),
+                },
+            }
+        )
+    cases.append(
+        {
+            'scenario': 'dynamic-value',
+            'schema_size': 1,
+            'expected_ownership': 'delegated',
+            'methods': {'kwconf_rust': method(60.0)},
+        }
+    )
+    payload = {
+        'method_labels': {
+            'argparse_argcomplete': 'argparse + argcomplete',
+            'kwconf_python': 'kwconf Python + argcomplete',
+            'kwconf_rust': 'kwconf Rust native fast path',
+        },
+        'cases': cases,
+    }
+    (completion / 'summary.json').write_text(json.dumps(payload))
+
+    rendered = module.render(tmp_path)
+
+    assert 'Cold Tab-completion latency' in rendered
+    assert 'argparse + argcomplete' in rendered
+    assert 'kwconf Python + argcomplete' in rendered
+    assert 'kwconf Rust native fast path' in rendered
+    assert 'Option-name Tab' in rendered
+    assert 'Choice-value Tab' in rendered
+    assert '9.00 ms saved' in rendered
+    assert '24.00 ms saved' in rendered
+    assert rendered.index('Cold Tab-completion latency') < rendered.index(
+        'Implementation diagnostics'
+    )

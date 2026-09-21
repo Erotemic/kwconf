@@ -9,6 +9,7 @@ argcomplete are imported; dynamic requests remain delegated to argcomplete.
 from __future__ import annotations
 
 import argparse
+import csv
 import importlib.util
 import json
 import os
@@ -141,6 +142,27 @@ def _candidate_set(text: str) -> set[str]:
     return {item.split(':', 1)[0] for item in text.split(IFS) if item}
 
 
+def _percentile(values: list[float], fraction: float) -> float:
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = fraction * (len(ordered) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return ordered[lower] * (1 - weight) + ordered[upper] * weight
+
+
+def _timing_summary(values: list[float]) -> dict[str, float]:
+    return {
+        'median_ms': statistics.median(values),
+        'mean_ms': statistics.fmean(values),
+        'p10_ms': _percentile(values, 0.10),
+        'p90_ms': _percentile(values, 0.90),
+        'min_ms': min(values),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--quick', action='store_true')
@@ -154,6 +176,7 @@ def main() -> None:
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--script-dir', type=Path)
     parser.add_argument('--output-json', type=Path)
+    parser.add_argument('--raw-output', type=Path)
     args = parser.parse_args()
     if args.quick:
         args.trials = min(args.trials, 12)
@@ -176,6 +199,13 @@ def main() -> None:
         'native_trials': args.trials,
         'delegated_trials': args.delegated_trials,
         'argcomplete_available': 'argparse_argcomplete' in methods,
+        'measurement': 'fresh completion subprocess wall-clock latency',
+        'method_labels': {
+            'argparse_argcomplete': 'argparse + argcomplete',
+            'kwconf_python': 'kwconf Python + argcomplete',
+            'kwconf_rust': 'kwconf Rust native fast path',
+            'kwconf_auto': 'kwconf auto',
+        },
         'cases': [],
     }
 
@@ -275,6 +305,7 @@ def main() -> None:
 
         output_directory = directory / 'completion-output'
         output_directory.mkdir(exist_ok=True)
+        raw_rows: list[dict[str, object]] = []
 
         for scenario, size, line_tail, choice_schema, extra_env, ownership in cases:
             scripts: dict[str, Path] = {}
@@ -294,7 +325,7 @@ def main() -> None:
             for trial in range(case_trials):
                 order = list(methods)
                 rng.shuffle(order)
-                for method in order:
+                for order_index, method in enumerate(order):
                     out = output_directory / f'out-{scenario}-{method}-{size}-{trial}.txt'
                     elapsed = _run(
                         scripts[method],
@@ -303,7 +334,20 @@ def main() -> None:
                         out,
                         extra_env=extra_env,
                     )
-                    observations[method].append(elapsed / 1e6)
+                    elapsed_ms = elapsed / 1e6
+                    observations[method].append(elapsed_ms)
+                    raw_rows.append(
+                        {
+                            'scenario': scenario,
+                            'schema_size': size,
+                            'ownership': ownership,
+                            'trial': trial,
+                            'order_index': order_index,
+                            'method': method,
+                            'elapsed_ns': elapsed,
+                            'elapsed_ms': elapsed_ms,
+                        }
+                    )
                     outputs[method].add(out.read_text() if out.exists() else '')
                     if not args.script_dir:
                         out.unlink(missing_ok=True)
@@ -337,8 +381,9 @@ def main() -> None:
                     f'  {method:22s} median={median:8.3f} ms  '
                     f'ratio={median / base:6.3f}x parity={parity} exact={exact_output}'
                 )
+                timing = _timing_summary(observations[method])
                 case_report['methods'][method] = {
-                    'median_ms': median,
+                    **timing,
                     'ratio': median / base,
                     'stable_output': stable,
                     'candidates': sorted(candidates),
@@ -349,6 +394,14 @@ def main() -> None:
     finally:
         if temp_context is not None:
             temp_context.__exit__(None, None, None)
+
+    if args.raw_output:
+        args.raw_output.parent.mkdir(parents=True, exist_ok=True)
+        with args.raw_output.open('w', newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=list(raw_rows[0]))
+            writer.writeheader()
+            writer.writerows(raw_rows)
+        print('wrote:', args.raw_output)
 
     if args.output_json:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
