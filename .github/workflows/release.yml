@@ -7,8 +7,14 @@
 name: PurePyRelease
 
 on:
+  # MAINTAINER INTENT: pushes to the default branch intentionally enter
+  # this release workflow. With deployment enabled, test_deploy publishes
+  # those artifacts to TestPyPI so every mainline merge exercises the
+  # release packaging/signing/trusted-publishing path before promotion.
+  # Do not make TestPyPI manual-only or remove the default-branch trigger
+  # unless intentionally changing that release policy.
   push:
-    branches: [ release ]
+    branches: [ main, release ]
   workflow_dispatch:
     inputs:
       publish_target:
@@ -94,15 +100,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-        - ubuntu-latest
-        - macOS-latest
-        - macos-15-intel
-        - windows-latest
-        arch:
-        - auto64
-        cibw_skip:
-        - pp*
+        # Release wheel coverage is deliberately broader than the ordinary test-wheel
+        # matrix. Every configured desktop OS must emit the modern native architectures
+        # we publish: Linux x86_64 and ARM64, macOS Apple Silicon and Intel, and Windows
+        # x86_64. Linux cibuildwheel selectors may emit both manylinux and musllinux
+        # artifacts from each native runner. Keep every entry required: TestPyPI/PyPI
+        # deploy jobs depend on this entire build job so a missing architecture fails
+        # closed instead of publishing a partial wheel set.
+        include:
+        - os: ubuntu-latest
+          arch: auto
+          cibw_skip: pp*
+        - os: ubuntu-24.04-arm
+          arch: auto
+          cibw_skip: pp*
+        - os: macos-15
+          arch: auto
+          cibw_skip: pp*
+        - os: macos-15-intel
+          arch: auto
+          cibw_skip: pp*
+        - os: windows-latest
+          arch: auto
+          cibw_skip: pp*
     steps:
     - name: Checkout source
       uses: actions/checkout@v6.0.2
@@ -118,11 +138,6 @@ jobs:
       if: ${{ startsWith(matrix.os, 'windows-') }}
       with:
         arch: ${{ contains(matrix.os, 'arm') && 'arm64' || 'x64' }}
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3.7.0
-      if: runner.os == 'Linux' && matrix.arch != 'auto'
-      with:
-        platforms: all
     - name: Build binary wheels
       uses: pypa/cibuildwheel@v4.1.1
       with:
@@ -135,6 +150,8 @@ jobs:
         CIBW_ARCHS_LINUX: ${{ matrix.arch }}
         PYTHONUTF8: '1'
         VSCMD_ARG_TGT_ARCH: ''
+        CIBW_ARCHS_WINDOWS: auto64
+        CIBW_ARCHS_MACOS: auto64
     - name: Build kwconf-rust sdist (Linux)
       if: runner.os == 'Linux'
       shell: bash
@@ -154,7 +171,7 @@ jobs:
   test_deploy:
     name: Deploy Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_target == 'testpypi')
     needs:
     - build_purepy_wheels
     - build_sdist
@@ -488,7 +505,8 @@ jobs:
 #
 #        - testpypi:
 #            * environment name: testpypi
-#            * use only for explicit workflow_dispatch TestPyPI probes
+#            * used automatically for default-branch packaging smoke tests
+#              and optionally for explicit workflow_dispatch probes
 #            * usually no manual approval is needed
 #            * this environment is never part of a live release push
 #
