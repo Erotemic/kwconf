@@ -100,7 +100,8 @@ def _load_extension(*, required: bool) -> Any:
             _EXTENSION_ERROR = f'extension import failed: {ex}'
         else:
             try:
-                name, version = candidate.backend_info()
+                backend_info = getattr(candidate, 'backend_info')
+                name, version = backend_info()
             except Exception as ex:
                 _EXTENSION = None
                 _EXTENSION_ERROR = (
