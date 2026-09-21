@@ -43,6 +43,16 @@ Installation
     pip install kwconf[yaml]    # YAML config load/dump and parser='yaml'
     pip install kwconf[ubelt]   # rich repr, Config.__json__, port_to_argparse
 
+    # optional native CLI accelerator (separate distribution)
+    pip install kwconf-rust
+
+The base ``kwconf`` wheel is pure Python. ``kwconf-rust`` is a separate,
+version-synchronized distribution containing the optional Stable-ABI native
+accelerator. When it is installed, the default ``auto`` backend uses it only
+for CLI shapes covered by the compatibility suite and otherwise delegates to
+the canonical Python implementation. Set ``KWCONF_CLI_BACKEND=python`` to
+force the pure-Python backend.
+
 Quickstart
 ----------
 

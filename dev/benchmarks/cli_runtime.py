@@ -60,7 +60,6 @@ import timerit
 import kwconf
 from kwconf import argparse_ext
 
-
 ALL_FAMILIES = (
     'build',
     'schema_parse',

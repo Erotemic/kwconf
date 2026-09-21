@@ -2,7 +2,6 @@ import pytest
 
 import kwconf
 
-
 click = pytest.importorskip("click")
 
 

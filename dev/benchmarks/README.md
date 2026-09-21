@@ -151,3 +151,142 @@ In particular, the expected scaling properties are:
 The benchmark forces Matplotlib's non-interactive `Agg` backend when writing
 plots. This intentionally ignores interactive backends selected by a user
 Matplotlib rc file (for example `QtAgg`), so `uv run` does not need Qt bindings.
+
+## Experimental Rust backend campaign
+
+The optional Rust-backed CLI accelerator has a separate benchmark while its API and
+packaging are experimental. Build it and measure both hot and cold costs with:
+
+```bash
+python dev/rust_backend/build_backend.py --release
+python dev/benchmarks/rust_cli_runtime.py --quick
+```
+
+See `dev/rust_backend/README.md` for the fast-path boundary and decision rule.
+The Rust benchmark includes fresh-process import and one-shot CLI measurements;
+those should be considered alongside the existing in-process families before
+judging whether the extension improves real CLI startup. It also isolates
+Config-instance construction and declarative class construction because those
+Python costs remain after token parsing moves to Rust. Both explicit ``Value``
+and preferred typed declarations are measured.
+
+The cold-import table separates bare ``import kwconf`` from ``kwconf_core``
+(resolving ``Config`` and ``Value``) and from the extension itself. Child
+workloads import ``argparse`` only for the argparse case, so the kwconf/Rust
+cold measurements do not include stdlib parser startup unless the accelerator
+actually falls back to it. Each row reports both its baseline ratio and the
+absolute latency delta; use the latter when judging millisecond-scale cold
+startup differences.
+
+### Headline fresh-process campaign
+
+`rust_cli_runtime.py` is a component benchmark. For the primary question --
+"how long does a small real CLI take from process launch until its parsed
+configuration is ready?" -- use the interleaved subprocess campaign:
+
+```bash
+python dev/benchmarks/cli_startup.py --quick
+python dev/benchmarks/cli_startup.py --trials 100 --cpu 4
+```
+
+The campaign generates ordinary standalone source files: kwconf uses a
+module-scope Config class while argparse constructs its parser in ``main()``.
+Each trial round runs every method once in deterministic shuffled order. Raw
+subprocess observations and summary statistics are appended separately. The
+summary includes p10/median/p90 latency and a **paired** per-round delta from
+argparse, which is more informative than comparing independent minima when the
+Python process floor dominates the measurement. `--style typed` is the default
+because annotated declarations are the preferred kwconf API; `--style value`
+keeps the explicit-`Value` form available as a diagnostic. `--argv-size` can
+exercise dense command lines separately from the default one-option startup
+case. Use ``--script-dir /tmp/kwconf-startup-sources`` to retain the exact
+generated programs when auditing a comparison.
+
+The Rust component benchmark also has an `argv_scaling` family. It compares a
+prebuilt argparse parser, the PyO3 parser method, and the complete Python Rust
+bridge as supplied argv grows. This is specifically intended to reveal when
+FFI string/result conversion becomes more expensive than native dispatch.
+
+The successful flat accelerated lifecycle is also guarded by import-surface
+regression tests: it must not load the generic Config cold module, Value's
+argparse/code-generation module, argparse itself, SubConfig, or YAML/text
+helpers. A fixed realized SubConfig CLI has a companion regression test that
+permits the lightweight SubConfig declaration/runtime module but still forbids
+loading argparse. This is intentional performance architecture rather than merely an
+implementation detail: a supported Rust parse should pay only for the core
+Config/Value representation and the accelerator bridge.
+
+For pure-Rust Criterion and native profiler commands, see
+`dev/rust_backend/README.md`.
+
+
+### Completion, modal, and help/color benchmarks
+
+Parsing speed is only one part of the CLI experience. The Rust campaign also
+measures the other features that distinguish kwconf:
+
+```bash
+# Actual argcomplete environment protocol. When argcomplete is installed this
+# enforces candidate parity against argparse + argcomplete as well as timing it.
+python dev/benchmarks/completion_runtime.py --quick
+
+# Fresh-process static modal dispatch versus argparse subparsers.
+python dev/benchmarks/modal_runtime.py --quick
+
+# Plain and forced-color help. Python/Rust/auto output must be byte-identical;
+# when rich-argparse is installed this includes Rich ANSI rendering.
+python dev/benchmarks/help_runtime.py --quick
+```
+
+Static option names, primitive finite choices, realized nested leaves,
+SubConfig selector *names*, and static modal command names are eligible for the
+Rust completion index. Once a selector value has been consumed, completion
+delegates because that selector may have replaced the realized leaf grammar. Dynamic
+or filesystem value completion, custom completers, shell quoting/word-break
+syntax, and other stateful cases fall through to the real argcomplete parser.
+The completion benchmark therefore tests both the native and delegated paths.
+
+For a review-quality run, prefer the one-command evidence campaign. It retains
+the generated programs and raw observations in addition to the summaries:
+
+```bash
+# Review-quality default: all release gates + representative timing.
+python dev/rust_backend/evidence_bundle.py
+
+# Minimal edit/test-loop diagnostic.
+python dev/rust_backend/evidence_bundle.py --quick
+
+# Exhaustive statistical/profiling campaign used for release characterization.
+python dev/rust_backend/evidence_bundle.py --deep
+```
+
+The default review profile keeps every correctness/parity dimension but uses
+fewer repeated fresh-process timing samples, uses two trials for delegated
+completion cases whose purpose is exact wire parity, and omits deep Criterion,
+cProfile, perf, and cross-repository test runs. If a required gate fails, it
+skips the repeated performance campaign because those measurements cannot make
+the build release-ready; ``--deep`` collects them anyway. The bundle records
+per-step elapsed time so future slow stages are visible directly in the
+summary.
+
+The command always creates one ``kwconf-rust-evidence-*.tar.gz`` bundle. It
+keeps logs even when a required check fails, so the archive can be handed to a
+reviewer without rerunning individual diagnostics.
+
+## Static benchmark report
+
+`examples/09_argparse_comparison.py` contains equivalent normal-sized argparse
+and kwconf implementations. Benchmark it directly with:
+
+```bash
+python dev/benchmarks/realistic_cli_runtime.py --output-json /tmp/realistic.json
+```
+
+The Rust evidence collector runs this comparison and writes a self-contained
+`benchmark_report.html` that combines the realistic example with cold startup,
+in-process parsing, completion, ModalCLI, help/color, and feature-ownership
+results. An existing evidence directory can be rendered manually:
+
+```bash
+python dev/benchmarks/benchmark_report.py /path/to/evidence-directory
+```

@@ -95,3 +95,20 @@ class C(kw.Config):
     nums_template = C.__default__['nums']
     assert nums_template.type is list
     assert getattr(nums_template, '_annotation', None) == list[int]
+
+
+
+def test_any_annotation_is_not_treated_as_runtime_type():
+    import typing
+
+    import kwconf
+
+    class C(kwconf.Config):
+        value: typing.Any = None
+
+    template = C.__default__['value']
+    assert template._annotation is typing.Any
+    assert template.type is None
+    assert template.parsekw['type'] is None
+    got = C.cli(argv=['--value=123'], autocomplete=False, special_options=False)
+    assert got.value == 123
