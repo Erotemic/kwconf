@@ -244,3 +244,81 @@ def test_report_highlights_cold_tab_completion_three_way(tmp_path):
     assert rendered.index('Cold Tab-completion latency') < rendered.index(
         'Implementation diagnostics'
     )
+
+
+def test_report_renders_realistic_lifecycle_attribution(tmp_path):
+    module = _load_report_module()
+    (tmp_path / 'campaign.json').write_text('{"profile": "review"}')
+    (tmp_path / 'environment.json').write_text('{"python": "3.13.13"}')
+    (tmp_path / 'feature_matrix.json').write_text('{"rows": []}')
+    (tmp_path / 'commands.json').write_text('[]')
+
+    realistic = tmp_path / 'realistic'
+    realistic.mkdir()
+    (realistic / 'summary.json').write_text(
+        json.dumps(
+            {
+                'cold': {
+                    'argparse': {'median_ns': 50_000_000},
+                    'kwconf': {'median_ns': 52_000_000},
+                },
+                'ratios': {'cold_kwconf_vs_argparse': 1.04},
+                'output_parity': True,
+            }
+        )
+    )
+
+    realistic_phases = tmp_path / 'realistic_phases'
+    realistic_phases.mkdir()
+
+    def metric(value):
+        return {
+            'median_ns': value,
+            'mean_ns': value,
+            'p10_ns': value,
+            'p90_ns': value,
+            'min_ns': value,
+        }
+
+    def method(api, definition, instance, backend, parse, reset=0, reparse=0, apply=0,
+               rust_bridge=0, extension=0, schema=0, parser_build=0):
+        return {
+            'api_ns': metric(api),
+            'definition_ns': metric(definition),
+            'instance_ns': metric(instance),
+            'backend_ns': metric(backend),
+            'parse_ns': metric(parse),
+            'reset_ns': metric(reset),
+            'reparse_ns': metric(reparse),
+            'apply_ns': metric(apply),
+            'rust_bridge_ns': metric(rust_bridge),
+            'extension_ns': metric(extension),
+            'schema_ns': metric(schema),
+            'parser_build_ns': metric(parser_build),
+        }
+
+    (realistic_phases / 'summary.json').write_text(
+        json.dumps(
+            {
+                'output_parity': True,
+                'methods': {
+                    'argparse': method(0, 700_000, 0, 0, 100_000),
+                    'kwconf_python': method(
+                        1_500_000, 250_000, 60_000, 4_000_000, 180_000, reset=20_000, apply=50_000
+                    ),
+                    'kwconf_rust': method(
+                        1_500_000, 250_000, 60_000, 500_000, 20_000,
+                        reset=20_000, reparse=10_000, apply=50_000,
+                        extension=400_000, schema=60_000, parser_build=40_000,
+                    ),
+                },
+            }
+        )
+    )
+
+    rendered = module.render(tmp_path)
+    assert 'Why the production-style CLI costs what it costs' in rendered
+    assert 'production-style sample argv' in rendered
+    assert 'Show production-style Rust backend breakdown' in rendered
+    assert 'kwconf Python' in rendered
+    assert 'kwconf Rust' in rendered

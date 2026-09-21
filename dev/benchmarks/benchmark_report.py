@@ -398,6 +398,101 @@ def _render_startup(evidence: Path) -> str:
 <tbody>{''.join(body)}</tbody></table></section>'''
 
 
+
+def _render_realistic_phases(evidence: Path) -> str:
+    data = _read_json(evidence / 'realistic_phases' / 'summary.json', {})
+    methods = data.get('methods', {})
+    if not methods:
+        message = _missing_message(
+            evidence,
+            'realistic-cli-phases',
+            'No production-style lifecycle attribution was collected.',
+        )
+        return (
+            '<div class="subcard"><h3>Production-style lifecycle attribution</h3>'
+            f'<p>{message}</p></div>'
+        )
+
+    labels = [
+        ('argparse', 'argparse'),
+        ('kwconf_python', 'kwconf Python'),
+        ('kwconf_rust', 'kwconf Rust'),
+    ]
+    rows = []
+    for key, label in labels:
+        method = methods.get(key)
+        if method is None:
+            continue
+        rows.append(
+            '<tr>'
+            f'<td>{html.escape(label)}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "api_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "definition_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "instance_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "backend_ns"))}</td>'
+            f'<td><strong>{_duration_ns(_metric_median(method, "parse_ns"))}</strong></td>'
+            f'<td>{_duration_ns(_metric_median(method, "reset_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "reparse_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "apply_ns"))}</td>'
+            '</tr>'
+        )
+
+    rust = methods.get('kwconf_rust')
+    py_method = methods.get('kwconf_python')
+    cards = []
+    detail = ''
+    if rust is not None:
+        rust_schema = _metric_median(rust, 'schema_ns')
+        rust_build = _metric_median(rust, 'parser_build_ns')
+        rust_extension = _metric_median(rust, 'extension_ns')
+        rust_parse = _metric_median(rust, 'parse_ns')
+        cards.extend([
+            '<div class="metric"><span>Rust backend materialization</span>'
+            f'<strong>{_duration_ns(_metric_median(rust, "backend_ns"))}</strong>'
+            '<small>extension + schema + FlatParser</small></div>',
+            '<div class="metric"><span>Rust compiler core</span>'
+            f'<strong>{_duration_ns(rust_schema + rust_build)}</strong>'
+            '<small>schema extraction + FlatParser construction</small></div>',
+            '<div class="metric"><span>Rust token parse</span>'
+            f'<strong>{_duration_ns(rust_parse)}</strong>'
+            '<small>production-style sample argv</small></div>',
+        ])
+        if py_method is not None:
+            py_backend = _metric_median(py_method, 'backend_ns')
+            rust_backend = _metric_median(rust, 'backend_ns')
+            if py_backend:
+                cards.append(
+                    '<div class="metric"><span>Backend ratio</span>'
+                    f'<strong>{_ratio(rust_backend / py_backend)}</strong>'
+                    '<small>Rust / kwconf Python</small></div>'
+                )
+        detail = (
+            '<details><summary>Show production-style Rust backend breakdown</summary>'
+            '<table><thead><tr><th>Phase</th><th>Median</th></tr></thead><tbody>'
+            '<tr><td>Import common Rust bridge</td>'
+            f'<td>{_duration_ns(_metric_median(rust, "rust_bridge_ns"))}</td></tr>'
+            '<tr><td>Import/check <code>_kwconf_rust</code></td>'
+            f'<td>{_duration_ns(rust_extension)}</td></tr>'
+            '<tr><td>Extract normalized production schema</td>'
+            f'<td>{_duration_ns(rust_schema)}</td></tr>'
+            '<tr><td>Construct/cache <code>FlatParser</code></td>'
+            f'<td>{_duration_ns(rust_build)}</td></tr>'
+            '</tbody></table></details>'
+        )
+
+    return (
+        '<div class="subcard"><h3>Why the production-style CLI costs what it costs</h3>'
+        '<p>This repeats the lifecycle attribution using the exact schema and sample argv from '
+        '<code>examples/09_argparse_comparison.py</code>, rather than the synthetic all-string schema. '
+        'The separate cold-process medians above remain the user-facing result.</p>'
+        f'<div class="metric-grid">{"".join(cards)}</div>'
+        '<table><thead><tr><th>Implementation</th><th>kwconf API realization</th>'
+        '<th>Schema/parser definition</th><th>Config instance</th><th>Backend materialization</th>'
+        '<th>Parser engine</th><th>Canonical reset</th><th>Compatibility reparse</th>'
+        '<th>Apply/finalize</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table>{detail}</div>'
+    )
+
 def _render_realistic(evidence: Path) -> str:
     data = _read_json(evidence / 'realistic' / 'summary.json')
     snapshot_example = evidence / 'source_snapshot' / 'examples' / EXAMPLE.name
@@ -425,6 +520,7 @@ def _render_realistic(evidence: Path) -> str:
     cold_kwconf = float(data['cold']['kwconf']['median_ns'])
     cold_ratio = float(data['ratios']['cold_kwconf_vs_argparse'])
     cold_max = max(cold_argparse, cold_kwconf) / 1e6
+    phase_html = _render_realistic_phases(evidence)
     return f'''<section id="realistic"><h2>Production-style cold check</h2>
 <p>A 24-option CLI implemented both ways, launched in a fresh process. Output parity: <strong>{str(bool(data.get('output_parity'))).lower()}</strong>.</p>
 <div class="metric-grid">
@@ -435,6 +531,7 @@ def _render_realistic(evidence: Path) -> str:
 <div class="chart"><h3>Cold process median</h3>
 {_bar('argparse', cold_argparse / 1e6, cold_max, ' ms')}
 {_bar('kwconf', cold_kwconf / 1e6, cold_max, ' ms')}</div>
+{phase_html}
 {snippets}</section>'''
 
 

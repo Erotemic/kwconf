@@ -61,3 +61,48 @@ def test_realistic_benchmark_cold_only(tmp_path):
     assert data['output_parity'] is True
     assert 'warm_parse' not in data
     assert 'warm_kwconf_vs_argparse' not in data['ratios']
+
+
+def test_realistic_phase_benchmark(tmp_path):
+    import importlib.util
+
+    if importlib.util.find_spec('_kwconf_rust') is None:
+        import pytest
+        pytest.skip('kwconf-rust accelerator is not installed')
+
+    phase_benchmark = REPO_DPATH / 'dev' / 'benchmarks' / 'realistic_cli_phases.py'
+    output = tmp_path / 'phase-summary.json'
+    raw_output = tmp_path / 'phase-trials.csv'
+    env = os.environ.copy()
+    old_pythonpath = env.get('PYTHONPATH')
+    env['PYTHONPATH'] = (
+        str(REPO_DPATH)
+        if not old_pythonpath
+        else str(REPO_DPATH) + os.pathsep + old_pythonpath
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            str(phase_benchmark),
+            '--trials',
+            '2',
+            '--warmups',
+            '0',
+            '--output-json',
+            str(output),
+            '--raw-output',
+            str(raw_output),
+        ],
+        cwd=REPO_DPATH,
+        env=env,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    data = json.loads(output.read_text())
+    assert data['output_parity'] is True
+    assert set(data['methods']) == {'argparse', 'kwconf_python', 'kwconf_rust'}
+    rust = data['methods']['kwconf_rust']
+    assert rust['backend_ns']['median_ns'] > 0
+    assert rust['parse_ns']['median_ns'] > 0
+    assert rust['rust_bridge_ns']['median_ns'] == 0
+    assert raw_output.exists()

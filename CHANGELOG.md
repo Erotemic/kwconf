@@ -44,6 +44,7 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   snapshots, and every command log into one tarball.
 
 ### Changed
+* The production-style argparse-vs-kwconf benchmark now has a matching fresh-process lifecycle attribution run for the exact 24-option schema and sample argv. The HTML report shows API realization, schema/parser definition, backend materialization, parser-engine, reset/reparse, and apply/finalize costs for argparse, kwconf Python, and kwconf Rust, with a Rust extension/schema/FlatParser breakdown next to the user-facing cold wall-clock result.
 * Common flat Rust-backed ``Config.cli()`` invocations now use a tiny direct
   bridge that lives in the already-loaded ``config.py`` hot path. They import
   and protocol-check ``_kwconf_rust`` directly, normalize the conservative flat

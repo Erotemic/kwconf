@@ -237,7 +237,7 @@ class Collector:
                 f'Collected subprocess time: **{total_elapsed:.2f}s**',
                 '',
                 'Native-vs-delegated feature ownership is in `feature_matrix.json`.',
-                'Cold-start breakdown data is in `cold_breakdown/`; completion data is in `completion/`.',
+                'Cold-start totals are in `cold_breakdown/`; backend phase attribution is in `cold_backend/`; completion data is in `completion/`.',
                 'Every subprocess log is retained even when a command fails.',
             ]
         )
@@ -673,7 +673,9 @@ def main() -> None:
             )
             for label in [
                 'realistic-cli-benchmark',
+                'realistic-cli-phases',
                 'cold-start-breakdown',
+                'cold-backend-phases',
                 'python-pyo3-benchmark',
                 'completion-benchmark',
                 'modal-benchmark',
@@ -694,6 +696,26 @@ def main() -> None:
                     '--cold-only',
                     '--output-json',
                     str(realistic / 'summary.json'),
+                ],
+                required=True,
+                timeout=180,
+            )
+
+            realistic_phases = bundle / 'realistic_phases'
+            realistic_phases.mkdir()
+            collector.run(
+                'realistic-cli-phases',
+                [
+                    sys.executable,
+                    'dev/benchmarks/realistic_cli_phases.py',
+                    '--trials',
+                    str(args.realistic_trials),
+                    '--output-json',
+                    str(realistic_phases / 'summary.json'),
+                    '--raw-output',
+                    str(realistic_phases / 'trials.csv'),
+                    '--script-dir',
+                    str(realistic_phases / 'scripts'),
                 ],
                 required=True,
                 timeout=180,
@@ -724,6 +746,31 @@ def main() -> None:
                 cold_cmd,
                 required=True,
                 timeout=300,
+            )
+
+            cold_backend = bundle / 'cold_backend'
+            cold_backend.mkdir()
+            cold_backend_cmd = [
+                sys.executable,
+                'dev/benchmarks/cold_backend_phases.py',
+                '--trials',
+                str(max(2, args.startup_trials // 2)),
+                '--no-site-trials',
+                str(max(2, args.startup_trials // 6)),
+                '--output-json',
+                str(cold_backend / 'summary.json'),
+                '--raw-output',
+                str(cold_backend / 'trials.csv'),
+                '--script-dir',
+                str(cold_backend / 'scripts'),
+            ]
+            if args.quick:
+                cold_backend_cmd += ['--schema-size', '16']
+            collector.run(
+                'cold-backend-phases',
+                cold_backend_cmd,
+                required=True,
+                timeout=180,
             )
 
             if args.deep:

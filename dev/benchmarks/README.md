@@ -311,6 +311,7 @@ and kwconf implementations. Benchmark it directly with:
 
 ```bash
 python dev/benchmarks/realistic_cli_runtime.py --output-json /tmp/realistic.json
+python dev/benchmarks/realistic_cli_phases.py --output-json /tmp/realistic-phases.json --raw-output /tmp/realistic-phases.csv
 ```
 
 The Rust evidence collector runs this comparison and writes a self-contained
