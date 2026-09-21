@@ -237,7 +237,7 @@ class Collector:
                 f'Collected subprocess time: **{total_elapsed:.2f}s**',
                 '',
                 'Native-vs-delegated feature ownership is in `feature_matrix.json`.',
-                'Real CLI startup data is in `startup/`; completion data is in `completion/`.',
+                'Cold-start breakdown data is in `cold_breakdown/`; completion data is in `completion/`.',
                 'Every subprocess log is retained even when a command fails.',
             ]
         )
@@ -453,7 +453,6 @@ def _make_cli() -> argparse.ArgumentParser:
     parser.add_argument('--modal-trials', type=int)
     parser.add_argument('--help-trials', type=int)
     parser.add_argument('--realistic-trials', type=int)
-    parser.add_argument('--realistic-warm-loops', type=int)
     parser.add_argument(
         '--kwconf-rs',
         default='auto',
@@ -482,7 +481,6 @@ def _configure_profile(args: argparse.Namespace) -> str:
             'modal_trials': 2,
             'help_trials': 1,
             'realistic_trials': 2,
-            'realistic_warm_loops': 1000,
         }
     elif args.deep:
         # These match the historical full campaign. Keep this mode available
@@ -495,7 +493,6 @@ def _configure_profile(args: argparse.Namespace) -> str:
             'modal_trials': 50,
             'help_trials': 30,
             'realistic_trials': 50,
-            'realistic_warm_loops': 30000,
         }
     else:
         # Review mode keeps every correctness/parity dimension but spends
@@ -508,7 +505,6 @@ def _configure_profile(args: argparse.Namespace) -> str:
             'modal_trials': 15,
             'help_trials': 3,
             'realistic_trials': 15,
-            'realistic_warm_loops': 10000,
         }
     for name, value in defaults.items():
         if getattr(args, name) is None:
@@ -558,12 +554,12 @@ def main() -> None:
             'quick': args.quick,
             'deep': args.deep,
             'startup_trials': args.startup_trials,
+            'no_site_trials': max(2, args.startup_trials // 3),
             'completion_trials': args.completion_trials,
             'delegated_completion_trials': args.delegated_completion_trials,
             'modal_trials': args.modal_trials,
             'help_trials': args.help_trials,
             'realistic_trials': args.realistic_trials,
-            'realistic_warm_loops': args.realistic_warm_loops,
         }
         (bundle / 'campaign.json').write_text(json.dumps(campaign, indent=2) + '\n')
         print('campaign profile:', profile, campaign, flush=True)
@@ -677,7 +673,7 @@ def main() -> None:
             )
             for label in [
                 'realistic-cli-benchmark',
-                'real-cli-startup',
+                'cold-start-breakdown',
                 'python-pyo3-benchmark',
                 'completion-benchmark',
                 'modal-benchmark',
@@ -695,8 +691,7 @@ def main() -> None:
                     'dev/benchmarks/realistic_cli_runtime.py',
                     '--trials',
                     str(args.realistic_trials),
-                    '--warm-loops',
-                    str(args.realistic_warm_loops),
+                    '--cold-only',
                     '--output-json',
                     str(realistic / 'summary.json'),
                 ],
@@ -704,41 +699,52 @@ def main() -> None:
                 timeout=180,
             )
 
-            startup = bundle / 'startup'
-            startup.mkdir()
-            startup_cmd = [
+            cold_breakdown = bundle / 'cold_breakdown'
+            cold_breakdown.mkdir()
+            cold_cmd = [
                 sys.executable,
-                'dev/benchmarks/cli_startup.py',
+                'dev/benchmarks/cold_start_breakdown.py',
                 '--trials',
                 str(args.startup_trials),
-                '--no-append',
+                '--no-site-trials',
+                str(max(2, args.startup_trials // 3)),
+                '--output-json',
+                str(cold_breakdown / 'summary.json'),
                 '--raw-output',
-                str(startup / 'trials.csv'),
-                '--summary-output',
-                str(startup / 'summary.csv'),
+                str(cold_breakdown / 'trials.csv'),
                 '--script-dir',
-                str(startup / 'scripts'),
+                str(cold_breakdown / 'scripts'),
             ]
             if args.cpu is not None:
-                startup_cmd += ['--cpu', str(args.cpu)]
+                cold_cmd += ['--cpu', str(args.cpu)]
             if args.quick:
-                startup_cmd += ['--schema-sizes', '1']
-            collector.run('real-cli-startup', startup_cmd, required=True, timeout=300)
-
-            component_dir = bundle / 'components'
-            component_dir.mkdir()
+                cold_cmd += ['--schema-sizes', '16']
             collector.run(
-                'python-pyo3-benchmark',
-                [
-                    sys.executable,
-                    'dev/benchmarks/rust_cli_runtime.py',
-                    '--quick',
-                    '--output',
-                    str(component_dir / 'rust_cli_runtime.csv'),
-                ],
+                'cold-start-breakdown',
+                cold_cmd,
                 required=True,
-                timeout=180,
+                timeout=300,
             )
+
+            if args.deep:
+                component_dir = bundle / 'components'
+                component_dir.mkdir()
+                collector.run(
+                    'python-pyo3-benchmark',
+                    [
+                        sys.executable,
+                        'dev/benchmarks/rust_cli_runtime.py',
+                        '--output',
+                        str(component_dir / 'rust_cli_runtime.csv'),
+                    ],
+                    required=False,
+                    timeout=300,
+                )
+            else:
+                collector.skip(
+                    'python-pyo3-benchmark',
+                    'deep-only implementation microbenchmarks; review focuses on cold starts',
+                )
 
             completion = bundle / 'completion'
             completion.mkdir()
@@ -936,7 +942,7 @@ def main() -> None:
                     required=False,
                     timeout=300,
                 )
-        run_cprofile = args.deep or (not args.quick and run_benchmarks)
+        run_cprofile = args.deep
         if run_cprofile:
             cprofile_iterations = 20000 if args.deep else 5000
             collector.run(
@@ -979,7 +985,7 @@ def main() -> None:
             reason = (
                 'quick profile omits cProfile'
                 if args.quick
-                else 'benchmark prerequisite failure blocked review performance profiling'
+                else 'deep-only implementation profiling; review focuses on cold starts'
             )
             collector.skip('python-cprofile-rust-bridge', reason)
             collector.skip('python-cprofile-completion', reason)

@@ -48,6 +48,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--trials', type=int, default=20)
     parser.add_argument('--warm-loops', type=int, default=20000)
+    parser.add_argument(
+        '--cold-only',
+        action='store_true',
+        help='skip repeated in-process parsing; retain only fresh-process evidence',
+    )
     parser.add_argument('--output-json', type=Path)
     args = parser.parse_args()
     env = os.environ.copy()
@@ -60,17 +65,25 @@ def main() -> None:
             elapsed, _ = _run_child(backend, ['--_quiet'], env)
             cold[backend].append(elapsed)
 
-    warm = {}
     results = {}
-    for backend in ('argparse', 'kwconf'):
-        _, stdout = _run_child(
-            backend,
-            [f'--_repeat={args.warm_loops}', '--_json'],
-            env,
-        )
-        payload = json.loads(stdout.strip().splitlines()[-1])
-        warm[backend] = float(payload['per_parse_ns'])
-        results[backend] = payload['result']
+    warm = {}
+    if args.cold_only:
+        # Preserve semantic parity evidence without spending the review campaign
+        # on a large repeated warm loop.
+        for backend in ('argparse', 'kwconf'):
+            _, stdout = _run_child(backend, ['--_json'], env)
+            payload = json.loads(stdout.strip().splitlines()[-1])
+            results[backend] = payload['result']
+    else:
+        for backend in ('argparse', 'kwconf'):
+            _, stdout = _run_child(
+                backend,
+                [f'--_repeat={args.warm_loops}', '--_json'],
+                env,
+            )
+            payload = json.loads(stdout.strip().splitlines()[-1])
+            warm[backend] = float(payload['per_parse_ns'])
+            results[backend] = payload['result']
 
     if results['argparse'] != results['kwconf']:
         raise AssertionError('argparse and kwconf example outputs differ')
@@ -79,7 +92,8 @@ def main() -> None:
     data = {
         'python': sys.executable,
         'trials': args.trials,
-        'warm_loops': args.warm_loops,
+        'warm_loops': 0 if args.cold_only else args.warm_loops,
+        'cold_only': bool(args.cold_only),
         'kwconf_backend': 'auto',
         'cold': {
             key: {
@@ -89,13 +103,14 @@ def main() -> None:
             }
             for key, values in cold.items()
         },
-        'warm_parse': {key: {'mean_ns': value} for key, value in warm.items()},
         'ratios': {
             'cold_kwconf_vs_argparse': cold_med['kwconf'] / cold_med['argparse'],
-            'warm_kwconf_vs_argparse': warm['kwconf'] / warm['argparse'],
         },
         'output_parity': True,
     }
+    if warm:
+        data['warm_parse'] = {key: {'mean_ns': value} for key, value in warm.items()}
+        data['ratios']['warm_kwconf_vs_argparse'] = warm['kwconf'] / warm['argparse']
     text = json.dumps(data, indent=2) + '\n'
     if args.output_json is not None:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)

@@ -44,6 +44,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   snapshots, and every command log into one tarball.
 
 ### Changed
+* Rust benchmark evidence now treats fresh-process latency as the headline result.
+  The report decomposes cold starts into process envelope, import, CLI definition,
+  and first-parse time for argparse, the pure-Python kwconf backend, and the Rust
+  backend. A controlled ``python -S`` profile shows how much ordinary site startup
+  masks parser work. Review campaigns skip repeated warm-loop/component profiling;
+  those remain available under ``--deep`` for implementation diagnostics.
 * Rust evidence reports now flush the command ledger before HTML rendering, so
   benchmark sections that were skipped after a failed gate explain why instead
   of appearing as unexplained missing data.

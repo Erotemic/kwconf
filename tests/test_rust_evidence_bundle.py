@@ -34,7 +34,6 @@ def test_evidence_campaign_profiles():
     assert review.modal_trials == 15
     assert review.help_trials == 3
     assert review.realistic_trials == 15
-    assert review.realistic_warm_loops == 10000
 
     quick = parser.parse_args(['--quick'])
     assert module._configure_profile(quick) == 'quick'
@@ -44,7 +43,6 @@ def test_evidence_campaign_profiles():
     assert quick.modal_trials == 2
     assert quick.help_trials == 1
     assert quick.realistic_trials == 2
-    assert quick.realistic_warm_loops == 1000
 
     deep = parser.parse_args(['--deep'])
     assert module._configure_profile(deep) == 'deep'
@@ -54,7 +52,6 @@ def test_evidence_campaign_profiles():
     assert deep.modal_trials == 50
     assert deep.help_trials == 30
     assert deep.realistic_trials == 50
-    assert deep.realistic_warm_loops == 30000
 
 
 def test_evidence_profile_explicit_trials_win():
@@ -73,8 +70,6 @@ def test_evidence_profile_explicit_trials_win():
             '5',
             '--realistic-trials',
             '6',
-            '--realistic-warm-loops',
-            '7000',
         ]
     )
     assert module._configure_profile(args) == 'review'
@@ -84,7 +79,6 @@ def test_evidence_profile_explicit_trials_win():
     assert args.modal_trials == 9
     assert args.help_trials == 5
     assert args.realistic_trials == 6
-    assert args.realistic_warm_loops == 7000
 
 
 def test_evidence_html_output_option(tmp_path):
@@ -169,3 +163,14 @@ def test_benchmark_gate_is_independent_from_repo_policy_failures(tmp_path):
     assert collector.failed_labels(module.BENCHMARK_PREREQUISITE_LABELS) == [
         'backend-parity'
     ]
+
+
+def test_evidence_campaign_uses_cold_breakdown_benchmark():
+    text = EVIDENCE_PATH.read_text()
+    assert 'dev/benchmarks/cold_start_breakdown.py' in text
+    assert "collector.run(\n                'cold-start-breakdown'" in text
+    assert "'dev/benchmarks/cli_startup.py'" not in text
+    assert "'--cold-only'" in text
+    assert 'realistic-warm-loops' not in text
+    assert 'run_cprofile = args.deep' in text
+    assert 'deep-only implementation microbenchmarks' in text

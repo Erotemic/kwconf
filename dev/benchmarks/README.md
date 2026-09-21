@@ -180,27 +180,31 @@ startup differences.
 
 ### Headline fresh-process campaign
 
-`rust_cli_runtime.py` is a component benchmark. For the primary question --
-"how long does a small real CLI take from process launch until its parsed
-configuration is ready?" -- use the interleaved subprocess campaign:
+`rust_cli_runtime.py` is a component benchmark. For the primary user-facing
+question -- "what does one fresh CLI invocation cost, and where does that time
+go?" -- use the phase-instrumented subprocess campaign:
 
 ```bash
-python dev/benchmarks/cli_startup.py --quick
-python dev/benchmarks/cli_startup.py --trials 100 --cpu 4
+python dev/benchmarks/cold_start_breakdown.py --trials 30
+python dev/benchmarks/cold_start_breakdown.py --trials 100 --cpu 4
 ```
 
-The campaign generates ordinary standalone source files: kwconf uses a
-module-scope Config class while argparse constructs its parser in ``main()``.
-Each trial round runs every method once in deterministic shuffled order. Raw
-subprocess observations and summary statistics are appended separately. The
-summary includes p10/median/p90 latency and a **paired** per-round delta from
-argparse, which is more informative than comparing independent minima when the
-Python process floor dominates the measurement. `--style typed` is the default
-because annotated declarations are the preferred kwconf API; `--style value`
-keeps the explicit-`Value` form available as a diagnostic. `--argv-size` can
-exercise dense command lines separately from the default one-option startup
-case. Use ``--script-dir /tmp/kwconf-startup-sources`` to retain the exact
-generated programs when auditing a comparison.
+Every observation launches a new interpreter. The parent measures complete
+wall-clock latency while the generated child measures CLI-library import, CLI
+definition, and first parse. The remainder is reported as the process envelope
+(interpreter startup, script loading, timer import, output, and teardown). The
+three compared implementations are stdlib argparse, kwconf's Python backend,
+and kwconf's Rust backend.
+
+The same campaign also runs a smaller controlled ``python -S`` sample while
+restoring the parent environment's site-packages paths through ``PYTHONPATH``.
+That is not a recommended deployment mode; it answers the engineering question
+of whether CLI definition/parse costs become material after ordinary ``site``
+initialization is removed.
+
+`cli_startup.py` remains available for historical raw end-to-end startup
+comparisons and alternate declaration styles, but the evidence report uses the
+phase-instrumented campaign as its headline source.
 
 The Rust component benchmark also has an `argv_scaling` family. It compares a
 prebuilt argparse parser, the PyO3 parser method, and the complete Python Rust
