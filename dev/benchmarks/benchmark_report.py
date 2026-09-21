@@ -121,6 +121,12 @@ def _render_cold_breakdown(evidence: Path) -> str:
 
     size = int(default_case['schema_size'])
     methods = default_case['methods']
+    baseline_method = methods.get('python_baseline')
+    baseline_total = (
+        _metric_median(baseline_method, 'total_ns')
+        if baseline_method is not None
+        else 0.0
+    )
     labels = [
         ('python_baseline', 'Python baseline'),
         ('argparse', 'argparse'),
@@ -144,25 +150,132 @@ def _render_cold_breakdown(evidence: Path) -> str:
             f'<strong>{_duration_ns(total)}</strong>'
             f'<small>{html.escape(card_note)}</small></div>'
         )
+        delta = total - baseline_total if key != 'python_baseline' else 0.0
+        body = _metric_median(method, 'body_ns')
+        imported = _metric_median(method, 'import_ns')
+        cli_after_import = max(0.0, body - imported)
         rows.append(
             '<tr>'
             f'<td>{html.escape(label)}</td>'
             f'<td><strong>{_duration_ns(total)}</strong></td>'
+            f'<td>{"—" if key == "python_baseline" else _duration_ns(delta)}</td>'
             f'<td>{_duration_ns(_metric_median(method, "process_envelope_ns"))}</td>'
-            f'<td>{_duration_ns(_metric_median(method, "import_ns"))}</td>'
-            f'<td>{_duration_ns(_metric_median(method, "definition_ns"))}</td>'
-            f'<td>{_duration_ns(_metric_median(method, "parse_ns"))}</td>'
+            f'<td>{_duration_ns(imported)}</td>'
+            f'<td>{_duration_ns(cli_after_import)}</td>'
             '</tr>'
         )
     return f'''<section id="cold-decomposition" class="hero">
 <h2>What a user pays on a cold start</h2>
-<p>Fresh Python process, {size}-field CLI, and one supplied option. Each observation launches a new process. The process envelope is wall-clock time outside the instrumented CLI body; it includes interpreter initialization, script loading, the timer import, output, and teardown. For kwconf, <em>first parse</em> includes lazy backend setup required by the first <code>CLI.cli()</code> call.</p>
+<p>Fresh Python process, {size}-field CLI, and one supplied option. Each observation launches a new process. The process envelope includes interpreter initialization, script loading, output, and teardown. The detailed backend section below separates schema definition, backend construction, token parsing, and Config lifecycle work; this headline table deliberately avoids calling all lazy first-use work “parse”.</p>
 <div class="metric-grid">{''.join(cards)}</div>
-<table><thead><tr><th>Implementation</th><th>Total wall clock</th><th>Process envelope</th><th>Import</th><th>Definition</th><th>First parse</th></tr></thead>
+<table><thead><tr><th>Implementation</th><th>Total wall clock</th><th>Extra over bare Python</th><th>Process envelope</th><th>Library import</th><th>CLI body after import</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
-<p class="note">Definition means parser construction for argparse and Config class declaration for kwconf. Phase medians are summarized independently, so they need not add exactly to the median total.</p>
 </section>'''
 
+
+def _render_backend_phases(evidence: Path) -> str:
+    data = _read_json(evidence / 'cold_backend' / 'summary.json', {})
+    profile = data.get('profiles', {}).get('default', {})
+    methods = profile.get('methods', {})
+    if not methods:
+        message = _missing_message(
+            evidence,
+            'cold-backend-phases',
+            'No cold backend phase results were found.',
+        )
+        return (
+            '<section id="backend-phases"><h2>Where the CLI work goes</h2>'
+            f'<p>{message}</p></section>'
+        )
+
+    size = int(data.get('schema_size', 64))
+    labels = [
+        ('argparse', 'argparse'),
+        ('kwconf_python', 'kwconf Python'),
+        ('kwconf_rust', 'kwconf Rust'),
+    ]
+    rows = []
+    for key, label in labels:
+        method = methods.get(key)
+        if method is None:
+            continue
+        rows.append(
+            '<tr>'
+            f'<td>{html.escape(label)}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "api_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "definition_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "instance_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "backend_ns"))}</td>'
+            f'<td><strong>{_duration_ns(_metric_median(method, "parse_ns"))}</strong></td>'
+            f'<td>{_duration_ns(_metric_median(method, "reset_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "reparse_ns"))}</td>'
+            f'<td>{_duration_ns(_metric_median(method, "apply_ns"))}</td>'
+            '</tr>'
+        )
+
+    py_method = methods.get('kwconf_python')
+    rust_method = methods.get('kwconf_rust')
+    cards = []
+    if py_method and rust_method:
+        py_backend = _metric_median(py_method, 'backend_ns')
+        rust_backend = _metric_median(rust_method, 'backend_ns')
+        if py_backend:
+            cards.append(
+                '<div class="metric"><span>Backend materialization</span>'
+                f'<strong>{_ratio(rust_backend / py_backend)}</strong>'
+                '<small>Rust / kwconf Python; lower is faster</small></div>'
+            )
+        rust_bridge = _metric_median(rust_method, 'rust_bridge_ns')
+        rust_extension = _metric_median(rust_method, 'extension_ns')
+        rust_schema = _metric_median(rust_method, 'schema_ns')
+        rust_parser_build = _metric_median(rust_method, 'parser_build_ns')
+        cards.append(
+            '<div class="metric"><span>Rust compiler core</span>'
+            f'<strong>{_duration_ns(rust_schema + rust_parser_build)}</strong>'
+            '<small>schema extraction + <code>FlatParser</code> construction</small></div>'
+        )
+        cards.append(
+            '<div class="metric"><span>Rust load overhead</span>'
+            f'<strong>{_duration_ns(rust_bridge + rust_extension)}</strong>'
+            '<small>Python bridge + extension/protocol load</small></div>'
+        )
+        rust_parse = _metric_median(rust_method, 'parse_ns')
+        cards.append(
+            '<div class="metric"><span>Rust token parse</span>'
+            f'<strong>{_duration_ns(rust_parse)}</strong>'
+            '<small><code>FlatParser.parse()</code>, not setup</small></div>'
+        )
+        rust_reparse = _metric_median(rust_method, 'reparse_ns')
+        cards.append(
+            '<div class="metric"><span>Compatibility reparse</span>'
+            f'<strong>{_duration_ns(rust_reparse)}</strong>'
+            '<small>second parse after canonical reset</small></div>'
+        )
+
+    rust_detail_rows = []
+    if rust_method:
+        for label, metric_name in [
+            ('Import <code>kwconf._rust</code> bridge', 'rust_bridge_ns'),
+            ('Import/check <code>_kwconf_rust</code> extension', 'extension_ns'),
+            ('Extract normalized kwconf schema', 'schema_ns'),
+            ('Construct/cache <code>FlatParser</code>', 'parser_build_ns'),
+        ]:
+            rust_detail_rows.append(
+                '<tr>'
+                f'<td>{label}</td>'
+                f'<td>{_duration_ns(_metric_median(rust_method, metric_name))}</td>'
+                '</tr>'
+            )
+
+    return f'''<section id="backend-phases">
+<h2>Where the CLI work goes</h2>
+<p>Fresh-process attribution for a representative {size}-field CLI. The kwconf rows now separate first realization of the lazy <code>kwconf.Config</code> API from actual Config subclass construction; this prevents module-loading work from being mislabeled as schema-definition cost. argparse's normal <code>ArgumentParser()</code> + <code>add_argument()</code> definition already materializes its backend, so its separate backend-build column is zero.</p>
+<div class="metric-grid">{''.join(cards)}</div>
+<table><thead><tr><th>Implementation</th><th>kwconf API realization</th><th>Schema/parser definition</th><th>Config instance</th><th>Backend materialization</th><th>Parser engine</th><th>Canonical reset</th><th>Compatibility reparse</th><th>Apply/finalize</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table>
+<p class="note">For kwconf Python, backend materialization constructs the real <code>ExtendedArgumentParser</code>. For kwconf Rust it imports the bridge/extension and compiles <code>FlatParser</code>; it never constructs argparse on the successful fast path. The public <code>.argparse()</code> API remains available and intentionally constructs a Python parser when explicitly requested.</p>
+<details><summary>Show Rust backend materialization breakdown</summary><table><thead><tr><th>Phase</th><th>Median</th></tr></thead><tbody>{''.join(rust_detail_rows)}</tbody></table></details>
+</section>'''
 
 def _render_no_site(evidence: Path) -> str:
     data = _read_json(evidence / 'cold_breakdown' / 'summary.json', {})
@@ -191,13 +304,9 @@ def _render_no_site(evidence: Path) -> str:
         normal_total = _metric_median(normal, 'total_ns')
         stripped_total = _metric_median(stripped, 'total_ns')
         import_ns = _metric_median(stripped, 'import_ns')
-        definition_ns = _metric_median(stripped, 'definition_ns')
-        parse_ns = _metric_median(stripped, 'parse_ns')
-        cli_share = (
-            100.0 * (definition_ns + parse_ns) / stripped_total
-            if stripped_total
-            else 0.0
-        )
+        body_ns = _metric_median(stripped, 'body_ns')
+        cli_after_import = max(0.0, body_ns - import_ns)
+        cli_share = 100.0 * cli_after_import / stripped_total if stripped_total else 0.0
         rows.append(
             '<tr>'
             f'<td>{html.escape(label)}</td>'
@@ -205,8 +314,7 @@ def _render_no_site(evidence: Path) -> str:
             f'<td><strong>{_duration_ns(stripped_total)}</strong></td>'
             f'<td>{_duration_ns(normal_total - stripped_total)}</td>'
             f'<td>{_duration_ns(import_ns)}</td>'
-            f'<td>{_duration_ns(definition_ns)}</td>'
-            f'<td>{_duration_ns(parse_ns)}</td>'
+            f'<td>{_duration_ns(cli_after_import)}</td>'
             f'<td>{cli_share:.1f}%</td>'
             '</tr>'
         )
@@ -245,7 +353,7 @@ def _render_no_site(evidence: Path) -> str:
 <div class="metric"><span><code>python -S</code> baseline</span><strong>{_duration_ns(stripped_base)}</strong><small>same dependency paths injected explicitly</small></div>
 <div class="metric"><span>Startup removed</span><strong>{_duration_ns(saved)}</strong><small>{saved_pct:.1f}% of the normal baseline</small></div>
 </div>
-<table><thead><tr><th>Implementation</th><th>Normal total</th><th><code>-S</code> total</th><th>Saved</th><th>Import</th><th>Definition</th><th>First parse</th><th>Definition + parse share</th></tr></thead>
+<table><thead><tr><th>Implementation</th><th>Normal total</th><th><code>-S</code> total</th><th>Saved</th><th>Import</th><th>CLI body after import</th><th>CLI-body share</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
 {preload_block}
 </section>'''
@@ -660,6 +768,7 @@ def render(evidence: Path) -> str:
     return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>kwconf cold-start benchmark report</title><style>{css}</style></head><body><main>
 <header><h1>kwconf cold-start performance</h1><p>Fresh-process latency first: normal CLI invocation and shell Tab completion for argparse, kwconf Python, and kwconf Rust. Warm-loop throughput is diagnostic rather than headline evidence.</p><div class="meta"><span>profile: <strong>{html.escape(str(profile))}</strong></span><span>Python: <strong>{html.escape(str(python))}</strong></span></div></header>
 {_render_cold_breakdown(evidence)}
+{_render_backend_phases(evidence)}
 {_render_no_site(evidence)}
 {_render_startup(evidence)}
 {_render_realistic(evidence)}

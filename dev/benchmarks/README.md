@@ -190,16 +190,35 @@ python dev/benchmarks/cold_start_breakdown.py --trials 100 --cpu 4
 ```
 
 Every observation launches a new interpreter. The parent measures complete
-wall-clock latency while the generated child measures CLI-library import, CLI
-definition, and first parse. The remainder is reported as the process envelope
-(interpreter startup, script loading, timer import, output, and teardown). The
-three compared implementations are stdlib argparse, kwconf's Python backend,
-and kwconf's Rust backend.
+wall-clock latency while the generated child records the broad CLI body. The
+remainder is reported as the process envelope (interpreter startup, script
+loading, timer import, output, and teardown). The three compared implementations
+are stdlib argparse, kwconf's Python backend, and kwconf's Rust backend.
+
+For attribution inside that CLI body, use the separate fresh-process backend
+phase benchmark:
+
+```bash
+python dev/benchmarks/cold_backend_phases.py --trials 15
+```
+
+It separates the cheap top-level ``import kwconf`` from first realization of
+the lazy ``kwconf.Config`` API, then measures actual Config subclass definition,
+Config-instance materialization, backend construction, the parser engine itself,
+the canonical reset, the Rust compatibility reparse, and final value
+application. Rust backend construction is further split into bridge import,
+extension/protocol loading, normalized-schema extraction, and native
+``FlatParser`` construction. This avoids mislabeling one-time Python module
+loading as metaclass/schema-definition work and shows how much of the remaining
+cold cost is actual native compilation versus loading the bridge. The public
+cold-start totals remain authoritative; phase attribution is diagnostic and is
+not forced into false symmetry (argparse's ``add_argument`` calls already
+construct its backend).
 
 The same campaign also runs a smaller controlled ``python -S`` sample while
 restoring the parent environment's site-packages paths through ``PYTHONPATH``.
 That is not a recommended deployment mode; it answers the engineering question
-of whether CLI definition/parse costs become material after ordinary ``site``
+of whether CLI-body costs become material after ordinary ``site``
 initialization is removed. The generated child also records a small probe of
 relevant ``sys.modules`` entries immediately before the timed CLI import so
 work shifted by ``-S`` can be distinguished from work that truly disappeared.
@@ -293,9 +312,8 @@ python dev/benchmarks/realistic_cli_runtime.py --output-json /tmp/realistic.json
 ```
 
 The Rust evidence collector runs this comparison and writes a self-contained
-`benchmark_report.html` that combines the realistic example with cold startup,
-in-process parsing, completion, ModalCLI, help/color, and feature-ownership
-results. An existing evidence directory can be rendered manually:
+`benchmark_report.html` that combines the realistic example with cold startup, backend-phase
+attribution, completion, ModalCLI, help/color, and feature-ownership results. An existing evidence directory can be rendered manually:
 
 ```bash
 python dev/benchmarks/benchmark_report.py /path/to/evidence-directory

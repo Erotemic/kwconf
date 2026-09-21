@@ -44,6 +44,16 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   snapshots, and every command log into one tarball.
 
 ### Changed
+* Cold-start evidence now separates the cheap package import, first realization
+  of the lazy ``Config`` API, actual Config subclass definition, instance/default
+  materialization, backend construction, the parser engine itself, canonical
+  reset/reparse work, and final Config application. Rust backend materialization
+  is further split into bridge import, extension/protocol loading, schema
+  extraction, and native ``FlatParser`` construction. This avoids attributing
+  Python module loading to either schema definition or token parsing and makes it
+  explicit that the Rust fast path never constructs ``ArgumentParser`` unless
+  the caller explicitly requests that compatibility API or the fast path falls
+  back.
 * The benchmark report now treats shell Tab completion as a user-facing cold-start
   metric alongside normal invocation. It compares raw ``argparse + argcomplete``,
   the kwconf Python backend using argcomplete, and the Rust static completion fast
