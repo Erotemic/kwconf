@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 
 REPO_DPATH = Path(__file__).resolve().parents[2]
-MANIFEST = REPO_DPATH / 'rust' / 'kwconf_accel' / 'Cargo.toml'
-CRATE_DPATH = REPO_DPATH / 'rust' / 'kwconf_accel'
+MANIFEST = REPO_DPATH / 'packages' / 'kwconf-rust' / 'Cargo.toml'
+CRATE_DPATH = REPO_DPATH / 'packages' / 'kwconf-rust'
 WHEEL_DPATH = CRATE_DPATH / 'dist'
 
 

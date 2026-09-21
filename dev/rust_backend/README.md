@@ -1,6 +1,6 @@
 # Experimental Rust CLI backend
 
-This directory is a measurement campaign, not a packaging commitment.
+This directory contains the validation and performance campaign for the optional ``kwconf-rust`` distribution.
 
 The first candidate targets the part of kwconf that currently costs the most
 for ordinary flat CLIs: rebuilding an argparse schema on every `Config.cli()`
@@ -16,6 +16,12 @@ and compact short flags -- while keeping Python's existing `Value.coerce()` as
 the conversion authority.
 
 ## Build
+
+The shipping binary is deliberately not part of the ``kwconf`` distribution.
+Its package metadata and PyO3 crate live under ``packages/kwconf-rust``; the
+Python-independent parser core remains under ``rust/kwconf_accel_core``.
+This keeps ``pip install kwconf`` pure Python while allowing
+``pip install kwconf-rust`` to opt into native acceleration.
 
 Use the active Python environment:
 

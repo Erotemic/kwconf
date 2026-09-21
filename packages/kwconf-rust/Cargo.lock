@@ -268,8 +268,8 @@ name = "kwconf-cli-core"
 version = "0.0.0"
 
 [[package]]
-name = "kwconf-python-accel"
-version = "0.0.0"
+name = "kwconf-rust"
+version = "0.12.1"
 dependencies = [
  "criterion",
  "kwconf-cli-core",

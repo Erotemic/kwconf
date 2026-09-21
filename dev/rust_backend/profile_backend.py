@@ -21,9 +21,9 @@ import sys
 from pathlib import Path
 
 REPO_DPATH = Path(__file__).resolve().parents[2]
-MANIFEST = REPO_DPATH / 'rust' / 'kwconf_accel' / 'Cargo.toml'
+MANIFEST = REPO_DPATH / 'packages' / 'kwconf-rust' / 'Cargo.toml'
 PROFILE_DPATH = REPO_DPATH / 'dev' / 'benchmarks' / '_profiles'
-TARGET_DPATH = REPO_DPATH / 'rust' / 'kwconf_accel' / 'target'
+TARGET_DPATH = REPO_DPATH / 'packages' / 'kwconf-rust' / 'target'
 PROFILE_BIN = TARGET_DPATH / 'profiling' / 'kwconf-accel-profile'
 PY_PROFILE_WORKLOAD = REPO_DPATH / 'dev' / 'rust_backend' / '_profile_python_bridge.py'
 

@@ -387,11 +387,11 @@ def test_rust_build_helper_requires_abi3_wheel():
     spec.loader.exec_module(module)
 
     module._assert_abi3_wheel(
-        Path('kwconf_python_accel-0.0.0-cp310-abi3-manylinux_x86_64.whl')
+        Path('kwconf_rust-0.12.1-cp310-abi3-manylinux_x86_64.whl')
     )
     with pytest.raises(SystemExit, match='non-abi3'):
         module._assert_abi3_wheel(
-            Path('kwconf_python_accel-0.0.0-cp313-cp313-manylinux_x86_64.whl')
+            Path('kwconf_rust-0.12.1-cp313-cp313-manylinux_x86_64.whl')
         )
 
 

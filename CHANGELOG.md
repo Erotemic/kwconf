@@ -44,6 +44,12 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   snapshots, and every command log into one tarball.
 
 ### Changed
+* The optional native accelerator now ships as a separate ``kwconf-rust``
+  distribution maintained in the same repository. The normal ``kwconf``
+  package remains pure Python and has no binary dependency; installing
+  ``kwconf-rust`` adds the ABI3 ``_kwconf_rust`` module and pins the exact
+  matching ``kwconf`` version. xcookie workspace CI builds and publishes the
+  accelerator independently across Linux, macOS, and Windows.
 * The top-level package API is now resolved lazily, and flat ``Config`` schema
   construction no longer imports the modal, dataconfig, SubConfig, argparse,
   pprint/inspect, textwrap, optional ubelt repr integration, or YAML helpers

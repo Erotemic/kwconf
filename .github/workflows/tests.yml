@@ -9,18 +9,15 @@ name: PurePyCI
 on:
   push:
     # Restricting push triggers to the default branch avoids running
-    # the whole pipeline twice (push + pull_request events) for every
-    # push to a PR branch. Feature branches are covered by the
-    # pull_request trigger; release branches and tags are handled by
-    # release.yml.
+    # validation twice (push + pull_request events) for every push to a PR
+    # branch. Feature branches are covered by pull_request; release refs are
+    # handled by release.yml.
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Superseded runs on the same ref are cancelled; deploy-bearing refs
-  # never trigger this workflow (release.yml owns them).
   cancel-in-progress: true
 
 jobs:
@@ -73,7 +70,7 @@ jobs:
       shell: bash
       run: |-
         python -m pip install pip uv -U
-        python -m uv pip install setuptools>=0.8 wheel build twine
+        python -m uv pip install setuptools>=77 wheel build twine
         python -m build --sdist --outdir wheelhouse
         python -m twine check ./wheelhouse/kwconf*.tar.gz
     - name: Install sdist
@@ -145,7 +142,7 @@ jobs:
       shell: bash
       run: |-
         python -m pip install pip uv -U
-        python -m uv pip install setuptools>=0.8 wheel build twine
+        python -m uv pip install setuptools>=77 wheel build twine
         python -m build --wheel --outdir wheelhouse
         python -m twine check ./wheelhouse/kwconf*.whl
     - name: Show built files
@@ -268,13 +265,6 @@ jobs:
           allow-prereleases: 'false'
           check-latest: 'false'
           use-lockfile: 'false'
-        - python-version: '3.15'
-          install-extras: tests,optional
-          os: ubuntu-latest
-          arch: auto
-          allow-prereleases: 'true'
-          check-latest: 'true'
-          use-lockfile: 'false'
         - python-version: '3.10'
           install-extras: tests,optional
           os: macOS-latest
@@ -310,13 +300,6 @@ jobs:
           allow-prereleases: 'false'
           check-latest: 'false'
           use-lockfile: 'false'
-        - python-version: '3.15'
-          install-extras: tests,optional
-          os: macOS-latest
-          arch: auto
-          allow-prereleases: 'true'
-          check-latest: 'true'
-          use-lockfile: 'false'
         - python-version: '3.10'
           install-extras: tests,optional
           os: windows-latest
@@ -351,13 +334,6 @@ jobs:
           arch: auto
           allow-prereleases: 'false'
           check-latest: 'false'
-          use-lockfile: 'false'
-        - python-version: '3.15'
-          install-extras: tests,optional
-          os: windows-latest
-          arch: auto
-          allow-prereleases: 'true'
-          check-latest: 'true'
           use-lockfile: 'false'
     steps:
     - name: Checkout source
@@ -403,7 +379,7 @@ jobs:
         echo "Installing helpers: update pip"
         python -m pip install pip uv -U
         echo "Installing helpers: setuptools"
-        python -m uv pip install --resolution=highest setuptools>=0.8 setuptools_scm wheel build -U
+        python -m uv pip install --resolution=highest setuptools>=77 setuptools_scm wheel build -U
         echo "Installing helpers: tomli and pkginfo"
         python -m uv pip install --resolution=highest tomli pkginfo packaging
         export WHEEL_FPATH=$(python -c "if 1:
@@ -479,7 +455,7 @@ jobs:
         running the pytest command inside the workspace
         ---
         "
-        python -m pytest --verbose -p pytester -p no:doctest --xdoctest --cov-config ../pyproject.toml --cov-report term --durations=100 --cov="$MOD_NAME" "$MOD_DPATH" ../tests
+        python -m pytest --verbose --xdoctest --cov-config ../pyproject.toml --cov-report term --durations=100 --cov="$MOD_NAME" "$MOD_DPATH" ../tests
         echo "pytest command finished, moving the coverage file to the repo root"
         ls -al
         # Move coverage file to a new name
@@ -507,5 +483,78 @@ jobs:
       with:
         file: ./coverage.xml
         token: ${{ secrets.CODECOV_TOKEN }}
-
-
+  workspace_kwconf_rust:
+    name: Build kwconf-rust on ${{ matrix.os }}, arch=${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+        - ubuntu-latest
+        - macOS-latest
+        - windows-latest
+        arch:
+        - auto64
+        cibw_skip:
+        - pp*
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v6.0.2
+    - name: Set up Python 3.14
+      uses: actions/setup-python@v6.2.0
+      with:
+        python-version: '3.14'
+    - name: Install workspace build helpers
+      shell: bash
+      run: python -m pip install -U build twine pytest
+    - name: Enable MSVC 64bit
+      uses: ilammy/msvc-dev-cmd@v1.13.0
+      if: ${{ startsWith(matrix.os, 'windows-') }}
+      with:
+        arch: ${{ contains(matrix.os, 'arm') && 'arm64' || 'x64' }}
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3.7.0
+      if: runner.os == 'Linux' && matrix.arch != 'auto'
+      with:
+        platforms: all
+    - name: Build binary wheels
+      uses: pypa/cibuildwheel@v4.1.1
+      with:
+        output-dir: workspace_wheelhouse/kwconf_rust
+        config-file: ./packages/kwconf-rust/pyproject.toml
+        package-dir: ./packages/kwconf-rust
+      env:
+        CIBW_SKIP: ${{ matrix.cibw_skip }}
+        CIBW_TEST_SKIP: '*-win_arm64'
+        CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+        PYTHONUTF8: '1'
+        VSCMD_ARG_TGT_ARCH: ''
+    - name: Validate kwconf-rust artifacts
+      shell: bash
+      run: |-
+        python -m twine check workspace_wheelhouse/kwconf_rust/*
+        python -m pip install -e .
+        python -m pip install --force-reinstall --no-deps --no-index --find-links workspace_wheelhouse/kwconf_rust "kwconf-rust==0.12.1"
+        python -c "import importlib; m = importlib.import_module('_kwconf_rust'); print(m.__file__)"
+        if [[ -d packages/kwconf-rust/tests ]]; then
+            python -m pytest -c ./packages/kwconf-rust/pyproject.toml packages/kwconf-rust/tests
+        fi
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v6.2.0
+      with:
+        python-version: '3.10'
+    - name: Validate kwconf-rust on Python 3.10
+      shell: bash
+      run: |-
+        python -m pip install -e .
+        python -m pip install --force-reinstall --no-deps --no-index --find-links workspace_wheelhouse/kwconf_rust "kwconf-rust==0.12.1"
+        python -c "import importlib; m = importlib.import_module('_kwconf_rust'); print(m.__file__)"
+    - name: Show built files
+      shell: bash
+      run: ls -la workspace_wheelhouse/kwconf_rust
+    - uses: actions/upload-artifact@v6.0.0
+      name: Upload kwconf-rust distributions
+      with:
+        name: workspace-kwconf-rust-${{ matrix.os }}-${{ matrix.arch }}
+        if-no-files-found: error
+        path: workspace_wheelhouse/kwconf_rust/*

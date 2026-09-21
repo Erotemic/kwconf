@@ -298,7 +298,7 @@ def _capture_source_snapshot(bundle: Path) -> None:
 
 def _capture_wheel(bundle: Path) -> None:
     wheels = sorted(
-        (REPO_DPATH / 'rust' / 'kwconf_accel' / 'dist').glob('*.whl'),
+        (REPO_DPATH / 'packages' / 'kwconf-rust' / 'dist').glob('*.whl'),
         key=lambda p: p.stat().st_mtime,
     )
     data: dict[str, Any] = {'wheels': []}
@@ -329,7 +329,7 @@ def _run_cargo_gates(collector: Collector, args: argparse.Namespace) -> None:
         return
     collector.run(
         'cargo-check-extension',
-        ['cargo', 'check', '--manifest-path', 'rust/kwconf_accel/Cargo.toml'],
+        ['cargo', 'check', '--manifest-path', 'packages/kwconf-rust/Cargo.toml'],
         required=True,
         timeout=300,
     )
@@ -346,7 +346,7 @@ def _run_cargo_gates(collector: Collector, args: argparse.Namespace) -> None:
                 'cargo',
                 'fmt',
                 '--manifest-path',
-                'rust/kwconf_accel/Cargo.toml',
+                'packages/kwconf-rust/Cargo.toml',
                 '--',
                 '--check',
             ],
@@ -359,7 +359,7 @@ def _run_cargo_gates(collector: Collector, args: argparse.Namespace) -> None:
                 'cargo',
                 'clippy',
                 '--manifest-path',
-                'rust/kwconf_accel/Cargo.toml',
+                'packages/kwconf-rust/Cargo.toml',
                 '--all-targets',
                 '--all-features',
                 '--',

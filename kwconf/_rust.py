@@ -18,7 +18,7 @@ from kwconf.util.util_misc import NoParam
 from kwconf.value import _resolve_alias
 
 # These values are part of the tiny private FFI between this module and
-# rust/kwconf_accel.  Keep them boring integers so PyO3 conversion is cheap.
+# packages/kwconf-rust. Keep them boring integers so PyO3 conversion is cheap.
 _KIND_VALUE = 0
 _KIND_FLAG = 1
 _KIND_COUNTER = 2
@@ -124,8 +124,8 @@ def _load_extension(*, required: bool) -> Any:
         detail = f' ({_EXTENSION_ERROR})' if _EXTENSION_ERROR else ''
         raise ImportError(
             'The kwconf Rust CLI backend is unavailable or incompatible'
-            f'{detail}. Build/install a matching accelerator with: '
-            'python dev/rust_backend/build_backend.py --release'
+            f'{detail}. Install the matching optional accelerator with: '
+            'python -m pip install kwconf-rust'
         )
     return _EXTENSION
 
