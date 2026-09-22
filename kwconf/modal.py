@@ -509,9 +509,9 @@ class ModalCLI(metaclass=MetaModalCLI):
     def _update_metadata(metadata: Dict, *, with_parserkw: bool = True):
         """
         Given a metadata dictionary (which must contain a "cls" item) we
-        introspect and fill in other unspecified items. Routing/completion can
-        omit parser/help metadata so successful Rust paths do not import the
-        canonical argparse formatter stack.
+        introspect and fill in other unspecified items. Routing-only callers
+        can omit parser/help metadata so command dispatch does not import the
+        canonical argparse formatter stack until it is needed.
 
         Args:
             metadata (dict): modified inplace

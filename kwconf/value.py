@@ -450,8 +450,8 @@ class _Value(NiceRepr):
                 if callable(self._parser_spec):
                     # The common explicit ``parser=str/int/float/...`` case
                     # needs no registry or annotation machinery at all. This
-                    # avoids importing kwconf.coerce on the Rust CLI hot/cold
-                    # path for the simplest schemas.
+                    # avoids importing kwconf.coerce on the common CLI
+                    # coercion path for the simplest schemas.
                     return self._parser_spec(value)
                 from kwconf import coerce as _coerce_mod
 

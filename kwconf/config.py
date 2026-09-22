@@ -1087,10 +1087,8 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         template = self._default[key]
         if isinstance(value, Value):
             # A full Value override can change CLI metadata (aliases, parser,
-            # nargs, flag mode, ...), so an experimental Rust schema compiled
-            # for the class is not safe for this instance. Scalar overrides
-            # below preserve the declared metadata and remain cacheable.
-            self._rust_schema_mutated = True
+            # nargs, flag mode, ...), so clone the complete field template.
+            # Scalar overrides below preserve the declared metadata.
             new_template = value.clone_default(
                 context=f'explicit default for field {key!r}'
             )

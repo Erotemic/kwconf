@@ -100,8 +100,8 @@ def resolve_localns(
 def add_forbidden_selector_args(parser, cfg):
     """Add selector options that always error when used.
 
-    Argparse is imported only when the canonical nested fallback is actually
-    needed; merely declaring :class:`SubConfig` stays on the lightweight Rust
+    Argparse is imported only when canonical nested parsing is actually
+    needed; merely declaring :class:`SubConfig` stays on the lightweight
     startup path.
     """
     import argparse
