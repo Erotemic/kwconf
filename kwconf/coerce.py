@@ -45,10 +45,14 @@ route here, and the deprecated ``type=`` kwarg is mapped onto it.
 
 from __future__ import annotations
 
-import types
-import typing
 import warnings
-from typing import Any, Callable
+
+from kwconf._typing_runtime import Any, Callable
+from kwconf.annotations import _args as _annotation_args
+from kwconf.annotations import _is_any as _annotation_is_any
+from kwconf.annotations import _is_literal_origin, _is_union_origin
+from kwconf.annotations import _origin as _annotation_origin
+from kwconf.annotations import _typing_module as _annotation_typing_module
 
 __all__ = [
     'auto',
@@ -115,20 +119,24 @@ def _candidate_types(annotation: Any) -> list[type]:
         >>> _candidate_types(str | int | None) == [NoneType, int, str]
         True
     """
-    if annotation is None or annotation is Any:
+    if (
+        annotation is None
+        or annotation is Any
+        or _annotation_is_any(annotation)
+    ):
         return list(_PRECEDENCE)  # full auto
 
-    origin = typing.get_origin(annotation)
-    if origin is typing.Literal:
-        member_types = {type(arg) for arg in typing.get_args(annotation)}
+    origin = _annotation_origin(annotation)
+    if _is_literal_origin(origin):
+        member_types = {type(arg) for arg in _annotation_args(annotation)}
         return [t for t in _PRECEDENCE if t in member_types]
-    if origin in {typing.Union, types.UnionType}:
+    if _is_union_origin(origin):
         member_types = set()
-        for arg in typing.get_args(annotation):
-            if typing.get_origin(arg) is typing.Literal:
+        for arg in _annotation_args(annotation):
+            if _is_literal_origin(_annotation_origin(arg)):
                 # Literal members contribute their value types, so e.g.
                 # Literal['a'] | Literal['b'] parses like str.
-                member_types.update(type(v) for v in typing.get_args(arg))
+                member_types.update(type(v) for v in _annotation_args(arg))
             else:
                 member_types.add(arg)
         ordered = [t for t in _PRECEDENCE if t in member_types]
@@ -167,23 +175,26 @@ def element_annotation(annotation: Any) -> Any:
         <class 'str'>
         >>> element_annotation(int)
         <class 'int'>
+        >>> import typing
         >>> element_annotation(list) is typing.Any   # bare container -> Any element
         True
         >>> element_annotation(list[int] | None)     # Optional container unwrapped
         <class 'int'>
     """
     annotation = _unwrap_optional_container(annotation)
-    origin = typing.get_origin(annotation)
+    origin = _annotation_origin(annotation)
     if origin in {list, set, frozenset}:
-        args = typing.get_args(annotation)
+        args = _annotation_args(annotation)
         return args[0] if args else Any
     if origin is tuple:
-        args = typing.get_args(annotation)
+        args = _annotation_args(annotation)
         if len(args) == 2 and args[1] is Ellipsis:
             return args[0]
-        return Any  # heterogeneous tuple -> per-token Any
+        return _annotation_typing_module().Any  # heterogeneous tuple -> Any
     if annotation in {list, set, frozenset, tuple}:
-        return Any  # bare (unparameterized) container -> unknown element type
+        return (
+            _annotation_typing_module().Any
+        )  # bare container -> unknown element
     return annotation
 
 
@@ -194,16 +205,16 @@ def _unwrap_optional_container(annotation: Any) -> Any:
     annotation unchanged. Keeps ``element_annotation`` and container detection
     working through ``Optional[list[T]]`` / ``list[T] | None``.
     """
-    origin = typing.get_origin(annotation)
-    if origin not in {typing.Union, types.UnionType}:
+    origin = _annotation_origin(annotation)
+    if not _is_union_origin(origin):
         return annotation
     non_none = [
-        arg for arg in typing.get_args(annotation) if arg is not NoneType
+        arg for arg in _annotation_args(annotation) if arg is not NoneType
     ]
     if len(non_none) != 1:
         return annotation
     (inner,) = non_none
-    inner_origin = typing.get_origin(inner)
+    inner_origin = _annotation_origin(inner)
     if inner_origin in {list, set, frozenset, tuple} or inner in {
         list,
         set,

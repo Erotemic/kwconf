@@ -3,7 +3,38 @@ We [keep a changelog](https://keepachangelog.com/en/1.0.0/).
 We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## Version 0.12.0 - Unreleased
+## Version 0.12.1 - Unreleased
+
+### Changed
+
+* Remove the unreleased experimental native CLI backend and retain the backend-independent Python startup improvements: lazy top-level imports, cold-method splitting, cheaper Config construction, warning-stack cleanup, and corrected cold benchmark semantics.
+* The production-style cold benchmark now performs exactly one CLI parse per fresh process. The example previously performed an unconditional warmup parse even when ``repeat=1``, so the nominal cold check executed each backend twice; repeated-throughput mode still performs its intentional one-time warmup before timing the requested loop count.
+* The top-level package API is now resolved lazily, and flat ``Config`` schema
+  construction no longer imports the modal, dataconfig, SubConfig, argparse,
+  pprint/inspect, textwrap, optional ubelt repr integration, or YAML helpers
+  unless the selected feature needs them. Common ``argv`` list/tuple and
+  ``data=None`` / plain-dict ingestion paths likewise defer the JSON, shlex, and
+  file-ingestion stack. Type-only implementation imports are represented by a
+  small runtime shim plus shipped ``.pyi`` metadata so simple typed schemas do
+  not import the stdlib ``typing`` stack merely to start a CLI.
+* Config metaclass normalization now enriches annotated fields once after
+  inherited and declared defaults are merged instead of copying them in both
+  collection and normalization passes. Root-API collision lookup is cached,
+  common scalar annotations/defaults have direct paths, and Config construction
+  materializes ordinary ``Value`` reset metadata and live state together. These
+  changes reduce Python declaration and instance overhead for large schemas.
+* Optional ubelt pretty-print registration is now lazy in both import orders.
+  ``ub.urepr(config)`` retains its integration when ubelt is present, without
+  importing ubelt during ordinary kwconf startup or registering a global
+  typename handler that could match unrelated classes named ``Config``.
+### Fixed
+* Annotation introspection now normalizes PEP 585 generic aliases before the
+  plain-runtime-class fast path. This restores Python 3.10 behavior for
+  ``list[T]`` / optional-container coercion and validation while retaining the
+  lazy ``typing`` import optimization. Cold SubConfig and runtime-typing shim
+  annotations are also explicit enough for the static checker.
+
+## Version 0.12.0 - Released 2026-09-19
 
 ### Added
 * ``Config.port_to_pydantic()`` generates Pydantic 2 ``BaseModel`` source. It

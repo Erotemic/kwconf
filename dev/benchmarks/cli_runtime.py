@@ -60,7 +60,6 @@ import timerit
 import kwconf
 from kwconf import argparse_ext
 
-
 ALL_FAMILIES = (
     'build',
     'schema_parse',
@@ -131,7 +130,9 @@ def _parse_family_list(text: str) -> list[str]:
     values = [part.strip() for part in text.split(',') if part.strip()]
     unknown = sorted(set(values) - set(ALL_FAMILIES))
     if unknown:
-        raise argparse.ArgumentTypeError(f'unknown benchmark families: {unknown}')
+        raise argparse.ArgumentTypeError(
+            f'unknown benchmark families: {unknown}'
+        )
     return values
 
 
@@ -436,9 +437,7 @@ def _bench_argv_parse(
     kw_default = config_default.argparse()
     kw_no_extras = config_no_extras.argparse()
     for argv_size in argv_sizes:
-        argv = [
-            f'--option_{idx}=value-{idx}' for idx in range(argv_size)
-        ]
+        argv = [f'--option_{idx}=value-{idx}' for idx in range(argv_size)]
         methods = {
             'argparse': lambda p=plain, a=argv: p.parse_args(a),
             'argparse_aliases': lambda p=aliases, a=argv: p.parse_args(a),
@@ -521,8 +520,8 @@ def _bench_fuzzy(
         exact_argv = ['--option-0=value']
         fuzzy_argv = ['--option_0=value']
         methods = {
-            'argparse_alias': lambda p=alias_parser, a=fuzzy_argv: (
-                p.parse_args(a)
+            'argparse_alias': lambda p=alias_parser, a=fuzzy_argv: p.parse_args(
+                a
             ),
             'extended_exact': lambda p=extended, a=exact_argv: p.parse_args(a),
             'extended_fuzzy': lambda p=extended, a=fuzzy_argv: p.parse_args(a),
@@ -676,7 +675,9 @@ def _append_csv(rows: list[dict[str, object]], output: Path) -> None:
             old_rows = _read_csv(output)
             merged = list(old_fieldnames)
             merged.extend(name for name in fieldnames if name not in merged)
-            if any(name not in merged for name in fieldnames):  # pragma: no cover
+            if any(
+                name not in merged for name in fieldnames
+            ):  # pragma: no cover
                 raise AssertionError('failed to merge benchmark CSV schema')
             with output.open('w', newline='') as file:
                 writer = csv.DictWriter(file, fieldnames=merged)
@@ -707,7 +708,9 @@ def _case_key(row: dict[str, object]) -> tuple[str, ...]:
     return tuple(str(row.get(field, '')) for field in fields)
 
 
-def _run_groups(rows: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+def _run_groups(
+    rows: list[dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
     groups: dict[str, list[dict[str, object]]] = {}
     for row in rows:
         run_id = str(row.get('run_id') or row.get('timestamp_utc') or '')
@@ -730,14 +733,19 @@ def _compatible_run(
     def compatible(rows: list[dict[str, object]]) -> bool:
         if not rows:
             return False
-        candidate_env = (str(rows[0].get('python')), str(rows[0].get('platform')))
+        candidate_env = (
+            str(rows[0].get('python')),
+            str(rows[0].get('platform')),
+        )
         if candidate_env != environment:
             return False
         current_keys = {_case_key(row) for row in current_rows}
         candidate_keys = {_case_key(row) for row in rows}
         return bool(current_keys & candidate_keys)
 
-    candidates = [(run_id, rows) for run_id, rows in groups.items() if compatible(rows)]
+    candidates = [
+        (run_id, rows) for run_id, rows in groups.items() if compatible(rows)
+    ]
     if selector == 'previous':
         if not candidates:
             return None, []
@@ -758,8 +766,12 @@ def _compatible_run(
     if len(matches) == 1:
         return matches[0]
     if not matches:
-        raise SystemExit(f'no compatible benchmark run matches --compare-to={selector!r}')
-    raise SystemExit(f'ambiguous --compare-to={selector!r}; matches {len(matches)} runs')
+        raise SystemExit(
+            f'no compatible benchmark run matches --compare-to={selector!r}'
+        )
+    raise SystemExit(
+        f'ambiguous --compare-to={selector!r}; matches {len(matches)} runs'
+    )
 
 
 def _comparison_rows(
@@ -775,22 +787,25 @@ def _comparison_rows(
         before = float(baseline['min_s'])
         after = float(current['min_s'])
         ratio = after / before
-        comparisons.append({
-            'family': current['family'],
-            'method': current['method'],
-            'x_name': current['x_name'],
-            'x_value': current['x_value'],
-            'baseline_run_id': baseline.get('run_id') or baseline.get('timestamp_utc'),
-            'current_run_id': current.get('run_id'),
-            'baseline_git_revision': baseline.get('git_revision'),
-            'current_git_revision': current.get('git_revision'),
-            'baseline_git_state_hash': baseline.get('git_state_hash'),
-            'current_git_state_hash': current.get('git_state_hash'),
-            'baseline_min_s': before,
-            'current_min_s': after,
-            'ratio_current_vs_baseline': ratio,
-            'percent_change': (ratio - 1.0) * 100.0,
-        })
+        comparisons.append(
+            {
+                'family': current['family'],
+                'method': current['method'],
+                'x_name': current['x_name'],
+                'x_value': current['x_value'],
+                'baseline_run_id': baseline.get('run_id')
+                or baseline.get('timestamp_utc'),
+                'current_run_id': current.get('run_id'),
+                'baseline_git_revision': baseline.get('git_revision'),
+                'current_git_revision': current.get('git_revision'),
+                'baseline_git_state_hash': baseline.get('git_state_hash'),
+                'current_git_state_hash': current.get('git_state_hash'),
+                'baseline_min_s': before,
+                'current_min_s': after,
+                'ratio_current_vs_baseline': ratio,
+                'percent_change': (ratio - 1.0) * 100.0,
+            }
+        )
     return comparisons
 
 
@@ -836,8 +851,7 @@ def _plot_rows(rows: list[dict[str, object]], plot_dpath: Path) -> list[Path]:
         title = f'kwconf CLI benchmark: {family}'
         if python_startup_s is not None:
             title += (
-                f'\nPython startup reference: '
-                f'{python_startup_s * 1e3:.2f} ms'
+                f'\nPython startup reference: {python_startup_s * 1e3:.2f} ms'
             )
         ax.set_title(title)
         if all(int(row['x_value']) > 0 for row in family_rows):
@@ -850,7 +864,6 @@ def _plot_rows(rows: list[dict[str, object]], plot_dpath: Path) -> list[Path]:
         plt.close(fig)
         outputs.append(output)
     return outputs
-
 
 
 def _plot_comparison_rows(
@@ -886,7 +899,9 @@ def _plot_comparison_rows(
                 key=lambda row: int(row['x_value']),
             )
             xs = [int(row['x_value']) for row in method_rows]
-            ys = [float(row['ratio_current_vs_baseline']) for row in method_rows]
+            ys = [
+                float(row['ratio_current_vs_baseline']) for row in method_rows
+            ]
             ax.plot(xs, ys, marker='o', label=method)
         ax.axhline(1.0, linewidth=1)
         ax.set_xlabel(str(family_rows[0]['x_name']))
@@ -934,8 +949,12 @@ def _print_current_reference_summary(rows: list[dict[str, object]]) -> None:
     print('current reference summary (largest measured point):')
     for family, (target_method, baseline_method) in comparisons.items():
         family_rows = [r for r in rows if str(r.get('family')) == family]
-        target_rows = [r for r in family_rows if r.get('method') == target_method]
-        baseline_rows = [r for r in family_rows if r.get('method') == baseline_method]
+        target_rows = [
+            r for r in family_rows if r.get('method') == target_method
+        ]
+        baseline_rows = [
+            r for r in family_rows if r.get('method') == baseline_method
+        ]
         if not target_rows or not baseline_rows:
             continue
         target_by_x = {int(r['x_value']): r for r in target_rows}
@@ -950,7 +969,9 @@ def _print_current_reference_summary(rows: list[dict[str, object]]) -> None:
         delta = target_s - baseline_s
         startup_text = ''
         if startup:
-            startup_text = f', {target_s / startup * 100:.2f}% of python startup'
+            startup_text = (
+                f', {target_s / startup * 100:.2f}% of python startup'
+            )
         print(
             f'  {family:14s} @{x_value:<5d} '
             f'{_format_seconds(target_s):>10s} vs '
@@ -967,11 +988,16 @@ def _print_comparison_summary(rows: list[dict[str, object]]) -> None:
     grouped: dict[tuple[str, str], list[float]] = {}
     for row in rows:
         key = (str(row['family']), str(row['method']))
-        grouped.setdefault(key, []).append(float(row['ratio_current_vs_baseline']))
+        grouped.setdefault(key, []).append(
+            float(row['ratio_current_vs_baseline'])
+        )
     for (family, method), ratios in sorted(grouped.items()):
         geometric_mean = math.exp(statistics.fmean(math.log(r) for r in ratios))
         percent = (geometric_mean - 1.0) * 100.0
-        print(f'  {family:14s} {method:22s} {geometric_mean:8.3f}x ({percent:+7.2f}%)')
+        print(
+            f'  {family:14s} {method:22s} {geometric_mean:8.3f}x ({percent:+7.2f}%)'
+        )
+
 
 def _profile_target(name: str, schema_size: int, argv_size: int) -> Callable:
     schema_size = max(schema_size, argv_size)
@@ -1071,7 +1097,7 @@ def _make_cli() -> argparse.ArgumentParser:
         default='previous',
         help=(
             "baseline run selector: 'previous', 'none', or a prefix of a "
-            "run id, git revision, git-state hash, version, or timestamp"
+            'run id, git revision, git-state hash, version, or timestamp'
         ),
     )
     parser.add_argument('--plot-dir', type=Path, default=None)

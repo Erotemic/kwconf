@@ -1011,7 +1011,9 @@ class ExtendedArgumentParser(CompatArgumentParser):
         if hasattr(parsed, _EXPLICIT_KEYS_ATTR):
             delattr(parsed, _EXPLICIT_KEYS_ATTR)
         if invalid_short_markers:
-            unknown = [invalid_short_markers.get(item, item) for item in unknown]
+            unknown = [
+                invalid_short_markers.get(item, item) for item in unknown
+            ]
         return parsed, unknown
 
     def parse_known_result(

@@ -40,3 +40,58 @@ def test_mkinit_submodules_spec_matches_reality():
         )
         spec_names.update(names)
     assert spec_names == set(kwconf.__all__)
+
+
+def test_flat_core_import_stays_lean_in_fresh_python():
+    """The flat Config path must not eagerly load fallback-only stacks."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_dpath = Path(__file__).resolve().parents[1]
+    code = r"""
+import sys
+import kwconf
+
+assert 'kwconf.config' not in sys.modules
+assert 'kwconf.modal' not in sys.modules
+assert 'kwconf.subconfig' not in sys.modules
+assert 'argparse' not in sys.modules
+
+kwconf.Config
+kwconf.Value
+
+class Demo(kwconf.Config):
+    __default__ = {'value': kwconf.Value(0, type=int)}
+
+Demo()
+
+unexpected = {
+    name for name in [
+        'argparse',
+        'typing',
+        'ubelt',
+        'inspect',
+        'pprint',
+        'textwrap',
+        'json',
+        'shlex',
+        'kwconf._ingest',
+        'kwconf.modal',
+        'kwconf.dataconfig',
+        'kwconf.subconfig',
+        'kwconf.coerce',
+        'kwconf._ubelt_repr_extension',
+        'kwconf._config_cold',
+        'kwconf._value_cold',
+        'kwconf.util.util_yaml',
+    ]
+    if name in sys.modules
+}
+assert not unexpected, unexpected
+"""
+    subprocess.run(
+        [sys.executable, '-S', '-c', code],
+        cwd=repo_dpath,
+        check=True,
+    )
