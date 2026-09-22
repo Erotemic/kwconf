@@ -103,10 +103,9 @@ from kwconf.annotations import (
 from kwconf.annotations import (
     value_matches_annotation as _value_matches_annotation,
 )
-from kwconf.util.util_misc import NoParam, copy_value, iterable
+from kwconf.util.util_misc import copy_value, iterable
 from kwconf.util.util_repr import NiceRepr
 from kwconf.value import _Value as Value
-from kwconf.value import _resolve_alias
 
 _DIAGNOSTIC_TRUE = frozenset({'true', 'on', 'yes', '1'})
 _DEBUG_DEFAULT = os.environ.get('KWCONF_DEBUG', '').lower() in _DIAGNOSTIC_TRUE

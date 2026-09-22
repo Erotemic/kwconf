@@ -25,7 +25,6 @@ import sys
 import time
 from typing import Any
 
-
 SAMPLE_ARGV = [
     '--input',
     'images',

@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 REPO_DPATH = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO_DPATH / 'examples' / '09_argparse_comparison.py'
 BENCHMARK = REPO_DPATH / 'dev' / 'benchmarks' / 'realistic_cli_runtime.py'
