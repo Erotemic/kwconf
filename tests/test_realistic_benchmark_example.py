@@ -15,7 +15,9 @@ BENCHMARK = REPO_DPATH / 'dev' / 'benchmarks' / 'realistic_cli_runtime.py'
 def _load_example_module():
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location('_kwconf_realistic_example_test', EXAMPLE)
+    spec = importlib.util.spec_from_file_location(
+        '_kwconf_realistic_example_test', EXAMPLE
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

@@ -51,25 +51,35 @@ _KWCONF_CONFIG = None
 def _get_argparse_parser():
     import argparse
 
-    parser = argparse.ArgumentParser(description='Prepare a dataset for training.')
+    parser = argparse.ArgumentParser(
+        description='Prepare a dataset for training.'
+    )
     parser.add_argument('--input', required=True)
     parser.add_argument('--output', default='prepared')
     parser.add_argument('--pattern', default='*.jpg')
-    parser.add_argument('--format', choices=['jpg', 'png', 'webp'], default='webp')
+    parser.add_argument(
+        '--format', choices=['jpg', 'png', 'webp'], default='webp'
+    )
     parser.add_argument('--quality', type=int, default=90)
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--chunk-size', type=int, default=256)
     parser.add_argument('--width', type=int, default=1024)
     parser.add_argument('--height', type=int, default=1024)
-    parser.add_argument('--interpolation', choices=['nearest', 'linear', 'cubic'], default='linear')
+    parser.add_argument(
+        '--interpolation',
+        choices=['nearest', 'linear', 'cubic'],
+        default='linear',
+    )
     parser.add_argument('--compression-level', type=int, default=6)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--timeout', type=float, default=30.0)
     parser.add_argument('--retries', type=int, default=2)
     parser.add_argument('--cache-dir', default='.cache/prepare')
     parser.add_argument('--manifest', default='manifest.json')
-    parser.add_argument('--hash-algorithm', choices=['sha1', 'sha256'], default='sha256')
+    parser.add_argument(
+        '--hash-algorithm', choices=['sha1', 'sha256'], default='sha256'
+    )
     parser.add_argument('--recursive', action='store_true')
     parser.add_argument('--verify', action='store_true')
     parser.add_argument('--overwrite', action='store_true')
@@ -77,6 +87,8 @@ def _get_argparse_parser():
     parser.add_argument('--follow-symlinks', action='store_true')
     parser.add_argument('-v', '--verbose', action='count', default=0)
     return parser
+
+
 # REPORT_SNIPPET_ARGPARSE_END
 
 
@@ -115,6 +127,8 @@ def _get_kwconf_config():
         verbose: int = kwconf.Value(0, isflag='counter', short_alias='v')
 
     return PrepareConfig
+
+
 # REPORT_SNIPPET_KWCONF_END
 
 
@@ -129,7 +143,9 @@ def parse_kwconf(argv: list[str]) -> dict[str, Any]:
     global _KWCONF_CONFIG
     if _KWCONF_CONFIG is None:
         _KWCONF_CONFIG = _get_kwconf_config()
-    config = _KWCONF_CONFIG.cli(argv=argv, autocomplete=False, special_options=False)
+    config = _KWCONF_CONFIG.cli(
+        argv=argv, autocomplete=False, special_options=False
+    )
     return config.to_dict()
 
 
@@ -153,7 +169,10 @@ def _pop_control_args(argv: list[str]) -> tuple[list[str], int, bool, bool]:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] not in {'argparse', 'kwconf'}:
-        print('usage: 09_argparse_comparison.py {argparse|kwconf} [options]', file=sys.stderr)
+        print(
+            'usage: 09_argparse_comparison.py {argparse|kwconf} [options]',
+            file=sys.stderr,
+        )
         return 2
     backend = argv.pop(0)
     argv, repeat, quiet, emit_json = _pop_control_args(argv)

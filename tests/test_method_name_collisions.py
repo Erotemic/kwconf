@@ -199,7 +199,9 @@ def test_typed_class_attribute_collisions_follow_the_same_policy():
     assert callable(cfg.keys)
 
     validate_op = cast(Callable[[], Any], getattr(CollisionConfig, 'validate'))
-    cli_op = cast(Callable[..., CollisionConfig], getattr(CollisionConfig, 'cli'))
+    cli_op = cast(
+        Callable[..., CollisionConfig], getattr(CollisionConfig, 'cli')
+    )
     validate_op()
     assert cli_op(argv=False).cli == 'field-cli'
     assert cli_op(argv=['--validate']).validate is True

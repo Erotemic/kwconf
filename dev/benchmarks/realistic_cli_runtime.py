@@ -16,7 +16,9 @@ REPO_DPATH = Path(__file__).resolve().parents[2]
 EXAMPLE = REPO_DPATH / 'examples' / '09_argparse_comparison.py'
 
 
-def _run_child(backend: str, extra: list[str], env: dict[str, str]) -> tuple[int, str]:
+def _run_child(
+    backend: str, extra: list[str], env: dict[str, str]
+) -> tuple[int, str]:
     child_env = env.copy()
     start = time.perf_counter_ns()
     proc = subprocess.run(
@@ -99,13 +101,18 @@ def main() -> None:
             for key, values in cold.items()
         },
         'ratios': {
-            'cold_kwconf_vs_argparse': cold_med['kwconf'] / cold_med['argparse'],
+            'cold_kwconf_vs_argparse': cold_med['kwconf']
+            / cold_med['argparse'],
         },
         'output_parity': True,
     }
     if warm:
-        data['warm_parse'] = {key: {'mean_ns': value} for key, value in warm.items()}
-        data['ratios']['warm_kwconf_vs_argparse'] = warm['kwconf'] / warm['argparse']
+        data['warm_parse'] = {
+            key: {'mean_ns': value} for key, value in warm.items()
+        }
+        data['ratios']['warm_kwconf_vs_argparse'] = (
+            warm['kwconf'] / warm['argparse']
+        )
     text = json.dumps(data, indent=2) + '\n'
     if args.output_json is not None:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)

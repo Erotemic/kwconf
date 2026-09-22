@@ -43,9 +43,7 @@ def test_bare_can_be_falsy_and_implies_optional_value_grammar():
     assert by_dest['zero_value'].nargs == '?'
     assert by_dest['zero_value'].const == 0
 
-    cfg = BareConfig.cli(
-        argv=['--none_value', '--false_value', '--zero_value']
-    )
+    cfg = BareConfig.cli(argv=['--none_value', '--false_value', '--zero_value'])
     assert cfg.none_value is None
     assert cfg.false_value is False
     assert cfg.zero_value == 0

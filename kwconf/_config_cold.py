@@ -77,9 +77,7 @@ def demo(cls) -> 'Config':
 
         __default__ = {
             'option1': kwconf.Value('bar', help='an option'),
-            'option2': kwconf.Value(
-                (1, 2, 3), tuple, help='another option'
-            ),
+            'option2': kwconf.Value((1, 2, 3), tuple, help='another option'),
             'option3': None,
             'option4': 'foo',
             'discrete': kwconf.Value(None, choices=['a', 'b', 'c']),
@@ -88,6 +86,7 @@ def demo(cls) -> 'Config':
 
     self = DemoConfig()
     return self
+
 
 def __json__(self) -> Dict[str, Any]:
     """
@@ -158,9 +157,8 @@ def __json__(self) -> Dict[str, Any]:
     json.dumps(data)
     return data
 
-def dump(
-    self, stream: Optional[IO[str]] = None, mode: Optional[str] = None
-):
+
+def dump(self, stream: Optional[IO[str]] = None, mode: Optional[str] = None):
     """
     Write configuration file to a file or stream
 
@@ -202,6 +200,7 @@ def dump(
     else:
         raise KeyError(mode)
 
+
 def dumps(self, mode: Optional[str] = None) -> str:
     """
     Write the configuration to a text object and return it
@@ -218,6 +217,7 @@ def dumps(self, mode: Optional[str] = None) -> str:
     self._dump(stream=stream, mode=mode)
     return stream.getvalue()
 
+
 def parse_args(
     cls, args: Optional[List[str]] = None, namespace: Optional[Any] = None
 ) -> 'Config':
@@ -227,6 +227,7 @@ def parse_args(
     if namespace is not None:
         raise NotImplementedError('namespaces are not handled in kwconf')
     return cls._cli(argv=args, strict=True)
+
 
 def parse_known_args(
     cls, args: Sequence[str] | None = None, namespace: Any = None
@@ -238,12 +239,14 @@ def parse_known_args(
         raise NotImplementedError('namespaces are not handled in kwconf')
     return cls._cli(argv=args, strict=False)
 
+
 def _register_main(cls, func):
     """
     Register a function as the main method for this config CLI.
     """
     cls.main = func  # type: ignore[attr-defined]
     return func
+
 
 def _description(self) -> Optional[str]:
     """
@@ -265,12 +268,11 @@ def _description(self) -> Optional[str]:
         # by its fully-qualified ``module.qualname`` so the author can see
         # exactly where it comes from. Deterministic (no version string).
         cls = self.__class__
-        description = (
-            f'no description for {cls.__module__}.{cls.__qualname__}'
-        )
+        description = f'no description for {cls.__module__}.{cls.__qualname__}'
     if description is not None:
         description = _codeblock(description)
     return description
+
 
 def _epilog(self) -> Optional[str]:
     """
@@ -288,6 +290,7 @@ def _epilog(self) -> Optional[str]:
         epilog = _codeblock(epilog)
     return epilog
 
+
 def _prog(self) -> Optional[str]:
     """
     The argparse ``prog`` for this config's CLI -- the program name
@@ -303,6 +306,7 @@ def _prog(self) -> Optional[str]:
     if prog is None:
         prog = self.__class__.__name__
     return prog
+
 
 def _parserkw(self) -> dict:
     """
@@ -322,6 +326,7 @@ def _parserkw(self) -> dict:
     if hasattr(self, '__allow_abbrev__'):
         parserkw['allow_abbrev'] = self.__allow_abbrev__
     return parserkw
+
 
 def port_to_pydantic(self) -> str:
     """
@@ -348,6 +353,7 @@ def port_to_pydantic(self) -> str:
 
     return port_to_pydantic_source(self)
 
+
 def port_to_config(self, style: str = 'config') -> str:
     """
     Helper that writes kwconf source code for this config.
@@ -371,6 +377,7 @@ def port_to_config(self, style: str = 'config') -> str:
     name = self.__class__.__name__
     text = self._write_code(entries, name, style, description)
     return text
+
 
 def _write_code(
     self,
@@ -434,6 +441,7 @@ def _write_code(
         raise KeyError(style)
     text = '\n'.join(recon_str)
     return text
+
 
 def port_from_click(cls, click_main, name=None, style='config') -> str:
     """
@@ -508,6 +516,7 @@ def port_from_click(cls, click_main, name=None, style='config') -> str:
     instance = config_cls(_dont_call_post_init=True)
     return instance._port_to_config(style=style)
 
+
 def port_from_argparse(
     cls,
     parser: 'argparse_mod.ArgumentParser',
@@ -578,6 +587,7 @@ def port_from_argparse(
     description = parser.description
     text = cls._write_code(entries, name, style, description)
     return text
+
 
 def cls_from_argparse(cls, parser, name=None, description=None) -> type:
     """
@@ -654,6 +664,7 @@ def cls_from_argparse(cls, parser, name=None, description=None) -> type:
     DynamicClass = cls.__class__(name, bases, attributes)  # type: ignore[call-overload]
     return DynamicClass
 
+
 def _values_from_argparse(cls, parser, for_text=True) -> list:
     """
     Port argparse options to a list of key / values.
@@ -715,6 +726,7 @@ def _values_from_argparse(cls, parser, for_text=True) -> list:
         else:
             entries.append((key, value))
     return entries
+
 
 def port_to_argparse(
     self,
@@ -914,10 +926,7 @@ def port_to_argparse(
                         '_PortedBooleanFlagOrKeyValAction'
                     )
                     need_ported_bool_action = True
-                elif (
-                    flag_value_mode
-                    and action_name == 'CounterOrKeyValAction'
-                ):
+                elif flag_value_mode and action_name == 'CounterOrKeyValAction':
                     kwargs['action'] = value_mod.CodeRepr(
                         '_PortedCounterOrKeyValAction'
                     )
@@ -1043,6 +1052,7 @@ def port_to_argparse(
     text = '\n'.join(lines)
     return text
 
+
 def namespace(self) -> 'argparse_mod.Namespace':
     """
     Access a namespace like object for compatibility with argparse
@@ -1054,11 +1064,13 @@ def namespace(self) -> 'argparse_mod.Namespace':
 
     return argparse.Namespace(**dict(self))
 
+
 def _new_argparse_parser(self) -> argparse_mod.ArgumentParser:
     """Create the canonical parser shell for this config."""
     from kwconf import argparse_ext
 
     return argparse_ext.ExtendedArgumentParser(**self._parserkw())
+
 
 def _add_special_options(self, parser: argparse_mod.ArgumentParser) -> None:
     """Add kwconf's opt-in config/dump control options."""
@@ -1085,6 +1097,7 @@ def _add_special_options(self, parser: argparse_mod.ArgumentParser) -> None:
         action=argparse_ext.BooleanFlagOrKeyValAction,
         help='If specified, dump this config to stdout.',
     )
+
 
 def _populate_argparse_parser(
     self,
@@ -1126,6 +1139,7 @@ def _populate_argparse_parser(
     if special_options:
         self._add_special_options(parser)
     return parser
+
 
 def argparse(
     self,
@@ -1332,6 +1346,7 @@ def argparse(
         fuzzy_hyphens=fuzzy_hyphens,
         short_alias_clusters=short_alias_clusters,
     )
+
 
 def load(
     self,
@@ -1578,6 +1593,7 @@ def load(
         else:
             self.__post_init__()
     return self
+
 
 def _read_argv(
     self,
@@ -1842,9 +1858,7 @@ def _read_argv(
     # Only the special-options destinations (config/dump/dumps) are
     # dropped, since those are CLI plumbing rather than config fields.
     recorded_keys = {
-        key
-        for key in parse_result.explicit_keys
-        if key not in special_ns_keys
+        key for key in parse_result.explicit_keys if key not in special_ns_keys
     }
     if has_subconfigs:
         from kwconf import subconfig as _subcfg_mod

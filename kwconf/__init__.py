@@ -82,9 +82,7 @@ _LAZY_MODULES = {
 def __getattr__(name):
     if name in _LAZY_ATTRS:
         module_name, attr_name = _LAZY_ATTRS[name]
-        module = __import__(
-            f'{__name__}.{module_name}', fromlist=[attr_name]
-        )
+        module = __import__(f'{__name__}.{module_name}', fromlist=[attr_name])
         value = getattr(module, attr_name)
         globals()[name] = value
         return value

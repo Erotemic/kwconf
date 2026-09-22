@@ -97,7 +97,6 @@ class C(kw.Config):
     assert getattr(nums_template, '_annotation', None) == list[int]
 
 
-
 def test_any_annotation_is_not_treated_as_runtime_type():
     import typing
 

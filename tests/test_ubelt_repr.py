@@ -37,7 +37,7 @@ def _run_fresh(code: str) -> None:
 
 def test_ubelt_is_not_imported_by_flat_core_but_late_urepr_still_works():
     _run_fresh(
-        r'''
+        r"""
 import sys
 import kwconf
 
@@ -55,13 +55,13 @@ second = ub.urepr(cfg, nl=0)
 assert first == "Demo(**{'value': 1})", first
 assert second == first
 assert repr(cfg) == plain
-'''
+"""
     )
 
 
 def test_ubelt_first_import_order_and_unrelated_config_typename_are_safe():
     _run_fresh(
-        r'''
+        r"""
 import ubelt as ub
 import kwconf
 
@@ -77,5 +77,5 @@ class Config:
 # kwconf must not claim ubelt's global typename registry entry for every class
 # named Config.
 assert ub.urepr(Config()) == 'UNRELATED_CONFIG'
-'''
+"""
     )

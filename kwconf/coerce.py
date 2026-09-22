@@ -119,7 +119,11 @@ def _candidate_types(annotation: Any) -> list[type]:
         >>> _candidate_types(str | int | None) == [NoneType, int, str]
         True
     """
-    if annotation is None or annotation is Any or _annotation_is_any(annotation):
+    if (
+        annotation is None
+        or annotation is Any
+        or _annotation_is_any(annotation)
+    ):
         return list(_PRECEDENCE)  # full auto
 
     origin = _annotation_origin(annotation)
@@ -188,7 +192,9 @@ def element_annotation(annotation: Any) -> Any:
             return args[0]
         return _annotation_typing_module().Any  # heterogeneous tuple -> Any
     if annotation in {list, set, frozenset, tuple}:
-        return _annotation_typing_module().Any  # bare container -> unknown element
+        return (
+            _annotation_typing_module().Any
+        )  # bare container -> unknown element
     return annotation
 
 

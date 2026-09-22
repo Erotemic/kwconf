@@ -114,7 +114,8 @@ _DIAGNOSTIC_DEFAULTS = {
     'DEBUG_CONFIG': _DEBUG_DEFAULT
     or os.environ.get('KWCONF_DEBUG_CONFIG', '').lower() in _DIAGNOSTIC_TRUE,
     'DEBUG_META_CONFIG': _DEBUG_DEFAULT
-    or os.environ.get('KWCONF_DEBUG_META_CONFIG', '').lower() in _DIAGNOSTIC_TRUE,
+    or os.environ.get('KWCONF_DEBUG_META_CONFIG', '').lower()
+    in _DIAGNOSTIC_TRUE,
 }
 
 
@@ -128,16 +129,19 @@ def _diagnostic_enabled(name: str) -> bool:
 
 def _codeblock(text: str) -> str:
     from kwconf.util.util_text import codeblock
+
     return codeblock(text)
 
 
 def _indent(text: str, prefix: str = '    ') -> str:
     from kwconf.util.util_text import indent
+
     return indent(text, prefix)
 
 
 def _paragraph(text: str) -> str:
     from kwconf.util.util_text import paragraph
+
     return paragraph(text)
 
 
@@ -677,9 +681,7 @@ def _config_api_defines_attribute(name: str) -> bool:
         if config_type is None:
             return False
         api_names = frozenset(
-            attr
-            for ancestor in config_type.__mro__
-            for attr in vars(ancestor)
+            attr for ancestor in config_type.__mro__ for attr in vars(ancestor)
         )
         _CONFIG_API_NAMES = api_names
     return name in api_names
@@ -803,7 +805,9 @@ class MetaConfig(_ABCMeta):
         # describe user fields. Skipping them also avoids importing ``typing``
         # solely to resolve names such as Dict/Optional during package startup.
         annotations = (
-            {} if is_root_config else _get_class_namespace_annotations(namespace)
+            {}
+            if is_root_config
+            else _get_class_namespace_annotations(namespace)
         )
 
         if not is_root_config:
@@ -1822,11 +1826,17 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     port_from_click = _LazyConfigMethod('port_from_click', kind='classmethod')
 
-    port_from_argparse = _LazyConfigMethod('port_from_argparse', kind='classmethod')
+    port_from_argparse = _LazyConfigMethod(
+        'port_from_argparse', kind='classmethod'
+    )
 
-    cls_from_argparse = _LazyConfigMethod('cls_from_argparse', kind='classmethod')
+    cls_from_argparse = _LazyConfigMethod(
+        'cls_from_argparse', kind='classmethod'
+    )
 
-    _values_from_argparse = _LazyConfigMethod('_values_from_argparse', kind='classmethod')
+    _values_from_argparse = _LazyConfigMethod(
+        '_values_from_argparse', kind='classmethod'
+    )
 
     port_to_argparse = _LazyConfigMethod('port_to_argparse', kind='method')
 
@@ -1836,7 +1846,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     namespace = _LazyConfigMethod('namespace', kind='property')
 
-    _new_argparse_parser = _LazyConfigMethod('_new_argparse_parser', kind='method')
+    _new_argparse_parser = _LazyConfigMethod(
+        '_new_argparse_parser', kind='method'
+    )
 
     def _argument_key_order(self) -> list[str]:
         """Return declaration order with explicit positions first."""
@@ -1869,9 +1881,13 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         ordered.extend(key for key in self._data if key not in seen)
         return ordered
 
-    _add_special_options = _LazyConfigMethod('_add_special_options', kind='method')
+    _add_special_options = _LazyConfigMethod(
+        '_add_special_options', kind='method'
+    )
 
-    _populate_argparse_parser = _LazyConfigMethod('_populate_argparse_parser', kind='method')
+    _populate_argparse_parser = _LazyConfigMethod(
+        '_populate_argparse_parser', kind='method'
+    )
 
     argparse = _LazyConfigMethod('argparse', kind='method')
 

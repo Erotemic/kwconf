@@ -306,7 +306,9 @@ def choices_from_annotation(annotation):
             choices = choices_from_annotation(arg)
             if choices is None:
                 return None
-            combined.extend(choice for choice in choices if choice not in combined)
+            combined.extend(
+                choice for choice in choices if choice not in combined
+            )
         if combined:
             return tuple(combined)
     return None
@@ -343,7 +345,9 @@ def value_matches_annotation(value, annotation):
             return False
         args = _args(annotation)
         if len(args) == 2 and args[1] is Ellipsis:
-            return all(value_matches_annotation(item, args[0]) for item in value)
+            return all(
+                value_matches_annotation(item, args[0]) for item in value
+            )
         if len(args) != len(value):
             return False
         return all(

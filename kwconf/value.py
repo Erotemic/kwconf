@@ -782,12 +782,6 @@ def Flag(
     )
 
 
-
-
-
-
-
-
 def _resolve_alias(
     name: str, _value: Optional[_Value], fuzzy_hyphens: int | bool
 ) -> list[str]:
@@ -832,19 +826,20 @@ def _resolve_alias(
     return option_strings
 
 
-
-
 _SmartParseAction: Any = None
 
-_VALUE_COLD_ATTRS = frozenset({
-    '_value_argument_invocations',
-    '_value_add_argument_to_parser',
-    '_value_add_argument_kw',
-    '_SmartValueCoercer',
-    '_get_smart_parse_action',
-    'CodeRepr',
-    '_callable_code_repr',
-})
+_VALUE_COLD_ATTRS = frozenset(
+    {
+        '_value_argument_invocations',
+        '_value_add_argument_to_parser',
+        '_value_add_argument_kw',
+        '_SmartValueCoercer',
+        '_get_smart_parse_action',
+        'CodeRepr',
+        '_callable_code_repr',
+    }
+)
+
 
 def __getattr__(name: str):
     if name in _VALUE_COLD_ATTRS:

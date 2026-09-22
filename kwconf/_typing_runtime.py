@@ -55,6 +55,7 @@ if _typing is not None:
     overload = _typing.overload
     TypeVar = _typing.TypeVar
 else:
+
     class _CallableRuntime:
         """Use the collections.abc generic when annotations are evaluated."""
 

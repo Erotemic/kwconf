@@ -72,13 +72,12 @@ def _value_to_value_kw(self) -> MutableMapping[str, Any]:
     # help stays a plain repr string literal (set above) so emitted code is
     # dependency-free; we no longer wrap it in a ``ub.paragraph(...)`` call.
     if value.default_factory is not None:
-        value_kw['default_factory'] = _callable_code_repr(
-            value.default_factory
-        )
+        value_kw['default_factory'] = _callable_code_repr(value.default_factory)
     else:
         value_kw['default'] = value.value
     value_kw.pop('value', None)
     return value_kw
+
 
 def _value_from_action(
     cls, action, actionid_to_groupkey, actionid_to_mgroupkey, pos_counter
@@ -133,9 +132,7 @@ def _value_from_action(
         # argparse-facing type instead of serializing the internal
         # coercer object.
         template = action_type.template
-        action_type = (
-            None if template is None else template.parsekw.get('type')
-        )
+        action_type = None if template is None else template.parsekw.get('type')
 
     real_value_kw = {
         'default': action.default,
@@ -166,13 +163,12 @@ def _value_from_action(
     if action_id in actionid_to_groupkey:
         real_value_kw['group'] = repr(actionid_to_groupkey[action_id])
     if action_id in actionid_to_mgroupkey:
-        real_value_kw['mutex_group'] = repr(
-            actionid_to_mgroupkey[action_id]
-        )
+        real_value_kw['mutex_group'] = repr(actionid_to_mgroupkey[action_id])
     if len(action.option_strings) == 0:
         real_value_kw['position'] = next(pos_counter)
     value = _Value(**real_value_kw)  # type: ignore
     return value
+
 
 def _value_argument_invocations(
     value: Any,
@@ -262,6 +258,7 @@ def _value_argument_invocations(
     invocations['key_value'] = ('add_argument', option_strings, option_kw)
     return invocations
 
+
 def _value_add_argument_to_parser(
     value: Any,
     _value: Optional[_Value],
@@ -308,6 +305,7 @@ def _value_add_argument_to_parser(
         print(f'invocations = {pprint.pformat(invocations)}')
         raise
 
+
 def _value_add_argument_kw(
     value: Any,
     _value: Optional[_Value],
@@ -323,6 +321,7 @@ def _value_add_argument_kw(
         fuzzy_hyphens=fuzzy_hyphens,
         portable=True,
     )
+
 
 class _SmartValueCoercer:
     """Per-field callable used by the shared argparse action.
@@ -357,6 +356,7 @@ class _SmartValueCoercer:
             return _coerce_mod.auto(value, elem)
         return template.coerce(value)
 
+
 def _get_smart_parse_action():
     """Materialize the argparse Action only when the Python parser is used."""
     smart_parse_action = _value_mod._SmartParseAction
@@ -378,9 +378,7 @@ def _get_smart_parse_action():
                         self._kwconf_template, self.nargs
                     )
 
-            def __call__(
-                self, parser, namespace, values, option_string=None
-            ):
+            def __call__(self, parser, namespace, values, option_string=None):
                 setattr(namespace, self.dest, values)
                 from kwconf.argparse_ext import mark_explicit
 
@@ -393,10 +391,12 @@ def _get_smart_parse_action():
         _value_mod._SmartParseAction = smart_parse_action
     return smart_parse_action
 
+
 class CodeRepr(str):
     # When we want to write out the exact code that should be inserted.
     def __repr__(self):
         return self
+
 
 def _callable_code_repr(func: Callable[[], Any]) -> CodeRepr:
     """Return executable source for an importable zero-argument factory."""
