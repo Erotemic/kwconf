@@ -161,13 +161,22 @@ def main(argv: list[str] | None = None) -> int:
         argv = list(SAMPLE_ARGV)
 
     parse = parse_argparse if backend == 'argparse' else parse_kwconf
-    # Warm one-time imports / kwconf schema compilation before loop timing.
-    # argparse intentionally retains its conventional build-then-parse shape.
-    result = parse(argv)
+    # A normal/default invocation parses exactly once.  Only repeated-throughput
+    # mode warms one-time imports / kwconf schema compilation before timing the
+    # requested loop count.  argparse intentionally retains its conventional
+    # build-then-parse shape on every repeated call.
+    if repeat > 1:
+        result = parse(argv)
+    else:
+        result = None
     start = time.perf_counter_ns()
     for _ in range(repeat):
         result = parse(argv)
     elapsed_ns = time.perf_counter_ns() - start
+    if result is None:
+        # Preserve the historical repeat=0 control behavior without changing
+        # the ordinary cold path, which always has repeat=1.
+        result = parse(argv)
 
     if emit_json:
         print(

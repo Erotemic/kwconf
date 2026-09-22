@@ -75,7 +75,6 @@ _LAZY_MODULES = {
     'subconfig',
     'value',
     '_ingest',
-    '_rust',
     '_ubelt_repr_extension',
 }
 

@@ -947,32 +947,6 @@ class ModalCLI(metaclass=MetaModalCLI):
         if isinstance(self, type):
             self = self()  # type: ignore[call-arg,assignment]
 
-        if autocomplete and '_ARGCOMPLETE' in os.environ:
-            # Static option/choice/subcommand completion can bypass argparse
-            # construction entirely when the Rust accelerator is available.
-            # Complex shell syntax, opaque commands, and dynamic completers
-            # fall through to canonical argcomplete unchanged.
-            try:
-                from kwconf import _completion
-
-                _completion.try_modal_argcomplete(
-                    self, autocomplete=autocomplete
-                )
-            except ImportError:
-                pass
-
-        if not (autocomplete and '_ARGCOMPLETE' in os.environ):
-            from kwconf import _modal_rust
-
-            fast_result = _modal_rust.try_modal_main(
-                self,
-                argv,
-                strict=strict,
-                autocomplete=autocomplete,
-            )
-            if fast_result is not _modal_rust.NOT_HANDLED:
-                return fast_result
-
         parser = self.argparse()
         # parser.exit_on_error = False
         self._handle_autocomplete(parser=parser, autocomplete=autocomplete)

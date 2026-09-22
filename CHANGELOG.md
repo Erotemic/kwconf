@@ -5,88 +5,10 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Version 0.12.1 - Unreleased
 
-### Added
-* A normal-sized argparse-vs-kwconf comparison example and self-contained
-  HTML benchmark report now present cold startup, cold Tab completion, ModalCLI,
-  help/color, native-vs-delegated evidence, and optional deep implementation
-  diagnostics together. The Rust evidence bundle emits the report automatically.
-* An experimental optional Rust-backed CLI accelerator can bypass argparse
-  schema construction for common scalar/flag/counter/bare-option parses, fixed
-  realized SubConfig leaves, static completion, and static ModalCLI routing,
-  while conservatively falling back to the existing parser for unsupported or
-  dynamic semantics and canonical diagnostics. ``Config`` defaults to ``__cli_backend__ = 'auto'``: an
-  installed compatible accelerator is used for proven fast-path cases, while a
-  pure-Python install remains fully functional. The bridge uses a versioned FFI
-  protocol and refuses stale binaries. Dedicated benchmarks measure hot parsing,
-  Config/class construction, schema construction, extension import cost, and
-  typed/explicit fresh-process CLI startup against stdlib ``argparse``.
-* The accelerator performance campaign now includes pure-Rust Criterion
-  benchmarks, repeatable perf/flamegraph/Callgrind/Massif workloads, Python
-  bridge cProfile workloads, argv-density FFI scaling, and an interleaved
-  fresh-process CLI campaign that records raw trials and paired argparse
-  deltas. Native parser logic now lives in a separate Rust-only crate from the
-  PyO3 wrapper so Rust-only timings do not link the Python extension machinery
-  or conflate FFI conversion with dispatch. The shipping extension remains
-  pinned to PyO3's ``abi3-py310`` Stable ABI, and the build helper rejects
-  accidentally version-specific wheels.
-* The Rust campaign now covers static shell completion and static ModalCLI
-  routing in the Python-independent ``kwconf-cli-core`` crate. Ordinary option,
-  finite-choice, nested-leaf, and modal-command completions can answer the
-  argcomplete wire protocol before importing argparse/argcomplete; dynamic
-  callbacks, filesystem completion, shell quoting, mutex-sensitive completion,
-  help/errors, and opaque modal commands delegate to the canonical Python
-  implementation. Fixed realized SubConfig leaves are accelerated while
-  schema-changing selectors retain the multipass Python parser.
-* End-to-end evaluation tooling now includes completion-vs-argcomplete, modal
-  dispatch, plain/Rich help-color parity, native/FFI profiles, and a single
-  evidence-bundle command that archives build metadata, feature ownership, raw
-  trials, generated programs, profiles, wheel contents/hashes, changed-source
-  snapshots, and every command log into one tarball.
-
 ### Changed
-* The production-style argparse-vs-kwconf benchmark now has a matching fresh-process lifecycle attribution run for the exact 24-option schema and sample argv. The HTML report shows API realization, schema/parser definition, backend materialization, parser-engine, reset/reparse, and apply/finalize costs for argparse, kwconf Python, and kwconf Rust, with a Rust extension/schema/FlatParser breakdown next to the user-facing cold wall-clock result.
-* Common flat Rust-backed ``Config.cli()`` invocations now use a tiny direct
-  bridge that lives in the already-loaded ``config.py`` hot path. They import
-  and protocol-check ``_kwconf_rust`` directly, normalize the conservative flat
-  schema, and construct ``FlatParser`` without importing the larger
-  ``kwconf._rust`` completion/diagnostics bridge. Unsupported, nested, or richer
-  schemas immediately delegate to the existing full bridge, so canonical
-  fallback and the broader accelerator surface are unchanged. ``.argparse()``
-  still constructs and returns the real Python ``ExtendedArgumentParser`` when
-  explicitly requested.
-* Cold-start evidence now separates the cheap package import, first realization
-  of the lazy ``Config`` API, actual Config subclass definition, instance/default
-  materialization, backend construction, the parser engine itself, canonical
-  reset/reparse work, and final Config application. Rust backend materialization
-  is further split into bridge import, extension/protocol loading, schema
-  extraction, and native ``FlatParser`` construction. This avoids attributing
-  Python module loading to either schema definition or token parsing and makes it
-  explicit that the Rust fast path never constructs ``ArgumentParser`` unless
-  the caller explicitly requests that compatibility API or the fast path falls
-  back.
-* The benchmark report now treats shell Tab completion as a user-facing cold-start
-  metric alongside normal invocation. It compares raw ``argparse + argcomplete``,
-  the kwconf Python backend using argcomplete, and the Rust static completion fast
-  path across schema sizes, retains raw completion trials, and keeps delegated
-  protocol parity separate from native timing.
-* The controlled ``python -S`` cold-start experiment now records relevant
-  ``sys.modules`` preload state before the timed CLI import, making it clear when
-  site initialization merely shifts import work into a later benchmark phase.
-* Rust benchmark evidence now treats fresh-process latency as the headline result.
-  The report decomposes cold starts into process envelope, import, CLI definition,
-  and first-parse time for argparse, the pure-Python kwconf backend, and the Rust
-  backend. A controlled ``python -S`` profile shows how much ordinary site startup
-  masks parser work. Review campaigns skip repeated warm-loop/component profiling;
-  those remain available under ``--deep`` for implementation diagnostics.
-* Rust evidence reports now flush the command ledger before HTML rendering, so
-  benchmark sections that were skipped after a failed gate explain why instead
-  of appearing as unexplained missing data.
-* The optional native accelerator now ships as a separate ``kwconf-rust``
-  distribution maintained in the same repository. The normal ``kwconf``
-  package remains pure Python and has no binary dependency; installing
-  ``kwconf-rust`` adds the ABI3 ``_kwconf_rust`` module and pins the exact
-  matching ``kwconf`` version. xcookie workspace CI builds and publishes the
-  accelerator independently across Linux, macOS, and Windows.
+
+- Remove the unreleased experimental native CLI backend and retain the backend-independent Python startup improvements: lazy top-level imports, cold-method splitting, cheaper Config construction, warning-stack cleanup, and corrected cold benchmark semantics.
+* The production-style cold benchmark now performs exactly one CLI parse per fresh process. The example previously performed an unconditional warmup parse even when ``repeat=1``, so the nominal cold check executed each backend twice; repeated-throughput mode still performs its intentional one-time warmup before timing the requested loop count.
 * The top-level package API is now resolved lazily, and flat ``Config`` schema
   construction no longer imports the modal, dataconfig, SubConfig, argparse,
   pprint/inspect, textwrap, optional ubelt repr integration, or YAML helpers
@@ -95,85 +17,16 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
   file-ingestion stack. Type-only implementation imports are represented by a
   small runtime shim plus shipped ``.pyi`` metadata so simple typed schemas do
   not import the stdlib ``typing`` stack merely to start a CLI.
-* Config metaclass normalization now enriches annotated fields once after
-  inherited/declared defaults are merged instead of copying them in both the
-  collection and normalization passes. Root-API collision lookup is cached,
-  common scalar annotations/defaults have direct paths, and Config construction
-  materializes ordinary Value reset metadata and live state together. These
-  changes reduce Python declaration/instance overhead that remains visible even
-  when argv token parsing is accelerated.
 * Optional ubelt pretty-print registration is now lazy in both import orders.
   ``ub.urepr(config)`` retains its integration when ubelt is present, without
   importing ubelt during ordinary kwconf startup or registering a global
   typename handler that could match unrelated classes named ``Config``.
-* The optional Rust wheel uses Maturin's standard pure-Rust layout: a tiny
-  generated ``_kwconf_rust/__init__.py`` re-export wrapper around the native
-  ABI3 child extension. The build helper verifies the ABI3 wheel tag and native
-  child instead of treating that wrapper as a packaging failure. Its FFI protocol
-  reports explicit parse/completion/modal capabilities, and the extension remains
-  a thin PyO3 adapter over ``kwconf-cli-core`` so the recognition/completion/router
-  primitives can converge with ``kwconf-rs`` without introducing a Python
-  dependency into native Rust programs.
-* The common successful Rust-backed ``Config.cli()`` lifecycle for flat and
-  fixed-realized nested schemas now bypasses the generic data/argparse loader
-  entirely after a side-effect-free eligibility probe. Serialization, parser construction, code-generation, generic
-  ``load()``/``_read_argv()`` bodies, and Value argparse/codegen helpers live
-  behind lazy cold modules, while fallback, SubConfig, completion, help/error,
-  and pure-Python behavior keep the canonical implementation. The direct path
-  preserves reset/default-factory and provenance semantics before committing
-  accelerated results. Top-level lazy API resolution also uses the builtin
-  importer directly rather than importing ``importlib`` on first access.
-* Static completion and ModalCLI startup no longer eagerly import stdlib
-  ``typing``, ``pprint``, or ``inspect``. Type-only names reuse kwconf's small
-  runtime typing shim, diagnostic pretty-printing imports ``pprint`` only when
-  debugging is enabled, and normal Python/classmethod modal entry points inspect
-  their code object directly with a lazy ``inspect.signature`` fallback for
-  exotic callables. This removes fixed Python import cost from the paths where
-  the Rust completion/router is intended to beat argparse.
-* Static ModalCLI routing now builds only command-routing metadata instead of
-  compiling completion schemas for every leaf before selecting a command.
-  Command-name completion likewise avoids leaf schema compilation, while
-  option completion materializes only the selected leaf. This reduces modal
-  orchestration overhead without changing the Rust ABI, routing semantics, or
-  canonical fallback behavior. The release evidence gates also enforce clean
-  Rust formatting and Python linting for the accelerator campaign.
-* Static ModalCLI routing and command-name completion now resolve command
-  metadata without materializing argparse parser/formatter kwargs. Successful
-  Rust routing therefore does not import argparse, inspect, typing, or
-  rich-argparse solely for unused help metadata; canonical help/error and
-  delegated paths still build the same parser stack when needed.
-
 ### Fixed
 * Annotation introspection now normalizes PEP 585 generic aliases before the
   plain-runtime-class fast path. This restores Python 3.10 behavior for
   ``list[T]`` / optional-container coercion and validation while retaining the
   lazy ``typing`` import optimization. Cold SubConfig and runtime-typing shim
   annotations are also explicit enough for the static checker.
-* The Rust evidence campaign now accepts Maturin's normal pure-Rust wrapper
-  layout, uses at least two startup/completion observations in ``--quick`` mode,
-  instantiates ``Config`` before exercising the instance ``argparse()`` API, and
-  uses a deterministic filesystem-completion fixture so exact argcomplete wire
-  parity is not defeated by directory iteration order. Required-field tests now
-  assert kwconf's canonical provenance ``ValueError`` contract instead of
-  incorrectly expecting argparse ``SystemExit``. Runtime validation warnings are
-  attributed to the first caller outside kwconf, making their user-visible source
-  location backend-invariant across hot/cold Python and Rust paths.
-* The Rust cold-start benchmark no longer imports ``argparse`` in the kwconf
-  child workloads before choosing a backend. It now reports separate
-  ``kwconf_core`` and declaration/instance rows plus absolute baseline deltas so
-  package-shell cost, Config/Value cost, extension cost, metaclass work, and
-  one-shot CLI cost can be distinguished.
-* Rust fast-path schema admission now rejects arbitrary Python parser/type
-  callbacks and object-valued choices before speculative parsing. This prevents
-  a later argparse fallback from executing user callback/equality code twice;
-  builtin scalar coercers and kwconf's own named parsers remain accelerated.
-* The optional-ubelt fresh-interpreter tests now explicitly expose the detected
-  ubelt site-packages root when running children with ``python -S``; ``-S`` no
-  longer makes an installed optional dependency disappear and create a false
-  full-suite failure. The full Rust evidence campaign now gates cargo formatting,
-  clippy, Ruff, and the complete pytest suite, while kernel-restricted ``perf``
-  is reported as unavailable instead of as four failed profiling commands.
-
 
 ## Version 0.12.0 - Released 2026-09-19
 

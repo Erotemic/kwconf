@@ -18,12 +18,6 @@ EXAMPLE = REPO_DPATH / 'examples' / '09_argparse_comparison.py'
 
 def _run_child(backend: str, extra: list[str], env: dict[str, str]) -> tuple[int, str]:
     child_env = env.copy()
-    if backend == 'kwconf':
-        # Benchmark the normal shipping policy regardless of a developer's
-        # ambient override.  auto uses Rust when the proven fast path applies.
-        child_env['KWCONF_CLI_BACKEND'] = 'auto'
-    else:
-        child_env.pop('KWCONF_CLI_BACKEND', None)
     start = time.perf_counter_ns()
     proc = subprocess.run(
         [sys.executable, str(EXAMPLE), backend, *extra],
@@ -94,7 +88,8 @@ def main() -> None:
         'trials': args.trials,
         'warm_loops': 0 if args.cold_only else args.warm_loops,
         'cold_only': bool(args.cold_only),
-        'kwconf_backend': 'auto',
+        'cold_parses_per_process': 1,
+        'kwconf_backend': 'python',
         'cold': {
             key: {
                 'median_ns': cold_med[key],

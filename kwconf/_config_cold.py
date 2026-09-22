@@ -1,14 +1,13 @@
 """Cold Config methods loaded only when their APIs are first used.
 
-The ordinary typed Rust-backed CLI path does not need serialization, code
-conversion, or argparse-construction helpers. Keeping those function code
+The ordinary typed CLI path does not need serialization, code
+conversion, or every argparse-construction helper. Keeping those function code
 objects out of :mod:`kwconf.config` reduces fresh-process startup while this
 module preserves the exact public methods on demand.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 
 from kwconf._typing_runtime import (
@@ -28,7 +27,6 @@ from kwconf.config import (
     _coerce_data_to_dict,
     _diagnostic_enabled,
     _normalize_validation_mode,
-    _rust_extension_present,
     _structural_validation_mode,
     define,
 )
@@ -1716,111 +1714,69 @@ def _read_argv(
 
     provided_keys: set[str] = set()
 
-    # ``auto`` prefers the optional accelerator when it is installed and
-    # conservatively delegates unsupported/error cases to argparse.
-    # Explicit ``python`` never probes/imports the extension; explicit
-    # ``rust`` requires it and gives an actionable error if absent.
-    backend_mode = os.environ.get(
-        'KWCONF_CLI_BACKEND',
-        getattr(self, '__cli_backend__', 'auto'),
-    ).lower()
-    if backend_mode not in {'python', 'auto', 'rust'}:
-        raise ValueError(
-            'KWCONF_CLI_BACKEND / __cli_backend__ must be one of '
-            "'python', 'auto', or 'rust'; "
-            f'got {backend_mode!r}'
-        )
-
     # TODO: warn about any unused flags
     has_subconfigs = getattr(self, '_has_subconfigs', False)
-    parse_result = None
-    can_try_rust = (
-        backend_mode != 'python'
-        and argv is not None
-        and not has_subconfigs
-        and not special_options
-        # ``autocomplete=True`` promises argcomplete integration even when
-        # it is not currently running under a completion shell. ``auto``
-        # only needs the argparse object when argcomplete is active.
-        and autocomplete is not True
-        and not (autocomplete == 'auto' and '_ARGCOMPLETE' in os.environ)
-    )
-    if can_try_rust and (
-        backend_mode == 'rust' or _rust_extension_present()
-    ):
-        from kwconf import _rust as _rust_mod
+    if has_subconfigs:
+        # Start from a bare root parser. The multipass helper realizes the
+        # selected tree and extends this exact parser once; pre-populating it
+        # with the default variant would create duplicate/stale arguments.
+        from kwconf import subconfig as _subcfg_mod
 
-        parse_result = _rust_mod.try_parse_config(
+        parser = self._new_argparse_parser()
+        localns = _subcfg_mod.resolve_localns(localns, stacklevel)
+        parser, argv = _subcfg_mod.expand_multipass_parser(
             self,
-            argv,
-            strict=strict,
-            required_extension=(backend_mode == 'rust'),
+            parser=parser,
+            argv=argv,
+            special_options=special_options,
+            allow_import=allow_import,
+            allow_subconfig_overrides=allow_subconfig_overrides,
+            pending_updates=pending_updates,
+            localns=localns,
+            stacklevel=None,
+            validation_mode=validation_mode,
+            structural_validation=structural_validation,
+            provided_keys=provided_keys,
         )
+    else:
+        parser = self._argparse(special_options=special_options)
 
-    if parse_result is None:
-        if has_subconfigs:
-            # Start from a bare root parser. The multipass helper realizes the
-            # selected tree and extends this exact parser once; pre-populating it
-            # with the default variant would create duplicate/stale arguments.
-            from kwconf import subconfig as _subcfg_mod
-
-            parser = self._new_argparse_parser()
-            localns = _subcfg_mod.resolve_localns(localns, stacklevel)
-            parser, argv = _subcfg_mod.expand_multipass_parser(
-                self,
-                parser=parser,
-                argv=argv,
-                special_options=special_options,
-                allow_import=allow_import,
-                allow_subconfig_overrides=allow_subconfig_overrides,
-                pending_updates=pending_updates,
-                localns=localns,
-                stacklevel=None,
-                validation_mode=validation_mode,
-                structural_validation=structural_validation,
-                provided_keys=provided_keys,
-            )
-        else:
-            parser = self._argparse(special_options=special_options)
-
-        if autocomplete:
-            try:
-                import argcomplete as argcomplete_mod
-            except ImportError:
-                if autocomplete != 'auto':
-                    raise
-            else:
-                argcomplete_mod.autocomplete(parser)
-
+    if autocomplete:
         try:
-            from kwconf import argparse_ext
+            import argcomplete as argcomplete_mod
+        except ImportError:
+            if autocomplete != 'auto':
+                raise
+        else:
+            argcomplete_mod.autocomplete(parser)
 
-            if strict:
-                parse_result = argparse_ext.parse_result(parser, argv)
-            else:
-                parse_result = argparse_ext.parse_known_result(parser, argv)
-        except (ValueError, TypeError, KeyError) as ex:
-            # For errors (like ValueError) where its probably a programmer
-            # error and not a user error, give the debugger some information
-            # about the kwconf object.
-            from kwconf.util import util_exception
+    try:
+        from kwconf import argparse_ext
 
-            # TODO: figure out argv that triggers a value error so we can add a test
-            note = _codeblock(
-                f"""
-                Error while attempting to parse arguments in _read_argv
+        if strict:
+            parse_result = argparse_ext.parse_result(parser, argv)
+        else:
+            parse_result = argparse_ext.parse_known_result(parser, argv)
+    except (ValueError, TypeError, KeyError) as ex:
+        # For errors where it is probably a programmer error rather than a
+        # user error, give the debugger some information about the config.
+        from kwconf.util import util_exception
 
-                Context:
-                    argv = {argv!r}
-                    special_options = {special_options!r}
-                    strict = {strict!r}
-                    autocomplete = {autocomplete!r}
-                    self = {self!r}
-                """
-            )
-            print(note)
-            ex = util_exception.add_exception_note(ex, note)
-            raise ex
+        note = _codeblock(
+            f"""
+            Error while attempting to parse arguments in _read_argv
+
+            Context:
+                argv = {argv!r}
+                special_options = {special_options!r}
+                strict = {strict!r}
+                autocomplete = {autocomplete!r}
+                self = {self!r}
+            """
+        )
+        print(note)
+        ex = util_exception.add_exception_note(ex, note)
+        raise ex
 
     ns = parse_result.values
     explicit_keys = set(parse_result.explicit_keys)
