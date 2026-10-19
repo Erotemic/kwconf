@@ -43,9 +43,7 @@ def test_bare_can_be_falsy_and_implies_optional_value_grammar():
     assert by_dest['zero_value'].nargs == '?'
     assert by_dest['zero_value'].const == 0
 
-    cfg = BareConfig.cli(
-        argv=['--none_value', '--false_value', '--zero_value']
-    )
+    cfg = BareConfig.cli(argv=['--none_value', '--false_value', '--zero_value'])
     assert cfg.none_value is None
     assert cfg.false_value is False
     assert cfg.zero_value == 0
@@ -66,7 +64,7 @@ def test_bare_short_alias_clusters_and_required_value_tail():
         debug = kwconf.Flag(False, short_alias=['d'])
         key = kwconf.Value(None, short_alias=['k'])
 
-    cases = {
+    cases: dict[tuple[str, ...], dict[str, object]] = {
         ('-pv',): dict(patch='auto', verbose=1),
         ('-vp',): dict(patch='auto', verbose=1),
         ('-vvp',): dict(patch='auto', verbose=2),

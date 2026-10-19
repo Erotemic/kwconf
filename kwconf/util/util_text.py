@@ -7,8 +7,6 @@ kwconf used to depend on); the test suite asserts they stay byte-compatible.
 
 from __future__ import annotations
 
-import textwrap
-
 
 def codeblock(text: str) -> str:
     """
@@ -16,6 +14,8 @@ def codeblock(text: str) -> str:
 
     Equivalent to ``ubelt.codeblock``.
     """
+    import textwrap
+
     return textwrap.dedent(text).strip('\n')
 
 

@@ -177,7 +177,9 @@ def test_annotation_override_does_not_mutate_base_template():
         x: int = kwconf.Value(0)
 
     class Sub(Base):
-        x: str
+        # This deliberately violates static override compatibility: the
+        # regression checks that runtime annotation changes are isolated.
+        x: str  # ty: ignore[invalid-attribute-override]
 
     assert Base.__default__['x'] is not Sub.__default__['x']
     assert Base.__default__['x']._annotation is int

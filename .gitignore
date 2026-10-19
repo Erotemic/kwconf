@@ -106,3 +106,4 @@ wheelhouse
 
 # Local benchmark outputs
 dev/benchmarks/_results/
+dev/benchmarks/_profiles/

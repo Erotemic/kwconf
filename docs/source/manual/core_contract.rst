@@ -278,6 +278,54 @@ tests/CI. It is not called implicitly by class construction or CLI startup.
 Parser-enforced constraints such as ``Literal`` choices also remain hard
 errors regardless of runtime validation mode.
 
+Type-safe schema validation
+---------------------------
+
+For static typing, prefer importing ``Config`` from ``kwconf.config`` and
+inheriting it directly. Class factories such as ``MyConfig.cli(...)`` and
+``MyConfig.from_env(...)`` then preserve the concrete ``MyConfig`` return type.
+This import is statically explicit while the convenient top-level
+``kwconf.Config`` export remains lazy at runtime.
+
+``Config.validate()`` validates the *class schema*, not an instance's field
+values. There is also a public function for invoking it without touching a
+possibly shadowed field named ``validate``:
+
+.. code-block:: python
+
+    import kwconf
+    from kwconf.config import Config, validate_schema
+
+    class MyConfig(Config):
+        validate_enabled: bool = kwconf.Value(False, alias='validate')
+        count: int = 1
+
+    validate_schema(MyConfig)  # checks alias/schema invariants
+    cfg: MyConfig = MyConfig.cli(argv=False)
+    assert cfg.validate_enabled is False
+    assert cfg.count == 1
+
+The function is also available as ``kwconf.validate_schema(MyConfig)``; the
+explicit submodule import above exposes its annotated signature to static
+checkers regardless of the top-level lazy import implementation.
+
+An existing class can legally declare ``validate: bool`` as a field at runtime:
+its instances get the boolean, while the class still has the inherited
+classmethod. ``validate_schema(MyConfig)`` remains callable, but **a static
+checker may still reject that field declaration** as an incompatible override
+of a base-class method. Renaming the Python field and giving it an explicit
+CLI alias (as above) is the fully statically sound option. No static type
+annotation can make one class attribute both a boolean and a method.
+
+``MyConfig._validate()`` is the existing non-shadowable operation alias. Neither
+form validates instance values; use ``__validate__`` or ingestion's
+``validate=`` setting for that purpose.
+
+``@dataconf`` can convert plain classes at runtime, but Python cannot currently
+express that its result both inherits the original class and newly inherits
+``Config`` while preserving all declared field types. Prefer direct ``Config``
+inheritance when downstream static typing matters.
+
 Nested configs
 --------------
 

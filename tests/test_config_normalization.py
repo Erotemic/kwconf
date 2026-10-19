@@ -1,6 +1,7 @@
 import pytest
 
 import kwconf
+from kwconf.value import _Value
 
 
 def test_leaf_defaults_are_normalized():
@@ -19,13 +20,16 @@ def test_leaf_defaults_are_normalized():
 
 def test_bool_defaults_become_flags():
     class BoolConfig(kwconf.Config):
-        __default__ = {
+        __default__: dict[str, object] = {
             'flag': False,
             'enabled': True,
         }
 
-    assert BoolConfig.__default__['flag'].isflag is True  # ty: ignore[unresolved-attribute]
-    assert BoolConfig.__default__['enabled'].isflag is True  # ty: ignore[unresolved-attribute]
+    # The metaclass replaces raw booleans with Value metadata.
+    flag = BoolConfig.__default__['flag']
+    enabled = BoolConfig.__default__['enabled']
+    assert isinstance(flag, _Value) and flag.isflag is True
+    assert isinstance(enabled, _Value) and enabled.isflag is True
 
     cfg = BoolConfig.cli(argv=['--flag'])
     assert cfg['flag'] is True

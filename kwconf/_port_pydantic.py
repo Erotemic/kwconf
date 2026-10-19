@@ -127,16 +127,12 @@ def _render_value(value: Any, state: _ImportState) -> str:
     if isinstance(value, set):
         if not value:
             return 'set()'
-        body = ', '.join(
-            sorted(_render_value(v, state) for v in value)
-        )
+        body = ', '.join(sorted(_render_value(v, state) for v in value))
         return '{' + body + '}'
     if isinstance(value, frozenset):
         if not value:
             return 'frozenset()'
-        body = ', '.join(
-            sorted(_render_value(v, state) for v in value)
-        )
+        body = ', '.join(sorted(_render_value(v, state) for v in value))
         return f'frozenset({{{body}}})'
 
     cls = type(value)
@@ -297,7 +293,9 @@ def _field_lines(
         return lines
 
     if default_expr is None:
-        raise AssertionError('non-required field must have a default expression')
+        raise AssertionError(
+            'non-required field must have a default expression'
+        )
     return [prefix + f' = {default_expr}']
 
 
@@ -318,7 +316,9 @@ def _field_review_notes(key: str, template: Value) -> list[str]:
     choices = template.parsekw.get('choices')
     annotation = getattr(template, '_annotation', None)
     annotation_choices = choices_from_annotation(annotation)
-    if choices is not None and tuple(choices) != tuple(annotation_choices or ()):
+    if choices is not None and tuple(choices) != tuple(
+        annotation_choices or ()
+    ):
         notes.append(
             'CLI choices were not translated to a Pydantic constraint: '
             f'choices={_short_repr(choices)}'
@@ -330,7 +330,7 @@ def _field_review_notes(key: str, template: Value) -> list[str]:
     if template.isflag == 'counter':
         cli_parts.append("isflag='counter'")
     if template.parsekw.get('nargs') is not None:
-        cli_parts.append(f"nargs={template.parsekw['nargs']!r}")
+        cli_parts.append(f'nargs={template.parsekw["nargs"]!r}')
     if template.bare is not NoParam:
         cli_parts.append(f'bare={template.bare!r}')
     if template.short_alias:
@@ -413,7 +413,9 @@ class _PydanticSourcePorter:
         for key, template in config_cls.__default__.items():
             if isinstance(template, SubConfig):
                 default = template.value
-                child_cls = default if inspect.isclass(default) else type(default)
+                child_cls = (
+                    default if inspect.isclass(default) else type(default)
+                )
                 if not issubclass(child_cls, Config):
                     raise TypeError(
                         f'SubConfig field {key!r} does not reference a Config: '
@@ -435,9 +437,7 @@ class _PydanticSourcePorter:
 
         notes = []
         if template.choices is not None:
-            notes.append(
-                'SubConfig choices/selectors were not translated'
-            )
+            notes.append('SubConfig choices/selectors were not translated')
         if template.allow_import is not None:
             notes.append(
                 'SubConfig allow_import policy was not translated: '
@@ -462,7 +462,9 @@ class _PydanticSourcePorter:
         return lines
 
     def _render_value_field(self, key: str, template: Value) -> list[str]:
-        annotation_expr, inference_note = _infer_annotation(template, self.state)
+        annotation_expr, inference_note = _infer_annotation(
+            template, self.state
+        )
         notes = _field_review_notes(key, template)
         if inference_note is not None:
             notes.insert(0, inference_note)

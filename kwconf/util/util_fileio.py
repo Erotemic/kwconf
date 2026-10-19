@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from os.path import exists
-from typing import IO, Any, Iterator, Union, cast
+from typing import IO, Any, Generator, Union, cast
 
 _CONFIG_FILE_SUFFIXES = ('.yaml', '.yml', '.json')
 
@@ -34,7 +34,7 @@ def looks_like_config_path(text: str) -> bool:
 @contextmanager
 def open_text_input(
     path_or_file: Union[str, os.PathLike[str], IO[Any]], mode: str = 'r'
-) -> Iterator[IO[Any]]:
+) -> Generator[IO[Any], None, None]:
     """
     Yield a readable file object from either a path or an already-open file.
 

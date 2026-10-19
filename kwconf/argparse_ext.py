@@ -706,6 +706,7 @@ def _fuzzy_option_index(
     an action under the same spelling leaves the lookup itself unchanged. Direct
     mutation of argparse's private registry is outside this cache contract.
     """
+    signature: tuple[int, str | None, str | None]
     if option_actions:
         signature = (
             len(option_actions),
@@ -984,6 +985,15 @@ class ExtendedArgumentParser(CompatArgumentParser):
         >>>     assert result.__dict__ == case['expected']
     """
 
+    # These extensions are instance-overridable.  Keep the defaults on the
+    # class to avoid allocating extra entries in every parser's __dict__;
+    # _fuzzy_option_index materializes a per-parser cache on first use.
+    _kwconf_fuzzy_hyphens: bool = True
+    _kwconf_short_alias_clusters: bool = True
+    _kwconf_fuzzy_option_index: (
+        tuple[tuple[int, str | None, str | None], dict[str, list[str]]] | None
+    ) = None
+
     def parse_known_args(  # type: ignore[override]
         self,
         args: Iterable[str] | None = None,
@@ -1011,7 +1021,9 @@ class ExtendedArgumentParser(CompatArgumentParser):
         if hasattr(parsed, _EXPLICIT_KEYS_ATTR):
             delattr(parsed, _EXPLICIT_KEYS_ATTR)
         if invalid_short_markers:
-            unknown = [invalid_short_markers.get(item, item) for item in unknown]
+            unknown = [
+                invalid_short_markers.get(item, item) for item in unknown
+            ]
         return parsed, unknown
 
     def parse_known_result(
