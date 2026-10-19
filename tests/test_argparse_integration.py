@@ -63,10 +63,10 @@ def build_modal():
 
     # FIXME: doesn't work when you use Config instead of Config.
     cli1 = kwconf.Config.cls_from_argparse(setup_args1(), name='mode1')
-    cli1.main = main2  # ty: ignore[unresolved-attribute]
+    cli1.main = main2
 
     cli2 = kwconf.Config.cls_from_argparse(setup_args2(), name='mode2')
-    cli2.main = main2  # ty: ignore[unresolved-attribute]
+    cli2.main = main2
 
     modal.register(cli1)
     modal.register(cli2)

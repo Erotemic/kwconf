@@ -1,4 +1,6 @@
 # mypy: disable-error-code="operator, arg-type, attr-defined, misc, literal-required, import-untyped, assignment, var-annotated, dict-item, list-item, call-arg"
+from typing import Callable, cast
+
 import kwconf
 
 
@@ -204,9 +206,15 @@ def test_dataconf_preserves_hooks_and_helpers():
         def _helper(self):
             return 'helped'
 
-    c = C(x=5)
-    assert hits == [5]
+    # @dataconf creates a Config subclass at runtime, but the original plain
+    # class has no statically declared Config constructor. Keep the original
+    # class's type to check its user-defined helpers too.
+    assert issubclass(C, kwconf.Config)
+    c = cast(Callable[..., C], C)(x=5)
     assert c._helper() == 'helped'
+    assert isinstance(c, kwconf.Config)
+    assert c['x'] == 5
+    assert hits == [5]
 
 
 def test_dataconf_inherits_fields_from_plain_base():
@@ -221,9 +229,10 @@ def test_dataconf_inherits_fields_from_plain_base():
         child_field: int = 20
 
     cfg = Child()
-    assert set(cfg.keys()) == {'base_field', 'child_field'}
     assert cfg.base_field == 10
     assert cfg.child_field == 20
+    assert isinstance(cfg, kwconf.Config)
+    assert set(cfg.keys()) == {'base_field', 'child_field'}
 
     # Subclass field overrides the base default.
     class Base2:
@@ -247,6 +256,7 @@ def test_dataconf_does_not_replace_config_init_with_user_init():
             calls.append(x)
 
     cfg = C(x=3)
+    assert isinstance(cfg, kwconf.Config)
     assert cfg.asdict() == {'x': 3}
     assert calls == []
 
@@ -261,4 +271,5 @@ def test_dataconf_accepts_a_stdlib_dataclass_input():
         label: str = 'demo'
 
     cfg = C(2, label='changed')
+    assert isinstance(cfg, kwconf.Config)
     assert cfg.asdict() == {'x': 2, 'label': 'changed'}

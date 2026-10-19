@@ -174,11 +174,16 @@ def test_dataconf_uses_the_same_collision_policy():
     assert cfg.cli == 'field-cli'
     assert cfg.load == 'field-load'
     assert cfg.namespace == 'field-namespace'
+
+    # @dataconf synthesizes a Config subclass; the original class's static
+    # signature cannot express that runtime inheritance or its class methods.
+    assert isinstance(cfg, kwconf.Config)
     assert cfg['keys'] == 'field-keys'
     assert callable(cfg.keys)
 
-    CollisionConfig.validate()
-    assert CollisionConfig.cli(argv=False).cli == 'field-cli'
+    config_type = cast(type[kwconf.Config], CollisionConfig)
+    config_type.validate()
+    assert config_type.cli(argv=False).cli == 'field-cli'
     cfg._load({'load': 'changed'}, argv=False)
     assert cfg.load == 'changed'
     assert isinstance(cfg._namespace, argparse.Namespace)

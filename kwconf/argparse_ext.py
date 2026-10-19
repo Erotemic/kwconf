@@ -984,6 +984,15 @@ class ExtendedArgumentParser(CompatArgumentParser):
         >>>     assert result.__dict__ == case['expected']
     """
 
+    # These extensions are instance-overridable.  Keep the defaults on the
+    # class to avoid allocating extra entries in every parser's __dict__;
+    # _fuzzy_option_index materializes a per-parser cache on first use.
+    _kwconf_fuzzy_hyphens: bool = True
+    _kwconf_short_alias_clusters: bool = True
+    _kwconf_fuzzy_option_index: (
+        tuple[tuple[int, str | None, str | None], dict[str, list[str]]] | None
+    ) = None
+
     def parse_known_args(  # type: ignore[override]
         self,
         args: Iterable[str] | None = None,
