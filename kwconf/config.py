@@ -84,6 +84,7 @@ from kwconf._typing_runtime import (
     Optional,
     Tuple,
     Type,
+    TypeVar,
     cast,
 )
 from kwconf.annotations import _is_any as _annotation_is_any
@@ -251,10 +252,15 @@ class ConfigValidationError(TypeError):
     """
 
 
-__all__ = ['Config', 'ConfigValidationError', 'define']
+__all__ = ['Config', 'ConfigValidationError', 'define', 'validate_schema']
 
 
 ConfigData = Mapping[str, Any] | str | os.PathLike[str] | IO[Any] | None
+
+# A generic bound to Config is the Python 3.10-compatible equivalent of
+# typing.Self for class factories. Resolve typing names through the existing
+# shim to avoid importing typing for ordinary short-lived CLI programs.
+_ConfigT = TypeVar('_ConfigT', bound='Config')
 
 
 def _normalize_validation_mode(mode: bool | str | None) -> bool | str | None:
@@ -1224,7 +1230,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         )
 
     @classmethod
-    def coerce(cls, **kwargs: Any) -> 'Config':
+    def coerce(cls: Type[_ConfigT], **kwargs: Any) -> _ConfigT:
         """
         Construct a config, coercing string-valued arguments through each
         field's parser (the text-boundary path).
@@ -1263,13 +1269,15 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     @classmethod
     def from_cli(
-        cls, argv: Sequence[str] | str | bool | None = None, **kwargs: Any
-    ) -> 'Config':
+        cls: Type[_ConfigT],
+        argv: Sequence[str] | str | bool | None = None,
+        **kwargs: Any,
+    ) -> _ConfigT:
         """Construct from command-line arguments (a named alias for :meth:`cli`)."""
         return cls._cli(argv=argv, **kwargs)
 
     @classmethod
-    def from_yaml(cls, path: Any, **kwargs: Any) -> 'Config':
+    def from_yaml(cls: Type[_ConfigT], path: Any, **kwargs: Any) -> _ConfigT:
         """
         Construct from a YAML (or JSON) file path. Values keep the file
         format's own typing -- no extra string coercion is applied (a quoted
@@ -1278,7 +1286,9 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         return cls._cli(data=path, argv=False, **kwargs)
 
     @classmethod
-    def from_env(cls, prefix: str = '', **kwargs: Any) -> 'Config':
+    def from_env(
+        cls: Type[_ConfigT], prefix: str = '', **kwargs: Any
+    ) -> _ConfigT:
         """
         Construct from environment variables.
 
@@ -1311,7 +1321,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
 
     @classmethod
     def cli(
-        cls,
+        cls: Type[_ConfigT],
         data: ConfigData = None,
         default: Mapping[str, Any] | None = None,
         argv: Sequence[str] | str | bool | None = None,
@@ -1324,7 +1334,7 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
         localns: Mapping[str, Any] | None = None,
         stacklevel: int | None = 0,
         validate: bool | str | None = None,
-    ) -> Config:
+    ) -> _ConfigT:
         """
         Create a command-line aware config instance.
 
@@ -1929,6 +1939,30 @@ class Config(NiceRepr, _ABCMapping, metaclass=MetaConfig):
     _port_to_argparse = port_to_argparse
     _namespace = namespace
     _argparse = argparse
+
+
+def validate_schema(config_type: type[Config]) -> None:
+    """Check a Config class's static schema without naming a colliding field.
+
+    Unlike ``MyConfig.validate()``, this public function remains accessible
+    when the user declares a typed field named ``validate``. It calls the
+    non-shadowable operation alias, respecting Config subclasses that override
+    the validator. This is *schema* validation (aliases/field spellings), not
+    per-value validation during construction or CLI ingestion.
+
+    Example:
+        >>> import kwconf
+        >>> class Example(kwconf.Config):
+        ...     validate: bool = False
+        >>> validate_schema(Example)
+        >>> Example().validate is False
+        True
+    """
+    if not isinstance(config_type, type) or not issubclass(
+        config_type, Config
+    ):
+        raise TypeError('validate_schema expects a Config subclass')
+    config_type._validate()
 
 
 __notes__ = """

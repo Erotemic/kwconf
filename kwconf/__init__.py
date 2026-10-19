@@ -36,7 +36,7 @@ __version__ = '0.12.1'
 
 __submodules__ = {
     'modal': ['ModalCLI', 'ModalValue'],
-    'config': ['Config', 'ConfigValidationError', 'define'],
+    'config': ['Config', 'ConfigValidationError', 'define', 'validate_schema'],
     'value': ['Value', 'Flag'],
     'dataconfig': ['dataconf'],
     'subconfig': ['SubConfig'],
@@ -52,6 +52,7 @@ _LAZY_ATTRS = {
     'Config': ('config', 'Config'),
     'ConfigValidationError': ('config', 'ConfigValidationError'),
     'define': ('config', 'define'),
+    'validate_schema': ('config', 'validate_schema'),
     'Value': ('value', 'Value'),
     'Flag': ('value', 'Flag'),
     'ModalCLI': ('modal', 'ModalCLI'),
@@ -104,6 +105,7 @@ __all__ = [
     'Flag',
     'dataconf',
     'define',
+    'validate_schema',
     'ModalCLI',
     'ModalValue',
     'SubConfig',

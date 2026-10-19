@@ -5,7 +5,19 @@ We aim to adhere to [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Version 0.12.1 - Unreleased
 
+### Added
+
+* Add ``kwconf.validate_schema(MyConfig)`` as a typed, collision-free public
+  entry point for checking class schema invariants. This is useful when a
+  configuration declares a ``validate`` field; it preserves custom validator
+  overrides and does not run instance value validation.
+
 ### Changed
+
+* Preserve concrete subclass types for ``Config.cli``, ``coerce``,
+  ``from_cli``, ``from_yaml``, and ``from_env`` with Python 3.10-compatible
+  generic annotations. Typing of ``@dataconf`` on a plain class remains
+  limited; inheriting ``Config`` directly is preferred for typed callers.
 
 * Remove the unreleased experimental native CLI backend and retain the backend-independent Python startup improvements: lazy top-level imports, cold-method splitting, cheaper Config construction, warning-stack cleanup, and corrected cold benchmark semantics.
 * The production-style cold benchmark now performs exactly one CLI parse per fresh process. The example previously performed an unconditional warmup parse even when ``repeat=1``, so the nominal cold check executed each backend twice; repeated-throughput mode still performs its intentional one-time warmup before timing the requested loop count.
