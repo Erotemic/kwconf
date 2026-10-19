@@ -12,6 +12,7 @@ import sys
 
 from kwconf._typing_runtime import (
     IO,
+    TYPE_CHECKING,
     Any,
     Dict,
     Iterable,
@@ -45,7 +46,12 @@ class _ArgparseTypeProxy:
         return getattr(argparse, key)
 
 
-argparse_mod = _ArgparseTypeProxy()
+if TYPE_CHECKING:
+    # The runtime proxy avoids importing argparse for unrelated cold methods.
+    # A real module alias is needed for static annotation resolution.
+    import argparse as argparse_mod
+else:
+    argparse_mod = _ArgparseTypeProxy()
 
 
 def demo(cls) -> 'Config':

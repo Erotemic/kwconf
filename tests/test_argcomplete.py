@@ -28,7 +28,7 @@ def _option_strings(parser):
 
 
 def _subcommand_names(parser):
-    names = set()
+    names: set[str] = set()
     for action in parser._actions:
         choices = getattr(action, 'choices', None)
         if isinstance(choices, dict):

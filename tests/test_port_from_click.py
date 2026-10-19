@@ -1,19 +1,25 @@
+from typing import TYPE_CHECKING
+
 import pytest
 
 import kwconf
+from kwconf.config import Config
 
-click = pytest.importorskip('click')
+if TYPE_CHECKING:
+    import click
+else:
+    click = pytest.importorskip('click')
 
 
 def _ported_field_names(text):
-    namespace = {}
+    namespace: dict[str, object] = {}
     exec(text, namespace, namespace)
     config_cls = next(
         value
         for value in namespace.values()
         if isinstance(value, type)
-        and issubclass(value, kwconf.Config)
-        and value is not kwconf.Config
+        and issubclass(value, Config)
+        and value is not Config
     )
     return list(config_cls.__default__)
 

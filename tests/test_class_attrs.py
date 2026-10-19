@@ -3,6 +3,8 @@
 Test that class attributes are correctly initialized.
 """
 
+from kwconf.config import Config
+
 
 def test_class_inst_default_attr():
     """
@@ -69,21 +71,23 @@ def test_class_inst_post_init_attr():
         'opt2': kwconf.Value(None, alias=['option2', 'old_name']),
     }
 
-    class Config1(kwconf.Config):
+    class Config1(Config):
         __default__ = common_default
 
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
 
-    class Config2(kwconf.Config):
+    class Config2(Config):
         __default__ = common_default
 
         def __post_init__(self):
             test_state[self.__class__.__name__ + '.__post_init__'] += 1
             self['opt1'] = 'post-initialized'
 
-    instances = {cls.__name__: cls() for cls in [Config1, Config2]}
+    instances: dict[str, Config] = {
+        cls.__name__: cls() for cls in [Config1, Config2]
+    }
     assert len(instances) == len(test_state) == 2
     assert all(v == 1 for v in test_state.values())
     assert instances['Config1']['opt1'] == 'post-initialized'

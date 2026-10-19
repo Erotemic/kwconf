@@ -16,4 +16,4 @@ from typing import Union as Union
 from typing import cast as cast
 from typing import overload as overload
 
-TYPE_CHECKING: bool
+from typing import TYPE_CHECKING as TYPE_CHECKING

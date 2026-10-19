@@ -23,7 +23,8 @@ class _LazyValueMethod:
     def __init__(self, name: str, *, kind: str = 'method') -> None:
         self.name = name
         self.kind = kind
-        self._resolved = None
+        # Cold methods may resolve to functions or classmethod descriptors.
+        self._resolved: Any = None
 
     def _resolve(self):
         resolved = self._resolved
@@ -109,7 +110,7 @@ def _fast_bool_coerce(token: str) -> bool:
     raise ValueError(token)
 
 
-_FAST_SCALAR_COERCERS = {
+_FAST_SCALAR_COERCERS: dict[type, Callable[[str], Any]] = {
     str: str,
     int: int,
     float: float,

@@ -706,6 +706,7 @@ def _fuzzy_option_index(
     an action under the same spelling leaves the lookup itself unchanged. Direct
     mutation of argparse's private registry is outside this cache contract.
     """
+    signature: tuple[int, str | None, str | None]
     if option_actions:
         signature = (
             len(option_actions),

@@ -137,7 +137,7 @@ def is_classvar_annotation(annotation):
 
 def _base_eval_context(namespace=None):
     namespace = namespace or {}
-    module_globals = {}
+    module_globals: dict[str, object] = {}
     module_name = namespace.get('__module__')
     if isinstance(module_name, str):
         module = sys.modules.get(module_name)
@@ -299,7 +299,7 @@ def choices_from_annotation(annotation):
     if _is_literal_origin(origin):
         return _args(annotation)
     if _is_union_origin(origin):
-        combined = []
+        combined: list[object] = []
         for arg in _args(annotation):
             if arg is NoneType:
                 continue

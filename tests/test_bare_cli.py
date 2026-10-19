@@ -64,7 +64,7 @@ def test_bare_short_alias_clusters_and_required_value_tail():
         debug = kwconf.Flag(False, short_alias=['d'])
         key = kwconf.Value(None, short_alias=['k'])
 
-    cases = {
+    cases: dict[tuple[str, ...], dict[str, object]] = {
         ('-pv',): dict(patch='auto', verbose=1),
         ('-vp',): dict(patch='auto', verbose=1),
         ('-vvp',): dict(patch='auto', verbose=2),

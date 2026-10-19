@@ -156,8 +156,9 @@ def _warn_user(message: str, category=UserWarning) -> None:
     of normal CLI startup.
     """
     import warnings
+    from types import FrameType
 
-    frame = sys._getframe(1)
+    frame: FrameType | None = sys._getframe(1)
     stacklevel = 2  # warnings.warn -> _warn_user -> caller
     while frame is not None:
         module_name = frame.f_globals.get('__name__', '')
@@ -197,7 +198,8 @@ class _LazyConfigClassMethod(classmethod):
 
     def __init__(self, name: str) -> None:
         self.name = name
-        self._resolved = None
+        # Cold resolution yields a dynamically constructed classmethod.
+        self._resolved: Any = None
         super().__init__(lambda cls, *args, **kwargs: None)
 
     def _resolve(self):
@@ -217,7 +219,7 @@ class _LazyConfigProperty(property):
 
     def __init__(self, name: str) -> None:
         self.name = name
-        self._resolved = None
+        self._resolved: property | None = None
         super().__init__(fget=None)
 
     def _resolve(self):
